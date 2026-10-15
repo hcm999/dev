@@ -79,10 +79,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 <!-- ============ 登录/付费遮罩 ============ -->
 <div class="overlay" id="loginOverlay">
     <div class="login-dialog" id="loginDialog">
-        <!-- 步骤 1：连钱包 + 输密码 -->
+        <!-- 步骤 1：连钱包 -->
         <div id="stepLogin">
             <div class="login-title">🔐 DEV 数据展示端</div>
-            <div class="login-sub">请连接钱包并输入访问密码</div>
+            <div class="login-sub">请连接钱包验证白名单</div>
 
             <div style="background:#0a0e1a;border:1px solid #2a3a5a;border-radius:10px;padding:12px;margin-bottom:14px;">
                 <div style="color:#8899bb;font-size:0.7rem;margin-bottom:4px;">当前钱包</div>
@@ -90,9 +90,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
 
             <button class="login-btn login-btn-secondary" id="connectBtn" onclick="connectWallet()">🦊 连接钱包</button>
-
-            <label class="login-label">访问密码</label>
-            <input type="password" id="passwordInput" class="login-input" placeholder="输入密码">
 
             <button class="login-btn" id="verifyBtn" onclick="verifyAccess()">进入</button>
             <div class="login-error" id="loginError"></div>
@@ -133,8 +130,8 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <span class="pay-value" id="payTG">--</span>
                 </div>
                 <div class="pay-info-row">
-                    <span class="pay-label">微信</span>
-                    <span class="pay-value" id="payWechat">--</span>
+                    <span class="pay-label">QQ</span>
+                    <span class="pay-value" id="payQQ">3751235417</span>
                 </div>
             </div>
 
@@ -185,7 +182,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <div id="panel-charts" class="data-panel active">
         <div class="chart-card">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;">
-                <span style="color:#8899bb;">👥 每日地址趋势 (活跃/新增/到期)</span>
+                <span style="color:#8899bb;">👥 每日地址趋势 (活跃/新增)</span>
                 <span id="totalActiveAddresses" style="color:#3b82f6;font-weight:700;font-size:0.85rem;">🟢 当前活跃: 0</span>
                 <div>
                     <span class="range-btn address-range-btn" onclick="setAddressTrendRange(15, this)">15天</span>
@@ -309,7 +306,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 const CONFIG = {
     API_BASE: '/api',
     PROJECT_ID: 'dev',
-    PASSWORD_HINT: '请联系客服获取访问密码',
+    // 与后端 CONFIG.DEV_ACCESS.PASSWORD 保持一致
+    // 前端不再让用户输入，自动带上
+    ACCESS_PASSWORD: 'dev-2025',
 };
 
 // 从后端 config.js 读取的价格信息（前端本地缓存）
@@ -317,14 +316,14 @@ let payInfo = {
     receiveWallet: '--',
     price: { SINGLE: 5, MONTHLY: 15 },
     duration: { SINGLE: 86400, MONTHLY: 2592000 },
-    contact: { TG: '--', WECHAT: '--', QQ: '--' }
+    contact: { TG: '--', QQ: '3751235417' }
 };
 
 // ================================================================
 // 状态
 // ================================================================
 let userAddress = null;
-let accessPassword = null;
+let accessPassword = CONFIG.ACCESS_PASSWORD;
 let accessInfo = null;  // { address, type, expireAt, expireAtText, note }
 
 let queryResults = [];
@@ -404,11 +403,6 @@ async function verifyAccess() {
         err.innerText = '请先连接钱包';
         return;
     }
-    const pwd = $('passwordInput').value.trim();
-    if (!pwd) {
-        err.innerText = '请输入密码';
-        return;
-    }
 
     btn.disabled = true;
     btn.innerText = '校验中...';
@@ -418,16 +412,15 @@ async function verifyAccess() {
         const res = await fetch(`${CONFIG.API_BASE}/auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: userAddress, password: pwd })
+            body: JSON.stringify({ address: userAddress, password: accessPassword })
         });
         const result = await res.json();
 
         if (result.success) {
-            accessPassword = pwd;
             accessInfo = result;
 
             // 保存到 sessionStorage（刷新后不丢）
-            sessionStorage.setItem('dev_access_password', pwd);
+            sessionStorage.setItem('dev_access_password', accessPassword);
             sessionStorage.setItem('dev_access_address', userAddress);
             sessionStorage.setItem('dev_access_info', JSON.stringify(result));
 
@@ -445,7 +438,7 @@ async function verifyAccess() {
                 $('payMyAddr').innerText = userAddress;
                 $('payWallet').innerHTML = payInfo.receiveWallet + ' <button class="pay-copy" onclick="copyPayWallet()">复制</button>';
                 $('payTG').innerText = payInfo.contact.TG || '--';
-                $('payWechat').innerText = payInfo.contact.WECHAT || '--';
+                $('payQQ').innerText = payInfo.contact.QQ || '3751235417';
                 $('stepLogin').style.display = 'none';
                 $('stepPay').style.display = 'block';
             } else {
@@ -672,8 +665,7 @@ function updateAddressTrendChart() {
         type: 'bar',
         data: { labels, datasets: [
             { label: '活跃地址', data: aC, backgroundColor: 'rgba(59,130,246,0.5)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3, order: 2 },
-            { label: '新增地址', data: nC, type: 'line', borderColor: '#22c55e', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1 },
-            { label: '到期地址', data: eC, type: 'line', borderColor: '#ef4444', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#ef4444', tension: 0.3, fill: false, order: 0 }
+            { label: '新增地址', data: nC, type: 'line', borderColor: '#22c55e', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1 }
         ]},
         options: {
             responsive: true, maintainAspectRatio: false,
