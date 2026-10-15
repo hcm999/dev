@@ -3,3 +3,5 @@
 /devdao    /devdao.html      200
 /dev       /devstake.html    200
 /devstake  /devlend.html     200
+/*.html    /:splat           200
+/*         /:splat.html      200
