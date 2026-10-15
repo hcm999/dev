@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATMVIP - 数据展示</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .project-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .search-box { margin-bottom: 20px; }
+        .search-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 30px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+        }
+        .search-input:focus { outline: none; border-color: #3b82f6; }
+        .stats { color: #94a3b8; font-size: 0.75rem; margin: 12px 0; }
+        .date-group { margin-bottom: 24px; }
+        .date-header {
+            background: #1e293b;
+            border-left: 3px solid #3b82f6;
+            padding: 10px 16px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .date-text { font-size: 0.9rem; font-weight: 600; color: #60a5fa; }
+        .date-count {
+            background: #334155;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: #94a3b8;
+        }
+        .data-grid { display: flex; flex-direction: column; gap: 6px; margin-left: 12px; }
+        .data-item {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+        .data-item:hover { border-color: #3b82f6; background: #253450; }
+        .data-value {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #60a5fa;
+            word-break: break-all;
+            flex: 1;
+        }
+        .data-time { color: #64748b; font-size: 0.65rem; }
+        .copy-btn {
+            background: #334155;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: #e2e8f0;
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+        .copy-btn:hover { background: #3b82f6; }
+        .empty { text-align: center; color: #64748b; padding: 60px 20px; }
+        .refresh-btn {
+            background: #334155;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 20px;
+            color: #e2e8f0;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .footer { text-align: center; color: #64748b; font-size: 0.7rem; margin-top: 20px; }
+        .loading { text-align: center; padding: 40px; color: #94a3b8; }
+        .debug-info {
+            background: #1e293b;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.7rem;
+            color: #fbbf24;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>
+                📋 ATMVIP 数据展示
+                <span class="project-badge">atmvip</span>
+            </h1>
+            <div class="subtitle">
+                <span>查看所有上传的数据</span>
+                <button class="refresh-btn" onclick="loadData(true)">🔄 强制刷新</button>
+            </div>
+            
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
+            
+            <div class="search-box">
+                <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索数据...">
+            </div>
+            
+            <div class="stats" id="stats">加载中...</div>
+            
+            <div id="dataList">
+                <div class="loading">⏳ 加载数据中...</div>
+            </div>
+        </div>
+        <div class="footer">
+            数据实时同步自服务器 | 最后更新: <span id="lastUpdate">-</span>
+        </div>
+    </div>
+
+    <script>
+        const PROJECT_ID = 'atmvip';
+        const API_URL = '/api/upload-data';
+        
+        let allData = [];
+        
+        function copyData(value) {
+            navigator.clipboard.writeText(value);
+            showToast('✅ 已复制');
+        }
+        
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.textContent = msg;
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #10b981;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 30px;
+                font-size: 0.8rem;
+                z-index: 1000;
+                animation: fadeInOut 2s ease;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+        
+        function showDebug(msg) {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.style.display = 'block';
+            const time = new Date().toLocaleTimeString();
+            debugDiv.innerHTML += `[${time}] ${msg}<br>`;
+            console.log(`[DEBUG] ${msg}`);
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+        }
+        
+        function renderData(filterText = '') {
+            const container = document.getElementById('dataList');
+            const statsDiv = document.getElementById('stats');
+            
+            let filtered = allData;
+            if (filterText) {
+                const lowerFilter = filterText.toLowerCase();
+                filtered = allData.filter(item => 
+                    item.value && item.value.toLowerCase().includes(lowerFilter)
+                );
+            }
+            
+            if (!filtered || filtered.length === 0) {
+                container.innerHTML = '<div class="empty">📭 暂无数据</div>';
+                statsDiv.innerHTML = `共 0 条数据`;
+                return;
+            }
+            
+            const grouped = {};
+            filtered.forEach(item => {
+                const dateKey = item.date || '未知日期';
+                if (!grouped[dateKey]) {
+                    grouped[dateKey] = [];
+                }
+                grouped[dateKey].push(item);
+            });
+            
+            const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+            
+            let html = '';
+            sortedDates.forEach(date => {
+                const items = grouped[date];
+                html += `
+                    <div class="date-group">
+                        <div class="date-header">
+                            <span class="date-text">📅 ${date}</span>
+                            <span class="date-count">${items.length} 条数据</span>
+                        </div>
+                        <div class="data-grid">
+                `;
+                
+                items.forEach((item, idx) => {
+                    const timeStr = item.uploadTime ? new Date(item.uploadTime).toLocaleTimeString() : '';
+                    const safeValue = escapeHtml(item.value || '');
+                    html += `
+                        <div class="data-item">
+                            <span class="data-value">
+                                <span style="color:#64748b; margin-right:8px;">${idx + 1}.</span>
+                                ${safeValue}
+                            </span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span class="data-time">${timeStr}</span>
+                                <button class="copy-btn" onclick="copyData('${safeValue.replace(/'/g, "\\'")}')">📋 复制</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            statsDiv.innerHTML = `📊 共 ${filtered.length} 条数据 ${filterText ? `(筛选自 ${allData.length})` : ''}`;
+        }
+        
+        async function loadData(forceRefresh = false) {
+            const container = document.getElementById('dataList');
+            container.innerHTML = '<div class="loading">⏳ 加载数据中...</div>';
+            
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.innerHTML = '';
+            debugDiv.style.display = 'none';
+            
+            try {
+                const url = `${API_URL}?projectId=${PROJECT_ID}&_t=${Date.now()}`;
+                showDebug(`请求URL: ${url}`);
+                
+                const response = await fetch(url, {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                showDebug(`响应状态: ${response.status} ${response.statusText}`);
+                
+                const result = await response.json();
+                showDebug(`响应数据: ${JSON.stringify(result).substring(0, 300)}`);
+                
+                if (result.success) {
+                    let rawData = result.data;
+                    
+                    // 关键修复：如果 data 是字符串，需要解析成对象
+                    if (typeof rawData === 'string') {
+                        showDebug(`data是字符串，开始解析...`);
+                        try {
+                            rawData = JSON.parse(rawData);
+                            showDebug(`✅ 字符串解析成功`);
+                        } catch (e) {
+                            showDebug(`❌ 字符串解析失败: ${e.message}`);
+                            rawData = null;
+                        }
+                    }
+                    
+                    if (rawData && rawData.items) {
+                        allData = rawData.items;
+                        const lastUpdate = rawData.lastUpdate;
+                        
+                        showDebug(`✅ 解析成功: 共 ${allData.length} 条数据`);
+                        
+                        if (lastUpdate) {
+                            document.getElementById('lastUpdate').innerText = new Date(lastUpdate).toLocaleString();
+                        }
+                        
+                        if (allData.length === 0) {
+                            container.innerHTML = '<div class="empty">📭 暂无数据，请管理员先上传</div>';
+                            document.getElementById('stats').innerHTML = '共 0 条数据';
+                            return;
+                        }
+                        
+                        renderData();
+                    } else {
+                        showDebug(`❌ 数据格式错误: rawData.items 不存在`);
+                        container.innerHTML = '<div class="empty">📭 数据格式错误，请联系管理员</div>';
+                    }
+                } else {
+                    showDebug(`❌ 接口返回失败: ${result.error || '未知错误'}`);
+                    container.innerHTML = `<div class="empty">❌ 加载失败: ${result.error || '未知错误'}</div>`;
+                }
+            } catch (error) {
+                console.error('加载失败:', error);
+                showDebug(`❌ 错误: ${error.message}`);
+                container.innerHTML = `<div class="empty">❌ 加载失败: ${error.message}</div>`;
+            }
+        }
+        
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                renderData(e.target.value);
+            }, 300);
+        });
+        
+        loadData();
+        
+        setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                loadData();
+            }
+        }, 300000);
+    </script>
+</body>
+</html>

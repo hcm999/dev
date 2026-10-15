@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ATM预签名抢跑 | 自动赎回</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Ethers.js V6 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { background: #0b0f1c; color: #eef2ff; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+        .card { background: #111827; border: 1px solid #1f2a3e; border-radius: 20px; backdrop-filter: blur(2px); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+        .card-title { font-weight: 600; color: #f0f3ff; letter-spacing: -0.2px; }
+        .btn-primary { background: #2563eb; border: none; border-radius: 40px; font-weight: 500; }
+        .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+        .btn-success { background: #0d9488; border: none; border-radius: 40px; }
+        .btn-success:hover { background: #0f766e; }
+        .btn-warning { background: #eab308; color: #0f172a; border: none; border-radius: 40px; font-weight: 500; }
+        .btn-danger { background: #dc2626; border-radius: 40px; }
+        .btn-outline-light { border-radius: 40px; border-color: #334155; color: #cbd5e1; }
+        .btn-quick { background: #10b981; color: white; border: none; border-radius: 40px; font-weight: 500; padding: 0.2rem 0.6rem; font-size: 0.7rem; }
+        .btn-quick:hover { background: #059669; }
+        .stat-value { font-size: 1.7rem; font-weight: 700; background: linear-gradient(135deg, #fbbf24, #f97316); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1.2; }
+        .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; }
+        .address-short { font-family: monospace; background: #1e293b; padding: 3px 8px; border-radius: 20px; font-size: 0.8rem; }
+        .badge-duration { background: #2d3a5e; color: #b9e0ff; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
+        .table { color: #e2e8f0; font-size: 0.85rem; }
+        .table thead th { border-bottom: 1px solid #2d3a5e; color: #9ca3af; font-weight: 500; }
+        .table td { border-bottom: 1px solid #1f2a3e; vertical-align: middle; padding: 12px 4px; }
+        .time-two-lines { display: flex; flex-direction: column; line-height: 1.3; }
+        .remaining-top { font-weight: 600; color: #f97316; }
+        .remaining-top.unlocked { color: #2dd4bf; }
+        .amount-value { color: #ffd966; font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,0.3); }
+        .sub-tab { background: #1e293b; border: 1px solid #475569; border-radius: 40px; padding: 5px 18px; cursor: pointer; font-size: 0.8rem; transition: 0.2s; color: #e2e8f0; font-weight: 500; }
+        .sub-tab.active { background: #3b82f6; border-color: #60a5fa; color: white; box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
+        .sub-tab:hover { background: #334155; color: #ffffff; }
+        .contract-address { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 40px; font-size: 0.75rem; word-break: break-all; }
+        .btn-sm { border-radius: 30px; padding: 0.2rem 0.7rem; }
+        .nav-tabs .nav-link { color: #94a3b8; border: none; font-weight: 500; }
+        .nav-tabs .nav-link.active { background: #111827; color: #60a5fa; border-bottom: 2px solid #3b82f6; }
+        input.form-control { background: #1e293b; border: 1px solid #334155; color: white; border-radius: 40px; padding: 10px 18px; }
+        input.form-control::placeholder { color: #6b7280; }
+        input:focus { background: #1e293b; border-color: #3b82f6; box-shadow: none; }
+        .table-responsive { border-radius: 20px; overflow-x: auto; }
+        .id-value { font-size: 0.7rem; color: #94a3b8; }
+        
+        /* 预签名状态栏 */
+        .pre-sign-bar {
+            background: #1e293b;
+            border: 1px solid #10b981;
+            border-radius: 20px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .pre-sign-status { font-size: 0.85rem; color: #10b981; font-weight: 500; }
+        .timer-display {
+            background: #0f172a;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-family: monospace;
+            font-size: 1rem;
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+<div class="container py-4 py-md-5">
+    <!-- 头部 + 钱包 -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h2 class="fw-bold" style="background: linear-gradient(135deg,#c084fc,#3b82f6); -webkit-background-clip:text; background-clip:text; color:transparent;">⚡ ATM 预签名抢跑</h2>
+            <p class="small text-secondary">预签名一次 | 自动抢跑 | 免弹窗赎回</p>
+        </div>
+        <button id="connectBtn" class="btn btn-primary px-4" onclick="connectWallet()">🔌 连接钱包</button>
+    </div>
+
+    <!-- 预签名状态栏 -->
+    <div id="preSignBar" class="pre-sign-bar">
+        <div>
+            <span class="badge bg-success me-2">⚡ 预签名模式</span>
+            <span id="preSignStatus" class="pre-sign-status">未连接钱包</span>
+        </div>
+        <div id="rushTimerDisplay" class="timer-display">⏰ 等待连接钱包</div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-success" onclick="preSignAllOrders()">🔐 预签名所有订单</button>
+            <button class="btn btn-sm btn-warning" onclick="enableAutoRush()">⏰ 启动自动抢跑</button>
+            <button class="btn btn-sm btn-danger" onclick="batchQuickRedeem()">⚡ 一键批量赎回</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearPreSignatures()">🗑️ 清除预签名</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="stopRushMonitor()">⏹️ 停止抢跑</button>
+        </div>
+    </div>
+
+    <!-- 4大核心数据 -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">💰 USDT余额</div><div class="stat-value" id="myBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">🔒 合约内质押</div><div class="stat-value" id="stakedBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">🏦 池子储备</div><div class="stat-value" id="poolBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">📊 总质押量</div><div class="stat-value" id="totalStaked">0.00</div></div></div>
+    </div>
+
+    <!-- 主选项卡区域 -->
+    <div class="card">
+        <div class="card-body">
+            <ul class="nav nav-tabs mb-3" id="mainTab" role="tablist">
+                <li class="nav-item"><button class="nav-link active" id="my-tab" data-bs-toggle="tab" data-bs-target="#myStakes" type="button" role="tab">📋 我的质押记录 <span id="myStakeCount" class="badge bg-secondary ms-1">0</span></button></li>
+                <li class="nav-item"><a class="nav-link" href="https://www.ganaweb3.top" target="_blank" role="tab">📊 数据看板 ↗</a></li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="myStakes" role="tabpanel">
+                    <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                        <div class="sub-tabs d-flex gap-2">
+                            <span class="sub-tab active" onclick="filterMyStakes('all')" id="filter-all">全部</span>
+                            <span class="sub-tab" onclick="filterMyStakes('active')" id="filter-active">锁仓中</span>
+                            <span class="sub-tab" onclick="filterMyStakes('inactive')" id="filter-inactive">已赎回</span>
+                        </div>
+                        <div><button class="btn btn-sm btn-outline-light" onclick="refreshMyStakes()">🔄 刷新</button>
+                        <button class="btn btn-sm btn-outline-info ms-2" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⏱️ 自动刷新: 关闭</button></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead><tr><th>ID</th><th>金额</th><th>周期</th><th>质押时间</th><th>剩余/状态</th><th>操作</th></tr></thead>
+                            <tbody id="stakeListBody"><tr><td colspan="6" class="text-center text-muted">⚡ 连接钱包查看记录</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3 text-center small text-secondary">⚙️ 合约地址: <span id="contractAddrDisplay" class="contract-address"></span> | 预签名后启动自动抢跑，每天早上8点自动赎回</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ==================== 配置 ====================
+    const CONFIG = {
+        STAKING: "0xa479Bdcd0EED3A776a4fEFE5E13899baB567f263",
+        ATM_TOKEN: "0x55d398326f99059fF775485246999027B3197955",
+        BUB_PAIR: "0x659b44d603052132fd36cf048d9e0ba1e307ae3a",
+    };
+    
+    const DURATION_DAYS_MAP = {0: 1, 1: 15, 2: 30};
+    
+    // 抢跑配置（可修改）
+    const RUSH_CONFIG = {
+        targetHour: 8,      // 早上8点
+        targetMinute: 0,
+        targetSecond: 0,
+        advanceMs: 500      // 提前500毫秒抢跑
+    };
+    
+    // ABI (保持原有完整ABI)
+    const ABI_ATM_STAKING = [{"inputs":[{"internalType":"address","name":"REFERRAL_","type":"address"},{"internalType":"address","name":"marketingAddress_","type":"address"},{"internalType":"address","name":"feeAddress1_","type":"address"},{"internalType":"address","name":"feeAddress2_","type":"address"},{"internalType":"address","name":"feeAddress3_","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[],"name":"EnforcedPause","type":"error"},{"inputs":[],"name":"ExpectedPause","type":"error"},{"inputs":[{"internalType":"uint256","name":"x","type":"uint256"},{"internalType":"uint256","name":"y","type":"uint256"}],"name":"PRBMath_MulDiv18_Overflow","type":"error"},{"inputs":[],"name":"ReentrancyGuardReentrantCall","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Paused","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint40","name":"timestamp","type":"uint40"},{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"}],"name":"Restaked","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint160","name":"reward","type":"uint160"},{"indexed":false,"internalType":"uint40","name":"timestamp","type":"uint40"},{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"}],"name":"RewardBurned","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint160","name":"reward","type":"uint160"},{"indexed":false,"internalType":"uint40","name":"timestamp","type":"uint40"},{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"}],"name":"RewardPaid","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint160","name":"amount","type":"uint160"},{"indexed":false,"internalType":"uint40","name":"timestamp","type":"uint40"},{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"},{"indexed":false,"internalType":"uint40","name":"stakeTime","type":"uint40"}],"name":"Staked","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Unpaused","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint160","name":"amount","type":"uint160"},{"indexed":false,"internalType":"uint40","name":"timestamp","type":"uint40"},{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"},{"indexed":false,"internalType":"uint160","name":"reward","type":"uint160"},{"indexed":false,"internalType":"uint40","name":"ttl","type":"uint40"}],"name":"Unstaked","type":"event"},{"inputs":[],"name":"ATM","outputs":[{"internalType":"contract IATMToken","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"BUB","outputs":[{"internalType":"contract IERC20","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"CIRCUIT_BREAKER_RECOVERY","outputs":[{"internalType":"uint40","name":"","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"CIRCUIT_BREAKER_THRESHOLD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"CIRCUIT_BREAKER_UNSTAKE_RATE","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"DEAD","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"EARLY_DAILY_LIMIT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"EARLY_DAYS","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"EARLY_MAX_ORDERS_PER_DAY","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"MIN_STAKE_AMOUNT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"ONE_DAY_DAILY_LIMIT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"REFERRAL","outputs":[{"internalType":"contract IReferral","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"STAGE1_MAX_ORDERS","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"STAGE1_THRESHOLD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"STAGE2_THRESHOLD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"balance","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"balances","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_index","type":"uint256"}],"name":"burnExpiredReward","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"circuitBreakerTime","outputs":[{"internalType":"uint40","name":"","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"_index","type":"uint256"}],"name":"claim","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"configs","outputs":[{"internalType":"uint256","name":"rate","type":"uint256"},{"internalType":"uint40","name":"day","type":"uint40"},{"internalType":"uint40","name":"ttl","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"dailyCircuitBreakerUnstaked","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"dailyOneDayStaked","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"dailyTotalStaked","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"dailyTotalUnstaked","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"emergencyWithdrawATM","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"feeAddress1","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"feeAddress2","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"feeAddress3","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getCircuitBreakerUnstakeLimit","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getCurrentReserveU","outputs":[{"internalType":"uint112","name":"","type":"uint112"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getDailyStakeLimit","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getDailyUnstakeLimit","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_user","type":"address"}],"name":"getTeamKpi","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"historicalHighU","outputs":[{"internalType":"uint112","name":"","type":"uint112"}],"stateMutability":"view","type":"function"},{"inputs":[{"components":[{"internalType":"address","name":"user","type":"address"},{"internalType":"uint160","name":"amount","type":"uint160"},{"internalType":"uint8","name":"stakeIndex","type":"uint8"},{"internalType":"uint40","name":"stakeTime","type":"uint40"}],"internalType":"struct Staking.ImportOrder[]","name":"orders","type":"tuple[]"}],"name":"importOrders","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"isEarlyPeriod","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint40","name":"stakeTime","type":"uint40"}],"name":"isOrderAffectedByCircuitBreaker","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"isPreacher","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"launchTime","outputs":[{"internalType":"uint40","name":"","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"marketingAddress","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"maxStakeAmount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"maxStakeAmountValue","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"newHighTime","outputs":[{"internalType":"uint40","name":"","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"pause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"paused","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"recoveryThresholdU","outputs":[{"internalType":"uint112","name":"","type":"uint112"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"remainingCircuitBreakerUnstakeAmount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"remainingUnstakeAmount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"user","type":"address"},{"internalType":"uint8","name":"index","type":"uint8"}],"name":"rewardOfSlot","outputs":[{"internalType":"uint256","name":"reward","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_atm","type":"address"}],"name":"setATM","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_bub","type":"address"}],"name":"setBUB","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_addr1","type":"address"},{"internalType":"address","name":"_addr2","type":"address"},{"internalType":"address","name":"_addr3","type":"address"}],"name":"setFeeAddress","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint40","name":"_launchTime","type":"uint40"}],"name":"setLaunchTime","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_account","type":"address"}],"name":"setMarketingAddress","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_value","type":"uint256"}],"name":"setMaxStakeAmountValue","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_value","type":"uint256"}],"name":"setTeamVirtuallyInvestValue","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"shouldUpdateCircuitBreaker","outputs":[{"internalType":"bool","name":"needUpdateHigh","type":"bool"},{"internalType":"bool","name":"needTrigger","type":"bool"},{"internalType":"bool","name":"needCountdown","type":"bool"},{"internalType":"bool","name":"needRecover","type":"bool"},{"internalType":"uint112","name":"currentReserveU","type":"uint112"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint160","name":"_amount","type":"uint160"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"uint8","name":"_stakeIndex","type":"uint8"}],"name":"stake","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"stakeCount","outputs":[{"internalType":"uint256","name":"count","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint160","name":"_amount","type":"uint160"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"uint8","name":"_stakeIndex","type":"uint8"},{"internalType":"address","name":"parent","type":"address"}],"name":"stakeWithInviter","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"sync","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"teamTotalInvestValue","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"teamVirtuallyInvestValue","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"unpause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"index","type":"uint256"}],"name":"unstake","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"updateCircuitBreaker","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"userDailyStakeCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"userOneDayStaked","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"userStakeRecord","outputs":[{"internalType":"uint40","name":"stakeTime","type":"uint40"},{"internalType":"uint160","name":"amount","type":"uint160"},{"internalType":"uint8","name":"stakeIndex","type":"uint8"},{"internalType":"uint40","name":"unstakeTime","type":"uint40"},{"internalType":"uint160","name":"reward","type":"uint160"},{"internalType":"uint40","name":"restakeTime","type":"uint40"}],"stateMutability":"view","type":"function"}];
+    
+    const ABI_ERC20 = ["function balanceOf(address) view returns (uint256)","function decimals() view returns (uint8)","function approve(address,uint256) returns (bool)","function allowance(address,address) view returns (uint256)"];
+    
+    let provider, signer, userAddress, stakingContract, atmContract;
+    let autoRefreshInterval = null;
+    let countdownInterval = null;
+    let myStakeRecords = [];
+    let currentFilter = 'all';
+    
+    // 预签名存储
+    let signedTransactions = {};
+    
+    // 定时抢跑变量
+    let autoRushTimer = null;
+    let rushEnabled = false;
+    
+    // 辅助函数
+    function formatAmount(wei, decimals=18) { try { return parseFloat(ethers.formatUnits(wei, decimals)).toFixed(2); } catch(e){ return "0.00"; } }
+    function formatAmountInteger(wei) { return Math.floor(parseFloat(ethers.formatUnits(wei, 18))).toString(); }
+    function shorten(addr){ return addr?.slice(0,6)+"..."+addr?.slice(-4); }
+    function formatTimeSplit(timestampSec){ let d=new Date(timestampSec*1000); return { date:`${d.getMonth()+1}/${d.getDate()}`, time:d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) }; }
+    function getRemainingSec(unlockTime){ return Math.max(0, unlockTime - Math.floor(Date.now()/1000)); }
+    
+    function formatRemainingTimeDetailed(seconds) {
+        if (seconds <= 0) return { main: '0秒', detail: '' };
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        let mainPart = '', detailPart = '';
+        if (days > 0) mainPart += `${days}天`;
+        if (hours > 0) mainPart += `${hours}时`;
+        if (mainPart === '' && minutes > 0) mainPart += `${minutes}分`;
+        if (mainPart === '' && secs > 0) mainPart += `${secs}秒`;
+        if (minutes > 0 || secs > 0) {
+            if (days > 0 || hours > 0) detailPart = `${minutes}分${secs}秒`;
+            else if (minutes > 0) detailPart = `${secs}秒`;
+        }
+        return { main: mainPart || '0秒', detail: detailPart };
+    }
+    
+    // 更新预签名状态栏
+    function updatePreSignStatus() {
+        const statusSpan = document.getElementById('preSignStatus');
+        if (!userAddress) {
+            statusSpan.innerHTML = '未连接钱包';
+            return;
+        }
+        const hasSigned = Object.keys(signedTransactions).length > 0;
+        if (hasSigned) {
+            const count = Object.keys(signedTransactions).length;
+            statusSpan.innerHTML = `✅ 已预签名 ${count} 个订单`;
+        } else {
+            statusSpan.innerHTML = '未预签名，请先点击"预签名所有订单"';
+        }
+        if (rushEnabled) {
+            statusSpan.innerHTML += ' | 🟢 抢跑中';
+        }
+    }
+    
+    // ========== 预签名所有订单 ==========
+    async function preSignAllOrders() {
+        if (!userAddress || !stakingContract) {
+            alert("请先连接钱包");
+            return false;
+        }
+        
+        const unredeemedOrders = myStakeRecords.filter(r => !r.isUnstaked);
+        
+        if (unredeemedOrders.length === 0) {
+            alert("没有可预签名的订单（所有订单都已赎回）");
+            return false;
+        }
+        
+        let orderInfo = `即将预签名 ${unredeemedOrders.length} 个订单：\n\n`;
+        for (let order of unredeemedOrders) {
+            orderInfo += `订单 ${order.index}: ${order.amount} USDT\n`;
+        }
+        orderInfo += `\n⚠️ 预签名需要您授权一次。\n\n确认要预签名吗？`;
+        
+        if (!confirm(orderInfo)) return false;
+        
+        let nonce = await provider.getTransactionCount(userAddress);
+        const chainId = (await provider.getNetwork()).chainId;
+        let successCount = 0;
+        
+        for (let i = 0; i < unredeemedOrders.length; i++) {
+            const order = unredeemedOrders[i];
+            
+            try {
+                const tx = {
+                    to: CONFIG.STAKING,
+                    data: stakingContract.interface.encodeFunctionData("unstake", [order.index]),
+                    gasLimit: 300000,
+                    nonce: nonce + successCount,
+                    chainId: chainId,
+                    gasPrice: ethers.parseUnits("3", "gwei")
+                };
+                
+                console.log(`🔐 预签名订单 ${order.index}...`);
+                const signedTx = await signer.signTransaction(tx);
+                
+                signedTransactions[order.index] = {
+                    signedTx: signedTx,
+                    tx: tx,
+                    nonce: nonce + successCount,
+                    amount: order.amount,
+                    unlockTimestamp: order.unlockTimestamp,
+                    orderIndex: order.index
+                };
+                
+                console.log(`✅ 订单 ${order.index} 预签名完成`);
+                successCount++;
+                
+            } catch (error) {
+                console.error(`订单 ${order.index} 预签名失败:`, error);
+                alert(`预签名失败: ${error.message || error}`);
+                break;
+            }
+        }
+        
+        if (successCount > 0) {
+            alert(`✅ 预签名完成！成功 ${successCount}/${unredeemedOrders.length} 个订单\n\n现在可以点击"启动自动抢跑"`);
+            renderStakeTable();
+            updatePreSignStatus();
+        }
+        
+        return successCount > 0;
+    }
+    
+    // ========== 快速赎回 ==========
+    async function quickRedeem(index) {
+        const signed = signedTransactions[index];
+        
+        if (!signed) {
+            alert(`订单 ${index} 没有预签名，请先点击"预签名所有订单"`);
+            return;
+        }
+        
+        const btn = document.getElementById(`quick-redeem-btn-${index}`);
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "广播中...";
+        }
+        
+        try {
+            const txResponse = await provider.broadcastTransaction(signed.signedTx);
+            console.log(`✅ 交易已广播: ${txResponse.hash}`);
+            
+            if (btn) btn.innerText = "确认中...";
+            await txResponse.wait(1);
+            
+            alert(`✅ 订单 ${index} 快速赎回成功！金额: ${signed.amount} USDT`);
+            delete signedTransactions[index];
+            await refreshAllDashboard();
+            
+        } catch (error) {
+            console.error("广播失败:", error);
+            alert("快速赎回失败: " + (error.message || error));
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "⚡快速赎回";
+            }
+        }
+    }
+    
+    // ========== 批量快速赎回 ==========
+    async function batchQuickRedeem() {
+        const signedIndices = Object.keys(signedTransactions);
+        
+        if (signedIndices.length === 0) {
+            alert("没有预签名的订单，请先点击'预签名所有订单'");
+            return;
+        }
+        
+        if (!confirm(`准备批量赎回 ${signedIndices.length} 个订单，是否继续？`)) return;
+        
+        for (const idx of signedIndices) {
+            await quickRedeem(parseInt(idx));
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
+        alert("批量赎回完成！");
+        updatePreSignStatus();
+    }
+    
+    // ========== 清除预签名 ==========
+    function clearPreSignatures() {
+        if (confirm("清除所有预签名？")) {
+            signedTransactions = {};
+            updatePreSignStatus();
+            renderStakeTable();
+            alert("已清除所有预签名");
+        }
+    }
+    
+    // ========== 定时抢跑核心功能 ==========
+    function getMsUntilNextRush() {
+        const now = new Date();
+        const target = new Date(now);
+        target.setHours(RUSH_CONFIG.targetHour, RUSH_CONFIG.targetMinute, RUSH_CONFIG.targetSecond, 0);
+        if (target <= now) {
+            target.setDate(target.getDate() + 1);
+        }
+        return target.getTime() - now.getTime();
+    }
+    
+    function updateRushTimerDisplay() {
+        const ms = getMsUntilNextRush();
+        const hours = Math.floor(ms / 3600000);
+        const minutes = Math.floor((ms % 3600000) / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const displayEl = document.getElementById('rushTimerDisplay');
+        if (displayEl) {
+            displayEl.innerHTML = `⏰ 下次抢跑: ${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+        }
+    }
+    
+    async function executeRushRedeem() {
+        const signedIndices = Object.keys(signedTransactions);
+        
+        if (signedIndices.length === 0) {
+            console.log("⏰ [定时抢跑] 没有预签名的订单");
+            return;
+        }
+        
+        console.log(`⏰ [定时抢跑] 开始批量广播 ${signedIndices.length} 个交易...`);
+        
+        let successCount = 0;
+        for (const idx of signedIndices) {
+            const signed = signedTransactions[parseInt(idx)];
+            if (!signed) continue;
+            
+            try {
+                console.log(`🚀 [抢跑] 广播订单 ${idx}...`);
+                const txResponse = await provider.broadcastTransaction(signed.signedTx);
+                console.log(`✅ 交易已广播: ${txResponse.hash}`);
+                successCount++;
+                await new Promise(r => setTimeout(r, 200));
+            } catch (error) {
+                console.error(`订单 ${idx} 广播失败:`, error);
+            }
+        }
+        
+        console.log(`⏰ [定时抢跑] 完成！成功广播 ${successCount}/${signedIndices.length} 个交易`);
+        
+        setTimeout(() => {
+            refreshAllDashboard();
+        }, 3000);
+    }
+    
+    function startRushMonitor() {
+        if (autoRushTimer) clearTimeout(autoRushTimer);
+        
+        const scheduleNext = () => {
+            const msUntilTarget = getMsUntilNextRush();
+            const sendTime = Math.max(0, msUntilTarget - RUSH_CONFIG.advanceMs);
+            
+            console.log(`⏰ [定时抢跑] 距离下次抢跑: ${Math.floor(msUntilTarget/1000)}秒`);
+            console.log(`🚀 将在 ${(sendTime/1000).toFixed(1)}秒后自动广播`);
+            
+            autoRushTimer = setTimeout(async () => {
+                console.log("🔥 [定时抢跑] 时间到！自动赎回...");
+                await executeRushRedeem();
+                scheduleNext();
+            }, sendTime);
+        };
+        
+        scheduleNext();
+        
+        if (window.rushInterval) clearInterval(window.rushInterval);
+        window.rushInterval = setInterval(updateRushTimerDisplay, 1000);
+        updateRushTimerDisplay();
+        
+        rushEnabled = true;
+        updatePreSignStatus();
+        
+        // 显示提示
+        const statusSpan = document.getElementById('preSignStatus');
+        if (statusSpan) {
+            statusSpan.innerHTML = `✅ 已预签名 ${Object.keys(signedTransactions).length} 个订单 | 🟢 抢跑已启动`;
+        }
+        
+        alert(`✅ 自动抢跑已启动！\n每天 ${RUSH_CONFIG.targetHour}:${RUSH_CONFIG.targetMinute}:${RUSH_CONFIG.targetSecond} 将自动赎回`);
+    }
+    
+    function stopRushMonitor() {
+        if (autoRushTimer) {
+            clearTimeout(autoRushTimer);
+            autoRushTimer = null;
+        }
+        if (window.rushInterval) {
+            clearInterval(window.rushInterval);
+            window.rushInterval = null;
+        }
+        rushEnabled = false;
+        updatePreSignStatus();
+        console.log("⏰ 定时抢跑已停止");
+        alert("自动抢跑已停止");
+    }
+    
+    function enableAutoRush() {
+        if (!userAddress) {
+            alert("请先连接钱包");
+            return;
+        }
+        
+        if (Object.keys(signedTransactions).length === 0) {
+            alert("请先点击'预签名所有订单'完成预签名");
+            return;
+        }
+        
+        startRushMonitor();
+    }
+    
+    // ========== 连接钱包 ==========
+    async function connectWallet(){
+        if(!window.ethereum) return alert("请安装钱包插件");
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+        document.getElementById('connectBtn').innerText = shorten(userAddress);
+        document.getElementById('connectBtn').classList.replace('btn-primary','btn-success');
+        stakingContract = new ethers.Contract(CONFIG.STAKING, ABI_ATM_STAKING, signer);
+        atmContract = new ethers.Contract(CONFIG.ATM_TOKEN, ABI_ERC20, signer);
+        document.getElementById('contractAddrDisplay').innerText = CONFIG.STAKING;
+        await refreshAllDashboard();
+        startAutoRefresh();
+        updatePreSignStatus();
+    }
+    
+    async function refreshAllDashboard(){
+        if(!userAddress) return;
+        try{
+            let [bal, stakedBal, poolBal, totalSup] = await Promise.all([
+                atmContract.balanceOf(userAddress),
+                stakingContract.balanceOf(userAddress),
+                atmContract.balanceOf(CONFIG.BUB_PAIR).catch(()=>0),
+                stakingContract.totalSupply()
+            ]);
+            document.getElementById('myBalance').innerText = formatAmount(bal);
+            document.getElementById('stakedBalance').innerText = formatAmount(stakedBal);
+            document.getElementById('poolBalance').innerText = formatAmount(poolBal);
+            document.getElementById('totalStaked').innerText = formatAmount(totalSup);
+            await refreshMyStakesOnly();
+        }catch(e){ console.warn(e); }
+    }
+    
+    async function refreshMyStakesOnly(){
+        if(!stakingContract || !userAddress) return;
+        let countRaw = await stakingContract.stakeCount(userAddress);
+        let count = Number(countRaw);
+        let newRecords = [];
+        let now = Math.floor(Date.now()/1000);
+        for(let i=0;i<count;i++){
+            try{
+                let record = await stakingContract.userStakeRecord(userAddress, i);
+                let stakeTime = Number(record[0]);
+                let amountWei = record[1];
+                let stakeIndex = Number(record[2]);
+                let unstakeTime = Number(record[3]);
+                let isUnstaked = unstakeTime > 0;
+                let days = DURATION_DAYS_MAP[stakeIndex] || 1;
+                let unlockTimestamp = stakeTime + (days * 86400);
+                let remaining = isUnstaked ? 0 : Math.max(0, unlockTimestamp - now);
+                newRecords.push({ index:i, amount:formatAmountInteger(amountWei), stakeTime, stakeIndex, isUnstaked, unlockTimestamp, remaining });
+            }catch(e){}
+        }
+        newRecords.sort((a,b)=>b.stakeTime - a.stakeTime);
+        myStakeRecords = newRecords;
+        renderStakeTable();
+        document.getElementById('myStakeCount').innerText = myStakeRecords.length;
+        startCountdownTimer();
+        updatePreSignStatus();
+    }
+    
+    function startCountdownTimer() {
+        const hasActiveLocked = myStakeRecords.some(r => !r.isUnstaked && getRemainingSec(r.unlockTimestamp) > 0);
+        if (countdownInterval) clearInterval(countdownInterval);
+        if (hasActiveLocked) {
+            countdownInterval = setInterval(() => {
+                let now = Math.floor(Date.now() / 1000);
+                let needsUpdate = false;
+                for (let r of myStakeRecords) {
+                    if (!r.isUnstaked) {
+                        let newRemaining = Math.max(0, r.unlockTimestamp - now);
+                        if (r.remaining !== newRemaining) {
+                            r.remaining = newRemaining;
+                            needsUpdate = true;
+                        }
+                    }
+                }
+                if (needsUpdate) renderStakeTable();
+            }, 1000);
+        }
+    }
+    
+    function renderStakeTable(){
+        let tbody = document.getElementById('stakeListBody');
+        let filtered = myStakeRecords.filter(r => currentFilter==='all' ? true : (currentFilter==='active' ? !r.isUnstaked : r.isUnstaked));
+        if(filtered.length===0){ tbody.innerHTML='<tr><td colspan="6" class="text-center">暂无记录</td></tr>'; return; }
+        let html='';
+        for(let r of filtered){
+            let timeObj = formatTimeSplit(r.stakeTime);
+            let remainingSec = r.isUnstaked ? 0 : r.remaining;
+            let isLocked = (!r.isUnstaked && remainingSec > 0);
+            let hasPreSign = !!signedTransactions[r.index];
+            
+            let statusHtml = r.isUnstaked ? '<span class="text-secondary">✅ 已赎回</span>' : (isLocked ? '<span class="text-warning">🔒 锁仓中</span>' : '<span class="text-success">✨ 可赎回</span>');
+            
+            let actionHtml = '';
+            if (r.isUnstaked) {
+                actionHtml = '-';
+            } else if (isLocked) {
+                actionHtml = `<button class="btn btn-sm btn-secondary" disabled>等待解锁</button>`;
+            } else {
+                actionHtml = `<button class="btn btn-sm btn-quick" id="quick-redeem-btn-${r.index}" onclick="quickRedeem(${r.index})" ${!hasPreSign ? 'style="opacity:0.5;"' : ''}>⚡ 快速赎回</button>`;
+            }
+            
+            let remainingDisplay = '';
+            if(r.isUnstaked) {
+                remainingDisplay = '<span class="text-muted">已提取</span>';
+            } else if(isLocked) {
+                const detailed = formatRemainingTimeDetailed(remainingSec);
+                remainingDisplay = `<div><span class="remaining-top" style="font-size:0.9rem;">${detailed.main}</span>${detailed.detail ? `<span class="small text-secondary d-block">${detailed.detail}</span>` : '<span class="small text-secondary d-block">剩余</span>'}</div>`;
+            } else {
+                remainingDisplay = '<span class="remaining-top unlocked" style="font-size:0.9rem;">✅ 可领取</span>';
+            }
+            
+            html+=`<tr>
+                <td><span class="id-value">${r.index}</span></td>
+                <td class="amount-value">${r.amount}</td>
+                <td><span class="badge-duration">${DURATION_DAYS_MAP[r.stakeIndex]}天</span></td>
+                <td><div class="time-two-lines"><span>${timeObj.date}</span><span class="small">${timeObj.time}</span></div></td>
+                <td>${remainingDisplay}</td>
+                <td>${actionHtml}</td>
+            </tr>`;
+        }
+        tbody.innerHTML = html;
+    }
+    
+    function filterMyStakes(filter){ 
+        currentFilter=filter; 
+        ['all','active','inactive'].forEach(f=>{
+            let el = document.getElementById(`filter-${f}`);
+            if(el) el.classList.toggle('active', f===filter);
+        }); 
+        renderStakeTable(); 
+    }
+    async function refreshMyStakes(){ await refreshMyStakesOnly(); }
+    
+    function toggleAutoRefresh(){ 
+        if(autoRefreshInterval){ 
+            clearInterval(autoRefreshInterval); 
+            autoRefreshInterval=null; 
+            document.getElementById('autoRefreshBtn').innerText="⏱️ 自动刷新: 关闭"; 
+        } else { 
+            startAutoRefresh(); 
+            document.getElementById('autoRefreshBtn').innerText="⏱️ 自动刷新: 开启"; 
+        } 
+    }
+    
+    function startAutoRefresh(){ 
+        if(autoRefreshInterval) clearInterval(autoRefreshInterval); 
+        autoRefreshInterval = setInterval(()=>{ if(userAddress) refreshAllDashboard(); }, 30000); 
+    }
+    
+    window.addEventListener('load',()=>{ if(window.ethereum?.selectedAddress) connectWallet(); });
+    window.addEventListener('beforeunload',()=>{ 
+        if(autoRefreshInterval) clearInterval(autoRefreshInterval);
+        if(countdownInterval) clearInterval(countdownInterval);
+        if(autoRushTimer) clearTimeout(autoRushTimer);
+        if(window.rushInterval) clearInterval(window.rushInterval);
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>DEV 质押监控 · 15天 / 30天双周期</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding:12px; min-height:100vh; }
+        .container-fluid { max-width:1400px; margin:0 auto; padding:0; }
+        .stats-grid { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; margin-bottom:16px; }
+        @media (min-width:768px) { .stats-grid { gap:16px; } }
+        .stat-card { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:10px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); }
+        .stat-title { color:#8899bb; font-size:0.65rem; text-transform:uppercase; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .stat-value { color:#3b82f6; font-size:0.8rem; font-weight:700; line-height:1.2; word-break:break-word; }
+        @media (min-width:768px) { .stat-value { font-size:1.6rem; } }
+        .stat-sub { color:#22c55e; font-size:0.6rem; display:flex; justify-content:space-between; align-items:center; }
+        .stat-pct { color:#fbbf24; font-size:0.6rem; margin-left:auto; }
+        .table-container { background:linear-gradient(145deg,#111827,#0a0e1a); border-radius:16px; padding:12px; border:1px solid #2a3a5a; margin-top:16px; }
+        .table-responsive { overflow-x:auto; -webkit-overflow-scrolling:touch; max-height:500px; overflow-y:auto; }
+        .table { color:#e8edf5; font-size:0.75rem; width:100%; border-collapse:collapse; }
+        .table thead th { position:sticky; top:0; background:#111827; z-index:10; border-bottom:2px solid #2a3a5a; color:#8899bb; font-size:0.65rem; padding:10px 4px; text-align:center; white-space:nowrap; }
+        .table td { border-bottom:1px solid #2a3a5a; padding:8px 4px; text-align:center; vertical-align:middle; }
+        .address-cell { font-size:0.7rem; color:#60a5fa; cursor:pointer; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .amount-cell { font-size:0.7rem; color:#3b82f6; font-weight:600; }
+        .badge-duration { padding:3px 12px; border-radius:20px; font-size:0.65rem; font-weight:600; white-space:nowrap; background:linear-gradient(135deg,#8b5cf6,#7c3aed); color:white; }
+        .badge-duration.p15 { background:linear-gradient(135deg,#3b82f6,#2563eb); }
+        .badge-duration.p30 { background:linear-gradient(135deg,#8b5cf6,#7c3aed); }
+        .status-unlocked { color:#22c55e; font-weight:500; }
+        .status-locked { color:#f87171; font-weight:500; }
+        .filter-bar { display:flex; gap:10px; margin:15px 0; flex-wrap:wrap; align-items:center; background:#111827; padding:12px; border-radius:12px; border:1px solid #2a3a5a; }
+        .filter-select { background:#1a2332; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 12px; border-radius:20px; font-size:0.75rem; cursor:pointer; min-width:100px; }
+        .search-input { background:#1a2332; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 12px; border-radius:20px; font-size:0.75rem; flex:1; min-width:180px; }
+        .search-input::placeholder { color:#4a5a7a; }
+        .filter-stats { color:#8899bb; font-size:0.75rem; margin-left:auto; }
+        .clear-filter { background:#2a3a5a; border:1px solid #4a5a7a; color:#e8edf5; padding:4px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; }
+        .address-input-area { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:16px; margin-bottom:16px; transition:opacity 0.3s ease, max-height 0.3s ease, margin 0.3s ease, padding 0.3s ease; opacity:1; max-height:800px; overflow:hidden; }
+        .address-input-area.collapsed { opacity:0; max-height:0; margin:0; padding:0 16px !important; pointer-events:none; }
+        .address-textarea { background:#0a0e1a; border:1px solid #2a3a5a; color:#e8edf5; font-family:monospace; font-size:0.75rem; width:100%; min-height:100px; padding:10px; border-radius:12px; resize:vertical; }
+        .btn-query { background:linear-gradient(135deg,#3b82f6,#2563eb); border:none; padding:10px 16px; border-radius:30px; color:white; font-weight:600; font-size:0.8rem; cursor:pointer; flex:1; }
+        .btn-query:hover { opacity:0.9; }
+        .btn-incremental { background:#8b5cf6; border:1px solid #a78bfa; padding:10px 16px; border-radius:30px; color:white; font-weight:600; font-size:0.8rem; cursor:pointer; flex:1; }
+        .btn-clear { background:#2a3a5a; border:1px solid #4a5a7a; padding:10px 16px; border-radius:30px; color:#e8edf5; font-size:0.8rem; cursor:pointer; }
+        .btn-tool { background:#1a2332; border:1px solid #2a3a5a; padding:6px 14px; border-radius:20px; color:#8899bb; font-size:0.7rem; cursor:pointer; white-space:nowrap; }
+        .btn-tool:hover { background:#3b82f6; color:white; }
+        .progress-container { margin-top:16px; padding:12px; background:#111827; border-radius:30px; display:none; }
+        .progress-bar { width:100%; height:6px; background:#2a3a5a; border-radius:3px; overflow:hidden; }
+        .progress-fill { height:100%; background:linear-gradient(90deg,#3b82f6,#8b5cf6); transition:width 0.3s; }
+        .loading-text { color:#3b82f6; font-size:0.8rem; margin-top:6px; text-align:center; }
+        .header { margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #2a3a5a; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+        .header h1 { font-size:1.5rem; font-weight:700; background:linear-gradient(135deg,#3b82f6,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:4px; }
+        .contract-address { font-family:monospace; background:#111827; border:1px solid #2a3a5a; padding:4px 12px; border-radius:20px; color:#60a5fa; font-size:0.7rem; word-break:break-all; }
+        .data-tabs { display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #2a3a5a; padding-bottom:10px; flex-wrap:wrap; }
+        .data-tab { background:transparent; border:1px solid #4a5a7a; color:#8899bb; padding:6px 18px; border-radius:30px; cursor:pointer; font-size:0.85rem; transition:all 0.2s; }
+        .data-tab.active { background:linear-gradient(135deg,#3b82f6,#2563eb); border-color:#60a5fa; color:white; }
+        .data-panel { display:none; }
+        .data-panel.active { display:block; }
+        .chart-card { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:16px; margin-bottom:16px; }
+        .chart-container { position:relative; height:200px; width:100%; }
+        .toggle-btn { background:#111827; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 14px; border-radius:30px; font-size:0.8rem; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all 0.3s ease; }
+        .toggle-btn:hover { background:#3b82f6; border-color:#60a5fa; }
+        .toggle-btn .toggle-icon { display:inline-block; transition:transform 0.3s ease; font-size:12px; }
+        .toggle-btn.collapsed .toggle-icon { transform:rotate(-90deg); }
+        .btn-cloud { background:linear-gradient(135deg,#10b981,#059669); border:1px solid #34d399; padding:6px 16px; border-radius:30px; color:white; font-weight:600; font-size:0.75rem; cursor:pointer; }
+        .query-mode { padding:2px 10px; border-radius:20px; font-size:0.65rem; margin-left:8px; background:#10b981; color:white; }
+        .range-btn { background:#1a2332; border:1px solid #2a3a5a; color:#8899bb; padding:2px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; }
+        .range-btn.active { background:#3b82f6; border-color:#60a5fa; color:white; }
+        .diagnostic-box { background:#111827; border:1px solid #2a3a5a; border-radius:12px; padding:12px; margin-bottom:12px; font-size:0.75rem; }
+        .diag-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #1a2332; }
+        .diag-row:last-child { border-bottom:none; }
+        .diag-label { color:#8899bb; }
+        .diag-value { color:#e8edf5; font-family:monospace; }
+        .diag-value.ok { color:#22c55e; }
+        .diag-value.err { color:#f87171; }
+        .diag-value.warn { color:#f59e0b; }
+        .example-tag { background:#1a2332; border:1px solid #2a3a5a; color:#8899bb; padding:4px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; white-space:nowrap; display:inline-block; }
+        .example-tag:hover { background:#3b82f6; color:white; }
+        .toolbar { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; align-items:center; }
+        .file-input-wrapper { position:relative; display:inline-block; }
+        .file-input-wrapper input { position:absolute; left:-9999px; opacity:0; }
+        .file-label { background:#1a2332; border:1px solid #2a3a5a; padding:4px 12px; border-radius:20px; color:#8899bb; font-size:0.7rem; cursor:pointer; white-space:nowrap; display:inline-block; }
+        .file-label:hover { background:#3b82f6; color:white; }
+        .log-box { background:#0a0e1a; border:1px solid #2a3a5a; border-radius:8px; padding:8px 12px; margin-top:8px; max-height:150px; overflow-y:auto; font-size:0.7rem; font-family:monospace; color:#8899bb; }
+        .log-box .log-ok { color:#22c55e; }
+        .log-box .log-err { color:#f87171; }
+        .log-box .log-info { color:#60a5fa; }
+        @media (max-width:480px) { .stat-value { font-size:0.7rem; } .table { font-size:0.65rem; } }
+
+        .rank-badge { display:inline-block; width:24px; height:24px; line-height:24px; border-radius:50%; background:#1a2332; color:#8899bb; font-weight:600; font-size:0.7rem; text-align:center; }
+        .rank-1 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#0a0e1a; }
+        .rank-2 { background:linear-gradient(135deg,#9ca3af,#6b7280); color:#0a0e1a; }
+        .rank-3 { background:linear-gradient(135deg,#f59e0b,#b45309); color:#0a0e1a; }
+        .leaderboard-table .address-cell { font-weight:500; }
+        .leaderboard-table .amount-cell { font-weight:700; color:#3b82f6; }
+
+        /* ===== 可折叠卡片样式 ===== */
+        .collapsible-card .card-header {
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            transition: color 0.2s;
+        }
+        .collapsible-card .card-header:hover {
+            color: #60a5fa;
+        }
+        .collapsible-card .collapse-icon {
+            display: inline-block;
+            transition: transform 0.3s ease;
+            color: #3b82f6;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .collapsible-card.collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
+        .collapsible-card .card-body-wrapper {
+            max-height: 3000px;
+            overflow: hidden;
+            transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+            opacity: 1;
+            margin-top: 10px;
+        }
+        .collapsible-card.collapsed .card-body-wrapper {
+            max-height: 0 !important;
+            opacity: 0;
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <div class="header">
+        <div>
+            <h1>🔷 DEV 质押数据监控 <span class="query-mode">15天 / 30天 · UUSD</span></h1>
+            <div class="contract-address" id="devContractAddress">0x8aEDd13e3D4b3B03a6291C8E3Cbb2333fc54232c</div>
+            <div style="font-size:0.7rem;color:#8899bb;margin-top:4px;">
+                📌 口径：<span style="color:#60a5fa;">总质押/活跃/周期 = 仅本金</span> · <span style="color:#fbbf24;">到期类 = 本金 + 收益</span>
+            </div>
+        </div>
+        <div>
+            <button class="btn-cloud" onclick="loadCloudData()" id="refreshBtn">☁️ 加载</button>
+            <button class="btn-cloud" onclick="uploadToCloud()" id="uploadBtn" style="margin-left:6px;">⬆️ 上传</button>
+        </div>
+    </div>
+
+    <div class="diagnostic-box" id="diagnosticBox">
+        <div style="font-weight:600;margin-bottom:6px;">🔍 连接诊断</div>
+        <div class="diag-row"><span class="diag-label">合约地址</span><span class="diag-value" id="diagContract">检查中...</span></div>
+        <div class="diag-row"><span class="diag-label">UUSD地址</span><span class="diag-value" id="diagUUSD">--</span></div>
+        <div class="diag-row"><span class="diag-label">DEV地址</span><span class="diag-value" id="diagDev">--</span></div>
+        <div class="diag-row"><span class="diag-label">LP Pair</span><span class="diag-value" id="diagPair">--</span></div>
+        <div class="diag-row"><span class="diag-label">LP池UUSD</span><span class="diag-value" id="diagLPBalance">--</span></div>
+        <div class="diag-row"><span class="diag-label">订单总数(链上)</span><span class="diag-value" id="diagTotalOrders">--</span></div>
+        <div class="diag-row"><span class="diag-label">查询地址数</span><span class="diag-value" id="diagAddressCount">0</span></div>
+        <div class="diag-row"><span class="diag-label">活跃记录数</span><span class="diag-value" id="diagRecordCount">0</span></div>
+    </div>
+
+    <div class="log-box" id="queryLog" style="margin-bottom:12px;">
+        <div class="log-info">📋 查询日志将显示在这里...</div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;">
+        <button class="toggle-btn" onclick="togglePanel('config-panel', this)"><span class="toggle-icon">▼</span> 起始时间</button>
+        <button class="toggle-btn" onclick="togglePanel('address-input', this)"><span class="toggle-icon">▼</span> 查询面板</button>
+    </div>
+
+    <div class="address-input-area" id="config-panel">
+        <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+            <span style="color:#8899bb;font-size:0.85rem;">📅 每日统计起始：</span>
+            <select id="dailyStartTime" class="filter-select" onchange="updateDailyStart()">
+                <option value="8" selected>北京时间 8点 (UTC 0点)</option>
+                <option value="0">北京时间 0点 (UTC 16点)</option>
+            </select>
+            <span class="filter-select" id="timezoneDisplay" style="background:transparent;border:none;color:#60a5fa;">北京时间 8点</span>
+        </div>
+    </div>
+
+    <div class="address-input-area" id="address-input">
+        <div class="toolbar">
+            <span class="example-tag" onclick="clearAddresses()">🗑️ 清空地址</span>
+            <span class="example-tag" onclick="dedupeAddressList()">🧹 地址去重</span>
+            <span class="example-tag" onclick="loadLastQuery()">📂 上次查询</span>
+            <span class="example-tag" onclick="downloadQueryData()">⬇️ 下载数据</span>
+            <span class="file-input-wrapper"><input type="file" id="importFile" accept=".json" onchange="importQueryData(event)" /><label for="importFile" class="file-label">📂 导入数据</label></span>
+            <span class="file-input-wrapper"><input type="file" id="excelImportFile" accept=".csv,.xlsx,.xls" onchange="importAddressesFromExcel(event)" /><label for="excelImportFile" class="file-label">📊 导入Excel/CSV</label></span>
+        </div>
+        <textarea id="addressList" class="address-textarea" placeholder="每行一个钱包地址（0x开头），最多50000个"></textarea>
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:6px 0;">
+            <span id="addressCount" style="color:#8899bb;font-size:0.75rem;">0 个地址</span>
+        </div>
+        <div class="btn-group" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-query" onclick="fullQuery()" id="fullQueryBtn">全量查询</button>
+            <button class="btn-incremental" onclick="incrementalQuery()" id="incrementalBtn">增量更新</button>
+            <button class="btn-incremental" onclick="refreshLPPool()" id="refreshLPBtn">刷新LP池</button>
+            <button class="btn-clear" onclick="resetQuery()">🔄 重置</button>
+        </div>
+        <div id="progressContainer" class="progress-container" style="display:none;">
+            <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%;"></div></div>
+            <div class="loading-text" id="progressText">准备查询...</div>
+        </div>
+    </div>
+
+            <h1>🔷 DEV 质押数据监控 <span class="query-mode">15天 / 30天 · UUSD</span></h1>
+    <!-- ===== 第一排：仅本金 ===== -->
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">UUSD</div></div>
+        <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="activePct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">🟦 15天周期(本金)</div><div class="stat-value" id="staked15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p15Pct">占比 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
+    </div>
+    <!-- ===== 第二排：本金+收益 ===== -->
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期(本金+收益)</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期(本金+收益)</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期(本金+收益)</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
+        <div class="stat-title">💰 LP池余额 <span style="font-size:0.7rem;color:#60a5fa;">🔄</span></div>
+        <div class="stat-value" id="lpBalance">0.00</div>
+        <div class="stat-sub">UUSD</div></div>
+    </div>
+
+    <div class="data-tabs">
+        <span class="data-tab active" onclick="switchTab('charts')" id="tab-charts">📊 图表</span>
+        <span class="data-tab" onclick="switchTab('daily')" id="tab-daily">📅 每日统计</span>
+        <span class="data-tab" onclick="switchTab('records')" id="tab-records">📋 质押记录</span>
+    </div>
+
+    <div id="panel-charts" class="data-panel active">
+        <!-- 卡片1：每日地址趋势 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">👥 每日地址趋势 (活跃/新增)</span>
+                    <span id="totalActiveAddresses" style="color:#3b82f6;font-weight:700;font-size:0.85rem;">🟢 当前活跃: 0</span>
+                    <div>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(15, this)">15天</span>
+                        <span class="range-btn address-range-btn active" onclick="event.stopPropagation(); setAddressTrendRange(30, this)">30天</span>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(90, this)">90天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:220px;"><canvas id="addressTrendChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片2：每日趋势 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📈 每日趋势 (新增/活跃/复投/赎回)</span>
+                    <div>
+                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(30, this)">30天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(90, this)">90天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setTrendRange(120, this)">120天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container"><canvas id="trendChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片3：到期分布 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                    <div style="font-size:0.7rem;">
+                        <span style="color:#3b82f6;">■ 本金</span>
+                        <span style="color:#ef4444;margin-left:8px;">■ 收益</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:200px;"><canvas id="unlockChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片4：未来每日到期 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📊 未来每日到期本金 + 收益</span>
+                    <div>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(7, this)">7天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:220px;"><canvas id="expiryChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片5：未来30天每日到期记录（表格） -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📋 未来30天每日到期记录</span>
+                    <button class="btn-query" style="flex:0;padding:4px 16px;font-size:0.7rem;" onclick="event.stopPropagation(); exportExpiryTable()">📥 导出</button>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="table-responsive" style="max-height:600px;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>合计到期</th>
+                                <th>15天到期本金</th>
+                                <th>15天到期收益</th>
+                                <th>30天到期本金</th>
+                                <th>30天到期收益</th>
+                                <th>累计到期</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expiryTableBody"><tr><td colspan="7" class="empty-state">加载数据中...</td></tr></tbody>
+                        <tfoot id="expiryTableFooter"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 卡片6：排行榜 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">🏆 前500质押金额排行榜（本金）</span>
+                    <button class="btn-query" style="flex:0;padding:4px 16px;font-size:0.7rem;" onclick="event.stopPropagation(); exportLeaderboard()">📥 导出</button>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="table-responsive" style="max-height:600px;">
+                    <table class="table leaderboard-table" id="leaderboardTable">
+                        <thead><tr><th>#</th><th>地址</th><th>质押金额 (UUSD)</th><th>订单数</th></tr></thead>
+                        <tbody id="leaderboardBody"><tr><td colspan="4" class="empty-state">暂无数据</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="panel-daily" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <h5 style="color:#e8edf5;">📅 每日统计</h5>
+                <button class="btn-query" style="flex:0;padding:4px 16px;" onclick="exportDailyStats()">📥 导出</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>新增质押</th>
+                            <th>活跃质押</th>
+                            <th>15天周期</th>
+                            <th>30天周期</th>
+                            <th>复投</th>
+                            <th>赎回</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dailyStatsBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="panel-records" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                <h5 style="color:#e8edf5;">📋 质押记录 <span class="badge-duration" style="font-size:0.7rem;" id="resultCount">0</span></h5>
+                <button class="btn-query" style="flex:0;padding:4px 16px;" onclick="exportCSV()">📥 导出</button>
+            </div>
+            <div class="filter-bar">
+                <select id="filterType" class="filter-select" onchange="applyFilters()">
+                    <option value="all">全部</option>
+                    <option value="product0">15天</option>
+                    <option value="product1">30天</option>
+                    <option value="stake">质押中</option>
+                    <option value="reinvest">已复投</option>
+                    <option value="redeem">已赎回</option>
+                </select>
+                <input type="date" id="filterDate" class="filter-select" style="width:auto;" onchange="applyFilters()">
+                <input type="text" id="searchAddress" class="search-input" placeholder="搜索地址..." oninput="applyFilters()">
+                <span class="filter-stats" id="filterStats">显示 0/0</span>
+                <button class="clear-filter" onclick="clearFilters()">清除</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table"><thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>本金+收益</th><th>产品</th><th>质押时间</th><th>解锁时间</th><th>剩余</th><th>状态</th></tr></thead>
+                <tbody id="resultTableBody"><tr><td colspan="10" class="empty-state">请填入钱包地址后查询</td></tr></tbody>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ================================================================
+    // 配置
+    // ================================================================
+    const CONFIG = {
+        CONTRACT: "0x8aEDd13e3D4b3B03a6291C8E3Cbb2333fc54232c",
+        DEV_TOKEN: "0x950Bb8Cb6CC140b76818FABE463289EA88888888",
+        PAIR: "0xbe432d066ee1c664fc28ee7263a44edfbfb1e1ed",
+        MAX_ADDRESSES: 50000,
+        BATCH_SIZE: 10,
+        STORAGE_KEY: 'devStakeData_v22',
+    };
+
+    const DURATION_2  = 2  * 24 * 3600;
+    const DURATION_7  = 7  * 24 * 3600;
+    const DURATION_15 = 15 * 24 * 3600;
+    const DURATION_30 = 30 * 24 * 3600;
+
+    const BSC_NODES = [
+        'https://bsc-dataseed1.binance.org',
+        'https://bsc-dataseed2.binance.org',
+        'https://bsc-dataseed3.binance.org',
+        'https://bsc-dataseed4.binance.org',
+        'https://rpc.ankr.com/bsc',
+        'https://bsc.publicnode.com',
+    ];
+
+    // ================================================================
+    // 全局状态
+    // ================================================================
+    let provider, stakingContract, usdtContract, pairContract;
+    let uusdAddress = null, devAddress = null, pairAddress = CONFIG.PAIR;
+    let uusdDecimals = 18;
+    let isQuerying = false, failedAddresses = [];
+    let queryResults = [], allStakeRecords = [];
+    let filteredResults = [];
+    let dailyStartHour = 8;
+    let trendRange = 120;
+    let expiryRange = 15;
+    let addressTrendRange = 30;
+    let stats = {
+        totalStaked: 0, activeStaked: 0,
+        staked15d: 0, staked30d: 0,
+        unlock2d: 0, unlock7d: 0, unlock15d: 0,
+        lpBalance: 0, totalOrders: 0
+    };
+    let trendChart, unlockChart, expiryChart, addressTrendChart;
+
+    // ================================================================
+    // 金额工具
+    // ================================================================
+    function principalOf(r) { return r.amount || 0; }
+    function profitOf(r) { return r.profit || 0; }
+    function totalOf(r) {
+        if (!r) return 0;
+        if (r.amountWithProfit != null) return r.amountWithProfit;
+        return (r.amount || 0) + (r.profit || 0);
+    }
+
+    // ================================================================
+    // 卡片折叠/展开
+    // ================================================================
+    function toggleCard(headerElement) {
+        const card = headerElement.closest('.collapsible-card');
+        if (!card) return;
+        card.classList.toggle('collapsed');
+        // 展开时触发图表重绘
+        if (!card.classList.contains('collapsed')) {
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 420);
+        }
+    }
+
+    // ================================================================
+    // 折叠
+    // ================================================================
+    function togglePanel(id, btn) {
+        const panel = document.getElementById(id);
+        if(!panel) return;
+        const isCollapsed = panel.classList.contains('collapsed');
+        if(isCollapsed) {
+            panel.classList.remove('collapsed');
+            btn.innerHTML = '<span class="toggle-icon">▼</span> ' + (id === 'config-panel' ? '起始时间' : '查询面板');
+            btn.classList.remove('collapsed');
+        } else {
+            panel.classList.add('collapsed');
+            btn.innerHTML = '<span class="toggle-icon">▶</span> ' + (id === 'config-panel' ? '起始时间' : '查询面板');
+            btn.classList.add('collapsed');
+        }
+    }
+
+    // ================================================================
+    // 日志
+    // ================================================================
+    function addLog(msg, type = 'info') {
+        const logBox = document.getElementById('queryLog');
+        const cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : 'log-info';
+        const time = new Date().toLocaleTimeString();
+        logBox.innerHTML += `<div class="${cls}">[${time}] ${msg}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+        while(logBox.children.length > 200) logBox.removeChild(logBox.firstChild);
+    }
+
+    // ================================================================
+    // 工具函数
+    // ================================================================
+    function formatEther(wei, dec = 18) {
+        try { return parseFloat(ethers.formatUnits(wei, dec)).toFixed(2); } catch { return "0.00"; }
+    }
+    function shorten(addr) { return addr ? addr.slice(0,6)+'…'+addr.slice(-4) : ''; }
+
+    function formatTime(ts) {
+        if(!ts) return '--';
+        const d = new Date(ts * 1000 + 8 * 3600 * 1000);
+        return `${d.getUTCMonth()+1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+    }
+
+    function formatDate(ts) {
+        if(!ts) return '--';
+        const d = new Date(ts * 1000 + 8 * 3600 * 1000);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    }
+
+    function getDateStr(ts) {
+        const beijingTime = ts * 1000 + 8 * 3600 * 1000;
+        const d = new Date(beijingTime);
+        const h = d.getUTCHours();
+        if (h < dailyStartHour) {
+            d.setUTCDate(d.getUTCDate() - 1);
+        }
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    function timeRemain(sec) {
+        if(sec<=0) return '已解锁';
+        const d=Math.floor(sec/86400);
+        const h=Math.floor((sec%86400)/3600);
+        return d>0?`${d}d${h}h`:`${h}h${Math.floor((sec%3600)/60)}m`;
+    }
+    function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+
+    function getProductText(product) { return product === 0 ? '15天' : '30天'; }
+    function getStatusText(status) {
+        const map = { 0: '不存在', 1: '质押中', 2: '已赎回', 3: '已复投' };
+        return map[status] || '未知';
+    }
+
+    function dedupeAddresses(text) {
+        const rawAddrs = text.split('\n').map(l => l.trim())
+            .filter(l => l.startsWith('0x') && l.length === 42);
+        const seen = new Set();
+        const addresses = [];
+        for (const a of rawAddrs) {
+            const k = a.toLowerCase();
+            if (!seen.has(k)) { seen.add(k); addresses.push(a); }
+        }
+        return { addresses, raw: rawAddrs, removed: rawAddrs.length - addresses.length };
+    }
+
+    // ================================================================
+    // ABI
+    // ================================================================
+    const CONTRACT_ABI = [
+        "function MIN_STAKE_UUSD() view returns (uint256)",
+        "function MAX_STAKE_UUSD() view returns (uint256)",
+        "function PRODUCT_15() view returns (uint256)",
+        "function PRODUCT_30() view returns (uint256)",
+        "function DURATION_15() view returns (uint256)",
+        "function DURATION_30() view returns (uint256)",
+        "function DAILY_RATE_15_BP() view returns (uint256)",
+        "function DAILY_RATE_30_BP() view returns (uint256)",
+        "function RATE_15_BP() view returns (uint256)",
+        "function RATE_30_BP() view returns (uint256)",
+        "function uusd() view returns (address)",
+        "function dev() view returns (address)",
+        "function router() view returns (address)",
+        "function collectionWallet() view returns (address)",
+        "function bottomCollectionWallet() view returns (address)",
+        "function foundation() view returns (address)",
+        "function serverSigner() view returns (address)",
+        "function settlementReserve() view returns (address)",
+        "function funder() view returns (address)",
+        "function pendingFunder() view returns (address)",
+        "function managementRenounced() view returns (bool)",
+        "function uusdDecimals() view returns (uint8)",
+        "function minStakeAmount() view returns (uint256)",
+        "function maxStakeAmount() view returns (uint256)",
+        "function nextOrderId() view returns (uint256)",
+        "function getOrder(uint256) view returns (tuple(uint256 id, address user, uint256 principal, uint8 product, uint256 startTime, uint256 endTime, uint256 computility, uint256 profitBasis, uint256 collectionAmount, uint256 previousOrderId, uint256 nextOrderId, uint256 redeemedAt, bool settled, uint8 status))",
+        "function userOrderIds(address, uint256) view returns (uint256)",
+        "function computilityBalances(address) view returns (uint256)",
+        "function computilityBalanceOf(address) view returns (uint256)",
+    ];
+
+    const PAIR_ABI = [
+        "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+        "function token0() external view returns (address)",
+        "function token1() external view returns (address)",
+    ];
+
+    const UUSD_ABI = [
+        "function balanceOf(address) view returns (uint256)",
+        "function decimals() view returns (uint8)"
+    ];
+
+    // ================================================================
+    // 解析订单
+    // ================================================================
+    function parseOrder(raw) {
+        if (!raw) return null;
+        try {
+            return {
+                id:               Number(raw.id               ?? raw[0]  ?? 0),
+                user:             raw.user                    ?? raw[1]  ?? '0x0000000000000000000000000000000000000000',
+                principal:        raw.principal               ?? raw[2]  ?? 0n,
+                product:          Number(raw.product          ?? raw[3]  ?? 0),
+                startTime:        Number(raw.startTime        ?? raw[4]  ?? 0),
+                endTime:          Number(raw.endTime          ?? raw[5]  ?? 0),
+                computility:      raw.computility             ?? raw[6]  ?? 0n,
+                profitBasis:      raw.profitBasis             ?? raw[7]  ?? 0n,
+                collectionAmount: raw.collectionAmount        ?? raw[8]  ?? 0n,
+                previousOrderId:  Number(raw.previousOrderId  ?? raw[9]  ?? 0),
+                nextOrderId:      Number(raw.nextOrderId      ?? raw[10] ?? 0),
+                redeemedAt:       Number(raw.redeemedAt       ?? raw[11] ?? 0),
+                settled:          Boolean(raw.settled         ?? raw[12] ?? false),
+                status:           Number(raw.status           ?? raw[13] ?? 0),
+            };
+        } catch (e) { console.error('解析订单失败:', e); return null; }
+    }
+
+    // ================================================================
+    // 初始化
+    // ================================================================
+    async function init() {
+        let connected = false;
+        for (const node of BSC_NODES) {
+            try {
+                provider = new ethers.JsonRpcProvider(node);
+                await provider.getBlockNumber();
+                stakingContract = new ethers.Contract(CONFIG.CONTRACT, CONTRACT_ABI, provider);
+                addLog(`✅ 连接成功: ${node}`, 'ok');
+                connected = true;
+                break;
+            } catch(e) { console.log('节点失败:', node); }
+        }
+        if(!connected) { alert('无法连接BSC，请刷新重试'); addLog('❌ 无法连接任何BSC节点', 'err'); return; }
+
+        document.getElementById('devContractAddress').innerText = CONFIG.CONTRACT;
+        document.getElementById('diagContract').innerText = CONFIG.CONTRACT;
+        document.getElementById('diagContract').className = 'diag-value ok';
+
+        try {
+            uusdAddress = await stakingContract.uusd();
+            document.getElementById('diagUUSD').innerText = uusdAddress;
+            document.getElementById('diagUUSD').className = 'diag-value ok';
+            usdtContract = new ethers.Contract(uusdAddress, UUSD_ABI, provider);
+            try { uusdDecimals = Number(await stakingContract.uusdDecimals()); } catch {}
+        } catch(e) { document.getElementById('diagUUSD').innerText = '读取失败'; }
+
+        try {
+            devAddress = await stakingContract.dev();
+            document.getElementById('diagDev').innerText = devAddress;
+            document.getElementById('diagDev').className = 'diag-value ok';
+        } catch(e) { document.getElementById('diagDev').innerText = '读取失败'; }
+
+        try {
+            pairAddress = CONFIG.PAIR;
+            document.getElementById('diagPair').innerText = pairAddress;
+            document.getElementById('diagPair').className = 'diag-value ok';
+            pairContract = new ethers.Contract(pairAddress, PAIR_ABI, provider);
+        } catch(e) { document.getElementById('diagPair').innerText = '读取失败'; }
+
+        await fetchLPBalance();
+
+        try {
+            const nextId = await stakingContract.nextOrderId();
+            stats.totalOrders = Number(nextId) - 1;
+            document.getElementById('diagTotalOrders').innerText = stats.totalOrders;
+            document.getElementById('diagTotalOrders').className = 'diag-value ok';
+        } catch(e) {
+            document.getElementById('diagTotalOrders').innerText = '读取失败';
+            document.getElementById('diagTotalOrders').className = 'diag-value err';
+        }
+
+        document.getElementById('addressList').value = '';
+        updateAddressCount();
+
+        loadDailyStart();
+        loadFromStorage();
+
+        applyFilters();
+        updateStats();
+        updateLeaderboard();
+
+        const today = new Date();
+        document.getElementById('filterDate').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    }
+
+    // ================================================================
+    // LP池
+    // ================================================================
+    async function fetchLPBalance() {
+        if(!pairContract || !usdtContract) return 0;
+        try {
+            const reserves = await pairContract.getReserves();
+            const token0 = await pairContract.token0();
+            let uusdReserve;
+            if(token0.toLowerCase() === uusdAddress.toLowerCase()) {
+                uusdReserve = reserves[0];
+            } else {
+                uusdReserve = reserves[1];
+            }
+            let dec = uusdDecimals || 18;
+            const balance = parseFloat(ethers.formatUnits(uusdReserve, dec));
+            stats.lpBalance = balance;
+            document.getElementById('diagLPBalance').innerText = balance.toFixed(2);
+            document.getElementById('diagLPBalance').className = 'diag-value ok';
+            document.getElementById('lpBalance').innerText = balance.toFixed(2);
+            return balance;
+        } catch(e) {
+            document.getElementById('diagLPBalance').innerText = '读取失败';
+            document.getElementById('diagLPBalance').className = 'diag-value err';
+            return 0;
+        }
+    }
+
+    // ================================================================
+    // 查询单个地址
+    // ================================================================
+    async function queryAddress(address, now) {
+        const addressLower = address.toLowerCase();
+        const result = { address: addressLower, success:false, orders:[], count:0 };
+        try {
+            const ids = [];
+            let i = 0;
+            while (i < 500) {
+                try {
+                    const id = await stakingContract.userOrderIds(addressLower, i);
+                    if (id === 0n || id === undefined) break;
+                    ids.push(Number(id));
+                    i++;
+                } catch { break; }
+            }
+            result.count = ids.length;
+            if (ids.length === 0) { result.success = true; return result; }
+
+            for (const id of ids) {
+                try {
+                    const raw = await stakingContract.getOrder(id);
+                    const order = parseOrder(raw);
+                    if (!order) continue;
+
+                    const principalNum = parseFloat(ethers.formatUnits(order.principal || 0n, uusdDecimals));
+                    const profitNum    = parseFloat(ethers.formatUnits(order.profitBasis || 0n, uusdDecimals));
+                    const totalNum     = principalNum + profitNum;
+
+                    const record = {
+                        address: addressLower,
+                        amount: principalNum,
+                        profit: profitNum,
+                        amountWithProfit: totalNum,
+                        stakeTime: order.startTime || 0,
+                        unlockTime: order.endTime || 0,
+                        product: order.product,
+                        productText: getProductText(order.product),
+                        orderId: order.id,
+                        status: order.status,
+                        statusText: getStatusText(order.status),
+                        isRedeemed: order.status === 2 || order.status === 3,
+                        isActive: order.status === 1,
+                        computilityAmount: order.computility ? parseFloat(ethers.formatUnits(order.computility, uusdDecimals)) : 0,
+                        reinvestedToOrderId: order.nextOrderId || 0,
+                        previousOrderId: order.previousOrderId || 0,
+                        redeemedAt: order.redeemedAt || 0,
+                        settled: order.settled,
+                    };
+                    result.orders.push(record);
+                } catch (e) {
+                    console.warn(`订单 ${id} 解析失败`, e);
+                }
+            }
+            result.success = true;
+        } catch(e) {
+            result.error = e.message;
+            failedAddresses.push(address);
+            addLog(`❌ 查询 ${shorten(address)} 失败: ${e.message}`, 'err');
+        }
+        return result;
+    }
+
+    // ================================================================
+    // 全量查询
+    // ================================================================
+    async function fullQuery() {
+        if(isQuerying || !stakingContract) return;
+        const text = document.getElementById('addressList').value;
+        const { addresses, raw, removed } = dedupeAddresses(text);
+        if(!addresses.length) { alert('请填入有效的钱包地址'); return; }
+        if (removed > 0) addLog(`⚠️ 检测到 ${removed} 个重复地址，已自动去重`, 'info');
+
+        isQuerying = true;
+        failedAddresses = [];
+        queryResults = [];
+        allStakeRecords = [];
+
+        document.getElementById('progressContainer').style.display = 'block';
+        document.getElementById('diagAddressCount').innerText = addresses.length;
+        addLog(`🔄 开始查询 ${addresses.length} 个地址...`, 'info');
+
+        const now = Math.floor(Date.now() / 1000);
+        let processed = 0, totalActive = 0;
+
+        const qSeen = new Set();
+        const aSeen = new Set();
+
+        for(let i = 0; i < addresses.length; i += CONFIG.BATCH_SIZE) {
+            const batch = addresses.slice(i, Math.min(i + CONFIG.BATCH_SIZE, addresses.length));
+            const promises = batch.map(addr => queryAddress(addr, now));
+            const results = await Promise.all(promises);
+
+            results.forEach(r => {
+                if(r.success) {
+                    r.orders.forEach(o => {
+                        const key = (o.address || '').toLowerCase() + '_' + o.orderId;
+                        if (o.isActive && o.unlockTime > 0 && !qSeen.has(key)) {
+                            qSeen.add(key);
+                            queryResults.push(o);
+                            totalActive++;
+                        }
+                        if (!aSeen.has(key)) {
+                            aSeen.add(key);
+                            allStakeRecords.push(o);
+                        }
+                    });
+                }
+            });
+
+            processed += batch.length;
+            const progress = Math.min(100, Math.round(processed / addresses.length * 100));
+            document.getElementById('progressFill').style.width = progress + '%';
+            document.getElementById('progressText').innerHTML = `查询中 ${processed}/${addresses.length}，找到 ${totalActive} 条活跃`;
+            if(i + CONFIG.BATCH_SIZE < addresses.length) await sleep(150);
+        }
+
+        calcStatsFromRecords();
+
+        document.getElementById('diagRecordCount').innerText = queryResults.length;
+        addLog(`✅ 查询完成！活跃 ${queryResults.length} 条 / 历史 ${allStakeRecords.length} 条`, 'ok');
+
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('progressText').innerHTML = `✅ 查询完成！共 ${totalActive} 条活跃记录 (${addresses.length} 个地址)`;
+        document.getElementById('progressText').style.color = '#22c55e';
+
+        updateStats();
+        saveToStorage();
+        applyFilters();
+        updateDailyStats();
+        updateAllCharts();
+        updateLeaderboard();
+
+        setTimeout(() => {
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('progressText').style.color = '#3b82f6';
+            isQuerying = false;
+        }, 2000);
+    }
+
+    // ================================================================
+    // 增量更新
+    // ================================================================
+    async function incrementalQuery() {
+        if(isQuerying || !stakingContract) return;
+        const text = document.getElementById('addressList').value;
+        const { addresses, removed } = dedupeAddresses(text);
+        if(!addresses.length) { alert('请填入有效的钱包地址'); return; }
+        if (removed > 0) addLog(`⚠️ 检测到 ${removed} 个重复地址，已自动去重`, 'info');
+
+        isQuerying = true;
+        document.getElementById('progressContainer').style.display = 'block';
+        addLog('🔄 开始增量更新...', 'info');
+
+        const now = Math.floor(Date.now() / 1000);
+        const qSeen = new Set();
+        const aSeen = new Set();
+        queryResults.forEach(r => qSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
+        allStakeRecords.forEach(r => aSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
+
+        let newCount = 0, processed = 0;
+
+        for(let i = 0; i < addresses.length; i += CONFIG.BATCH_SIZE) {
+            const batch = addresses.slice(i, Math.min(i + CONFIG.BATCH_SIZE, addresses.length));
+            const promises = batch.map(addr => queryAddress(addr, now));
+            const results = await Promise.all(promises);
+
+            results.forEach(r => {
+                if(r.success) {
+                    r.orders.forEach(o => {
+                        const key = (o.address || '').toLowerCase() + '_' + o.orderId;
+                        if (o.isActive && o.unlockTime > 0 && !qSeen.has(key)) {
+                            qSeen.add(key);
+                            o.isNew = true;
+                            newCount++;
+                            queryResults.push(o);
+                        }
+                        if (!aSeen.has(key)) {
+                            aSeen.add(key);
+                            allStakeRecords.push(o);
+                        }
+                    });
+                }
+            });
+
+            processed += batch.length;
+            const progress = Math.min(100, Math.round(processed / addresses.length * 100));
+            document.getElementById('progressFill').style.width = progress + '%';
+            document.getElementById('progressText').innerHTML = `增量: +${newCount} 新 (${processed}/${addresses.length})`;
+            if(i + CONFIG.BATCH_SIZE < addresses.length) await sleep(150);
+        }
+
+        calcStatsFromRecords();
+        document.getElementById('diagRecordCount').innerText = queryResults.length;
+        updateStats();
+        saveToStorage();
+        applyFilters();
+        updateDailyStats();
+        updateAllCharts();
+        updateLeaderboard();
+
+        addLog(`✅ 增量完成，新增 ${newCount} 条`, 'ok');
+
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('progressText').innerHTML = `✅ 增量更新完成！新增 ${newCount} 条记录`;
+        document.getElementById('progressText').style.color = '#22c55e';
+
+        setTimeout(() => {
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('progressText').style.color = '#3b82f6';
+            isQuerying = false;
+        }, 2000);
+    }
+
+    // ================================================================
+    // 统计计算
+    // ================================================================
+    function calcStatsFromRecords() {
+        const now = Math.floor(Date.now() / 1000);
+
+        stats.totalStaked = 0;
+        stats.activeStaked = 0;
+        stats.staked15d = 0;
+        stats.staked30d = 0;
+        stats.unlock2d = 0;
+        stats.unlock7d = 0;
+        stats.unlock15d = 0;
+
+        allStakeRecords.forEach(r => {
+            stats.totalStaked += principalOf(r);
+        });
+
+        queryResults.forEach(r => {
+            if (r.status !== 1) return;
+            const p = principalOf(r);
+            stats.activeStaked += p;
+            if (r.product === 0) stats.staked15d += p;
+            else if (r.product === 1) stats.staked30d += p;
+        });
+
+        queryResults.forEach(r => {
+            if (r.status !== 1) return;
+            const amt = totalOf(r);
+            const remain = r.unlockTime - now;
+            if (remain <= DURATION_2)  stats.unlock2d  += amt;
+            if (remain <= DURATION_7)  stats.unlock7d  += amt;
+            if (remain <= DURATION_15) stats.unlock15d += amt;
+        });
+    }
+
+    // ================================================================
+    // 更新UI
+    // ================================================================
+    function updateStats() {
+        document.getElementById('totalStaked').innerText = stats.totalStaked.toFixed(2);
+        document.getElementById('activeStaked').innerText = stats.activeStaked.toFixed(2);
+        document.getElementById('staked15d').innerText = stats.staked15d.toFixed(2);
+        document.getElementById('staked30d').innerText = stats.staked30d.toFixed(2);
+        document.getElementById('unlock2d').innerText = stats.unlock2d.toFixed(2);
+        document.getElementById('unlock7d').innerText = stats.unlock7d.toFixed(2);
+        document.getElementById('unlock15d').innerText = stats.unlock15d.toFixed(2);
+        document.getElementById('lpBalance').innerText = stats.lpBalance.toFixed(2);
+        document.getElementById('resultCount').innerText = queryResults.length;
+
+        const lp = stats.lpBalance || 0;
+        const active = stats.activeStaked || 0;
+
+        document.getElementById('activePct').innerText = '占LP ' + (lp > 0 ? (active / lp * 100) : 0).toFixed(2) + '%';
+        document.getElementById('p15Pct').innerText = '占比 ' + (active > 0 ? (stats.staked15d / active * 100) : 0).toFixed(2) + '%';
+        document.getElementById('p30Pct').innerText = '占比 ' + (active > 0 ? (stats.staked30d / active * 100) : 0).toFixed(2) + '%';
+        document.getElementById('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
+        document.getElementById('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
+        document.getElementById('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
+    }
+
+    function updateAddressCount() {
+        const addrs = document.getElementById('addressList').value.split('\n').filter(l => l.trim().startsWith('0x') && l.length === 42);
+        const uniq = new Set(addrs.map(a => a.toLowerCase()));
+        if (addrs.length !== uniq.size) {
+            document.getElementById('addressCount').innerText = `${addrs.length} 个地址 (去重后 ${uniq.size})`;
+        } else {
+            document.getElementById('addressCount').innerText = addrs.length + ' 个地址';
+        }
+    }
+
+    function clearAddresses() {
+        document.getElementById('addressList').value = '';
+        updateAddressCount();
+        addLog('🗑️ 已清空地址', 'info');
+    }
+
+    function dedupeAddressList() {
+        const ta = document.getElementById('addressList');
+        const { addresses, raw, removed } = dedupeAddresses(ta.value);
+        ta.value = addresses.join('\n');
+        updateAddressCount();
+        if (removed > 0) {
+            addLog(`🧹 地址去重完成，移除 ${removed} 个重复`, 'ok');
+            alert(`✅ 已去重：移除 ${removed} 个重复地址\n保留 ${addresses.length} 个唯一地址`);
+        } else {
+            addLog('🧹 地址列表无重复', 'info');
+            alert('✅ 地址列表无重复');
+        }
+    }
+
+    // ================================================================
+    // 导入导出
+    // ================================================================
+    function downloadQueryData() {
+        if(queryResults.length === 0 && allStakeRecords.length === 0) { alert('没有数据可下载'); return; }
+        const data = {
+            version: '5.0',
+            exportTime: Date.now(),
+            stats: stats,
+            queryResults: queryResults,
+            allStakeRecords: allStakeRecords,
+            dailyStartHour: dailyStartHour
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `dev_data_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        addLog('⬇️ 数据已下载', 'ok');
+    }
+
+    function importQueryData(event) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if(!data.queryResults && !data.allStakeRecords) {
+                    alert('❌ 无效的数据文件格式');
+                    return;
+                }
+                const qSeen = new Set();
+                const aSeen = new Set();
+                queryResults = [];
+                allStakeRecords = [];
+
+                const fixRec = r => {
+                    r.address = (r.address||'').toLowerCase();
+                    if (r.amountWithProfit == null) r.amountWithProfit = (r.amount || 0) + (r.profit || 0);
+                    return r;
+                };
+
+                (data.queryResults || []).forEach(r => {
+                    fixRec(r);
+                    const key = r.address + '_' + r.orderId;
+                    if (!qSeen.has(key)) { qSeen.add(key); queryResults.push(r); }
+                });
+                (data.allStakeRecords || []).forEach(r => {
+                    fixRec(r);
+                    const key = r.address + '_' + r.orderId;
+                    if (!aSeen.has(key)) { aSeen.add(key); allStakeRecords.push(r); }
+                });
+
+                if(data.stats) stats = Object.assign(stats, data.stats);
+
+                if(data.dailyStartHour !== undefined) {
+                    dailyStartHour = data.dailyStartHour;
+                    document.getElementById('dailyStartTime').value = dailyStartHour;
+                    updateDailyStart();
+                }
+
+                calcStatsFromRecords();
+                document.getElementById('diagRecordCount').innerText = queryResults.length;
+                document.getElementById('diagAddressCount').innerText = allStakeRecords.length > 0 ? '导入数据' : '0';
+
+                applyFilters();
+                updateStats();
+                updateDailyStats();
+                updateAllCharts();
+                updateLeaderboard();
+                saveToStorage();
+
+                addLog(`✅ 导入成功！${queryResults.length} 条活跃，${allStakeRecords.length} 条历史`, 'ok');
+                alert(`✅ 数据导入成功！\n活跃记录: ${queryResults.length} 条\n历史记录: ${allStakeRecords.length} 条`);
+            } catch(err) {
+                alert('❌ 导入失败：文件格式错误\n' + err.message);
+                addLog('❌ 导入失败: ' + err.message, 'err');
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    function importAddressesFromExcel(event) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                let addresses = [];
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                if(fileExt === 'csv' || fileExt === 'txt') {
+                    const text = e.target.result;
+                    const lines = text.split(/\r?\n/);
+                    for(const line of lines) {
+                        const parts = line.split(',');
+                        for(const part of parts) {
+                            const cell = part.trim().replace(/^["']|["']$/g, '');
+                            if(cell.startsWith('0x') && cell.length >= 40 && cell.length <= 42) { addresses.push(cell); }
+                        }
+                    }
+                } else if(fileExt === 'xlsx' || fileExt === 'xls') {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                    for(const row of rows) {
+                        for(const cell of row) {
+                            const val = String(cell).trim();
+                            if(val.startsWith('0x') && val.length >= 40 && val.length <= 42) { addresses.push(val); }
+                        }
+                    }
+                } else { alert('不支持的文件格式'); return; }
+                if(addresses.length === 0) { alert('未在文件中找到有效的钱包地址'); return; }
+
+                const unique = [...new Set(addresses)];
+                const current = document.getElementById('addressList').value.split('\n').filter(l => l.trim().startsWith('0x') && l.length === 42);
+
+                const seen = new Set();
+                const merged = [];
+                [...current, ...unique].forEach(a => {
+                    const k = a.toLowerCase();
+                    if (!seen.has(k)) { seen.add(k); merged.push(a); }
+                });
+
+                document.getElementById('addressList').value = merged.join('\n');
+                updateAddressCount();
+                addLog(`📊 导入 ${unique.length} 个新地址，合并去重后共 ${merged.length} 个`, 'ok');
+                alert(`✅ 成功导入 ${unique.length} 个新地址\n合并去重后共 ${merged.length} 个唯一地址`);
+            } catch(err) { alert('❌ 文件解析失败'); addLog('❌ Excel解析失败', 'err'); }
+        };
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        if(fileExt === 'csv' || fileExt === 'txt') { reader.readAsText(file, 'utf-8'); } else { reader.readAsArrayBuffer(file); }
+        event.target.value = '';
+    }
+
+    // ================================================================
+    // 排行榜（本金）
+    // ================================================================
+    function updateLeaderboard() {
+        const tbody = document.getElementById('leaderboardBody');
+        if (!queryResults || queryResults.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">暂无数据</td></tr>';
+            return;
+        }
+        const addrMap = new Map();
+        queryResults.forEach(r => {
+            if (!r.address) return;
+            const key = r.address.toLowerCase();
+            const existing = addrMap.get(key) || { total: 0, count: 0 };
+            existing.total += principalOf(r);
+            existing.count += 1;
+            addrMap.set(key, existing);
+        });
+        const sorted = Array.from(addrMap.entries())
+            .map(([address, data]) => ({ address, total: data.total, count: data.count }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 500);
+
+        if (sorted.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-state">暂无数据</td></tr>';
+            return;
+        }
+        let html = '';
+        sorted.forEach((item, index) => {
+            const rank = index + 1;
+            let rankClass = 'rank-badge';
+            if (rank === 1) rankClass += ' rank-1';
+            else if (rank === 2) rankClass += ' rank-2';
+            else if (rank === 3) rankClass += ' rank-3';
+            html += `<tr>
+                <td><span class="${rankClass}">${rank}</span></td>
+                <td class="address-cell" onclick="copyAddress('${item.address}')" title="${item.address}">${shorten(item.address)}</td>
+                <td class="amount-cell">${item.total.toFixed(2)}</td>
+                <td>${item.count}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
+
+    function exportLeaderboard() {
+        if (!queryResults || queryResults.length === 0) { alert('没有数据可导出'); return; }
+        const addrMap = new Map();
+        queryResults.forEach(r => {
+            if (!r.address) return;
+            const key = r.address.toLowerCase();
+            const existing = addrMap.get(key) || { total: 0, count: 0 };
+            existing.total += principalOf(r);
+            existing.count += 1;
+            addrMap.set(key, existing);
+        });
+        const sorted = Array.from(addrMap.entries())
+            .map(([address, data]) => ({ address, total: data.total, count: data.count }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 500);
+        const headers = ['排名', '地址', '质押本金 (UUSD)', '订单数'];
+        const rows = sorted.map((item, i) => [i+1, item.address, item.total.toFixed(2), item.count]);
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `leaderboard_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        addLog('🏆 排行榜已导出', 'ok');
+    }
+
+    // ================================================================
+    // 每日地址趋势图
+    // ================================================================
+    function updateAddressTrendChart() {
+        const ctx = document.getElementById('addressTrendChart').getContext('2d');
+        if (addressTrendChart) addressTrendChart.destroy();
+
+        const addrDailyStatus = new Map();
+        allStakeRecords.forEach(r => {
+            if (r.stakeTime <= 0) return;
+            const addrKey = (r.address||'').toLowerCase();
+            const ds = getDateStr(r.stakeTime);
+            if (!addrDailyStatus.has(addrKey)) addrDailyStatus.set(addrKey, new Map());
+            const dailyMap = addrDailyStatus.get(addrKey);
+            if (!dailyMap.has(ds)) dailyMap.set(ds, { hasUnredeemed: false });
+            const status = dailyMap.get(ds);
+            if (r.status === 1) status.hasUnredeemed = true;
+        });
+
+        const allDates = new Set();
+        allStakeRecords.forEach(r => {
+            if (r.stakeTime <= 0) return;
+            allDates.add(getDateStr(r.stakeTime));
+        });
+        const sortedDates = Array.from(allDates).sort();
+
+        const addrFirstStake = new Map();
+        allStakeRecords.forEach(r => {
+            if (r.stakeTime <= 0) return;
+            const addrKey = (r.address||'').toLowerCase();
+            if (!addrFirstStake.has(addrKey)) addrFirstStake.set(addrKey, getDateStr(r.stakeTime));
+        });
+
+        const dailyActive = new Map(), dailyNew = new Map(), dailyExit = new Map();
+        let prevActiveAddrs = new Set();
+
+        sortedDates.forEach((ds, index) => {
+            const todayActive = new Set();
+            addrDailyStatus.forEach((dailyMap, address) => {
+                if (dailyMap.has(ds) && dailyMap.get(ds).hasUnredeemed) todayActive.add(address);
+            });
+            const todayNew = new Set();
+            addrFirstStake.forEach((firstDate, address) => {
+                if (firstDate === ds) todayNew.add(address);
+            });
+            const todayExit = new Set();
+            if (index > 0) {
+                prevActiveAddrs.forEach(address => {
+                    if (!todayActive.has(address)) todayExit.add(address);
+                });
+            }
+            dailyActive.set(ds, todayActive);
+            dailyNew.set(ds, todayNew);
+            dailyExit.set(ds, todayExit);
+            prevActiveAddrs = new Set(todayActive);
+        });
+
+        const currentActiveAddresses = new Set();
+        allStakeRecords.forEach(r => {
+            if (r.status === 1) currentActiveAddresses.add((r.address||'').toLowerCase());
+        });
+        document.getElementById('totalActiveAddresses').innerHTML = `🟢 当前活跃: ${currentActiveAddresses.size}`;
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - addressTrendRange);
+        cutoffDate.setHours(0, 0, 0, 0);
+
+        const chartLabels = [], activeCounts = [], newCounts = [], exitCounts = [];
+        const startDate = new Date(cutoffDate);
+        const endDate = new Date();
+        endDate.setHours(23, 59, 59, 999);
+
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const ds = formatDate(d.getTime() / 1000);
+            chartLabels.push(`${d.getMonth()+1}/${d.getDate()}`);
+            activeCounts.push((dailyActive.get(ds) || new Set()).size);
+            newCounts.push((dailyNew.get(ds) || new Set()).size);
+            exitCounts.push((dailyExit.get(ds) || new Set()).size);
+        }
+
+        if (chartLabels.length === 0) {
+            addressTrendChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: ['无数据'], datasets: [] },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+            return;
+        }
+
+        addressTrendChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: '活跃地址', data: activeCounts, backgroundColor: 'rgba(59, 130, 246, 0.5)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3, order: 2, yAxisID: 'y' },
+                    { label: '新增地址', data: newCounts, type: 'line', borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1, yAxisID: 'y' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb', stepSize: 1 } },
+                    x: { grid: { display: false }, ticks: { color: '#8899bb', maxRotation: 45, font: { size: 9 } } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 }, boxWidth: 14, padding: 10 } },
+                    tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.raw + ' 个地址' } }
+                }
+            }
+        });
+    }
+
+    function setAddressTrendRange(days, btn) {
+        addressTrendRange = days;
+        document.querySelectorAll('.address-range-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        updateAddressTrendChart();
+        addLog(`👥 地址趋势图切换至 ${days}天`, 'info');
+    }
+
+    // ================================================================
+    // 每日趋势图
+    // ================================================================
+    function updateTrendChart() {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        if(trendChart) trendChart.destroy();
+
+        const dailyNewMap = new Map(), dailyActiveMap = new Map();
+        const dailyReinvestMap = new Map(), dailyRedeemMap = new Map();
+
+        allStakeRecords.forEach(r => {
+            if(r.stakeTime <= 0) return;
+            const ds = getDateStr(r.stakeTime);
+            const amt = principalOf(r);
+
+            if(!dailyNewMap.has(ds)) dailyNewMap.set(ds, 0);
+            dailyNewMap.set(ds, dailyNewMap.get(ds) + amt);
+            if(r.status === 1 && r.unlockTime > 0) {
+                if(!dailyActiveMap.has(ds)) dailyActiveMap.set(ds, 0);
+                dailyActiveMap.set(ds, dailyActiveMap.get(ds) + amt);
+            }
+            if(r.status === 3) {
+                if(!dailyReinvestMap.has(ds)) dailyReinvestMap.set(ds, 0);
+                dailyReinvestMap.set(ds, dailyReinvestMap.get(ds) + amt);
+            }
+            if(r.status === 2) {
+                if(!dailyRedeemMap.has(ds)) dailyRedeemMap.set(ds, 0);
+                dailyRedeemMap.set(ds, dailyRedeemMap.get(ds) + amt);
+            }
+        });
+
+        const dates = Array.from(dailyNewMap.keys()).sort().slice(-trendRange);
+        if(!dates.length) return;
+
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [
+                    { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
+                    { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
+                    { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
+                    { label: '赎回', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { ticks: { color: '#8899bb', maxRotation: 30 } }
+                },
+                plugins: { legend: { labels: { color: '#e8edf5', font: { size: 10 } } } }
+            }
+        });
+    }
+
+    // ================================================================
+    // 到期分布图（堆叠：本金 + 收益）
+    // ================================================================
+    function updateUnlockChart() {
+        const ctx = document.getElementById('unlockChart').getContext('2d');
+        if(unlockChart) unlockChart.destroy();
+        const now = Math.floor(Date.now() / 1000);
+
+        const buckets = [
+            { label: '已到期',    test: r => r <= 0 },
+            { label: '0-3天',     test: r => r > 0 && r <= 259200 },
+            { label: '3-6天',     test: r => r > 259200 && r <= 518400 },
+            { label: '6-9天',     test: r => r > 518400 && r <= 777600 },
+            { label: '9-12天',    test: r => r > 777600 && r <= 1036800 },
+            { label: '12-15天',   test: r => r > 1036800 && r <= 1296000 },
+            { label: '15-20天',   test: r => r > 1296000 && r <= 1728000 },
+            { label: '20-25天',   test: r => r > 1728000 && r <= 2160000 },
+            { label: '25-30天',   test: r => r > 2160000 && r <= 2592000 }
+        ];
+        const labels = buckets.map(b => b.label);
+        const principalArr = new Array(buckets.length).fill(0);
+        const profitArr = new Array(buckets.length).fill(0);
+
+        queryResults.forEach(r => {
+            if(r.unlockTime <= 0) return;
+            const remain = r.unlockTime - now;
+            const idx = buckets.findIndex(b => b.test(remain));
+            if (idx >= 0) {
+                principalArr[idx] += principalOf(r);
+                profitArr[idx] += profitOf(r);
+            }
+        });
+
+        unlockChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '本金', data: principalArr, backgroundColor: '#3b82f6', borderColor: '#2563eb', borderWidth: 1, stack: 'stack1' },
+                    { label: '收益', data: profitArr, backgroundColor: '#ef4444', borderColor: '#dc2626', borderWidth: 1, stack: 'stack1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { beginAtZero: true, stacked: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { stacked: true, ticks: { color: '#8899bb', font: { size: 9 } } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                            footer: items => {
+                                if (!items.length) return '';
+                                const sum = items.reduce((s, i) => s + i.raw, 0);
+                                return '合计: ' + sum.toFixed(2) + ' UUSD';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ================================================================
+    // 未来每日到期柱状图（堆叠：本金 + 收益）
+    // ================================================================
+    function updateExpiryChart() {
+        const ctx = document.getElementById('expiryChart').getContext('2d');
+        if(expiryChart) expiryChart.destroy();
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const dailyP15 = new Map(), dailyY15 = new Map();
+        const dailyP30 = new Map(), dailyY30 = new Map();
+        queryResults.forEach(r => {
+            if(r.status !== 1 || r.unlockTime <= 0) return;
+            const ds = formatDate(r.unlockTime);
+            if (r.product === 0) {
+                dailyP15.set(ds, (dailyP15.get(ds) || 0) + principalOf(r));
+                dailyY15.set(ds, (dailyY15.get(ds) || 0) + profitOf(r));
+            } else {
+                dailyP30.set(ds, (dailyP30.get(ds) || 0) + principalOf(r));
+                dailyY30.set(ds, (dailyY30.get(ds) || 0) + profitOf(r));
+            }
+        });
+
+        const labels = [], p15Arr = [], y15Arr = [], p30Arr = [], y30Arr = [], totalArr = [];
+        for(let i = 0; i < 30; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() + i);
+            const ds = formatDate(date.getTime()/1000);
+            const display = `${date.getMonth()+1}/${date.getDate()}`;
+            labels.push(display);
+
+            const p15 = dailyP15.get(ds) || 0;
+            const y15 = dailyY15.get(ds) || 0;
+            const p30 = dailyP30.get(ds) || 0;
+            const y30 = dailyY30.get(ds) || 0;
+
+            p15Arr.push(p15);
+            y15Arr.push(y15);
+            p30Arr.push(p30);
+            y30Arr.push(y30);
+            totalArr.push(p15 + y15 + p30 + y30);
+        }
+
+        const tbody = document.getElementById('expiryTableBody');
+        let html = '';
+        let cumSum = 0;
+        for(let i = 0; i < 30; i++) {
+            const total = totalArr[i];
+            cumSum += total;
+            html += `<tr>
+                <td>${labels[i]}</td>
+                <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${total.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#60a5fa;">${p15Arr[i].toFixed(2)}</td>
+                <td class="amount-cell" style="color:#ef4444;">${y15Arr[i].toFixed(2)}</td>
+                <td class="amount-cell" style="color:#a78bfa;">${p30Arr[i].toFixed(2)}</td>
+                <td class="amount-cell" style="color:#ef4444;">${y30Arr[i].toFixed(2)}</td>
+                <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${cumSum.toFixed(2)}</td>
+            </tr>`;
+        }
+        tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+
+        const tP15 = p15Arr.reduce((a,b)=>a+b,0);
+        const tY15 = y15Arr.reduce((a,b)=>a+b,0);
+        const tP30 = p30Arr.reduce((a,b)=>a+b,0);
+        const tY30 = y30Arr.reduce((a,b)=>a+b,0);
+        const tTotal = totalArr.reduce((a,b)=>a+b,0);
+        document.getElementById('expiryTableFooter').innerHTML = `
+            <tr>
+                <td><strong>合计</strong></td>
+                <td><strong style="color:#fbbf24;">${tTotal.toFixed(2)}</strong></td>
+                <td><strong style="color:#60a5fa;">${tP15.toFixed(2)}</strong></td>
+                <td><strong style="color:#ef4444;">${tY15.toFixed(2)}</strong></td>
+                <td><strong style="color:#a78bfa;">${tP30.toFixed(2)}</strong></td>
+                <td><strong style="color:#ef4444;">${tY30.toFixed(2)}</strong></td>
+                <td><strong style="color:#fbbf24;">${tTotal.toFixed(2)}</strong></td>
+            </tr>
+        `;
+
+        const chartLabels = labels.slice(0, expiryRange);
+        const chartP15 = p15Arr.slice(0, expiryRange);
+        const chartY15 = y15Arr.slice(0, expiryRange);
+        const chartP30 = p30Arr.slice(0, expiryRange);
+        const chartY30 = y30Arr.slice(0, expiryRange);
+
+        expiryChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: '15天本金', data: chartP15, backgroundColor: '#3b82f6', stack: 'stack15' },
+                    { label: '15天收益', data: chartY15, backgroundColor: '#ef4444', stack: 'stack15' },
+                    { label: '30天本金', data: chartP30, backgroundColor: '#8b5cf6', stack: 'stack30' },
+                    { label: '30天收益', data: chartY30, backgroundColor: '#f87171', stack: 'stack30' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { beginAtZero: true, stacked: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { stacked: true, ticks: { color: '#8899bb', maxRotation: 30 } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                            footer: items => {
+                                if (!items.length) return '';
+                                const sum = items.reduce((s, i) => s + i.raw, 0);
+                                return '当日合计: ' + sum.toFixed(2) + ' UUSD';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function exportExpiryTable() {
+        if(!queryResults.length) { alert('没有数据可导出'); return; }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const dailyP15 = new Map(), dailyY15 = new Map();
+        const dailyP30 = new Map(), dailyY30 = new Map();
+        queryResults.forEach(r => {
+            if(r.status !== 1 || r.unlockTime <= 0) return;
+            const ds = formatDate(r.unlockTime);
+            if (r.product === 0) {
+                dailyP15.set(ds, (dailyP15.get(ds) || 0) + principalOf(r));
+                dailyY15.set(ds, (dailyY15.get(ds) || 0) + profitOf(r));
+            } else {
+                dailyP30.set(ds, (dailyP30.get(ds) || 0) + principalOf(r));
+                dailyY30.set(ds, (dailyY30.get(ds) || 0) + profitOf(r));
+            }
+        });
+
+        const rows = [];
+        let cumSum = 0;
+        for(let i = 0; i < 30; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() + i);
+            const ds = formatDate(date.getTime()/1000);
+            const display = `${date.getMonth()+1}/${date.getDate()}`;
+
+            const p15 = dailyP15.get(ds) || 0;
+            const y15 = dailyY15.get(ds) || 0;
+            const p30 = dailyP30.get(ds) || 0;
+            const y30 = dailyY30.get(ds) || 0;
+            const total = p15 + y15 + p30 + y30;
+            cumSum += total;
+
+            rows.push([
+                display,
+                total.toFixed(2),
+                p15.toFixed(2), y15.toFixed(2),
+                p30.toFixed(2), y30.toFixed(2),
+                cumSum.toFixed(2)
+            ]);
+        }
+
+        const headers = ['日期', '合计到期', '15天到期本金', '15天到期收益', '30天到期本金', '30天到期收益', '累计到期'];
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `到期明细_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        addLog('📥 到期明细已导出', 'ok');
+    }
+
+    // ================================================================
+    // 筛选
+    // ================================================================
+    function applyFilters() {
+        const type = document.getElementById('filterType').value;
+        const date = document.getElementById('filterDate').value;
+        const search = document.getElementById('searchAddress').value.toLowerCase().trim();
+
+        let dateStart = null, dateEnd = null;
+        if (date) {
+            const d = new Date(date + 'T00:00:00');
+            dateStart = d.getTime() / 1000;
+            dateEnd = dateStart + 86400;
+        }
+
+        filteredResults = queryResults.filter(r => {
+            if (type === 'product0' && r.product !== 0) return false;
+            if (type === 'product1' && r.product !== 1) return false;
+            if (type === 'stake' && r.status !== 1) return false;
+            if (type === 'reinvest' && r.status !== 3) return false;
+            if (type === 'redeem' && r.status !== 2) return false;
+            if (dateStart && (r.stakeTime < dateStart || r.stakeTime >= dateEnd)) return false;
+            if (search && !r.address.toLowerCase().includes(search)) return false;
+            return true;
+        });
+
+        renderTable();
+        document.getElementById('filterStats').innerText = `显示 ${filteredResults.length}/${queryResults.length}`;
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('resultTableBody');
+        if(!filteredResults.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty-state">无匹配记录</td></tr>'; return; }
+        const now = Math.floor(Date.now() / 1000);
+
+        const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
+
+        tbody.innerHTML = sorted.map((r, i) => {
+            const status = r.unlockTime <= now ? '可赎回' : '锁仓';
+            const cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
+            const remain = r.unlockTime - now;
+            const productCls = r.product === 0 ? 'p15' : 'p30';
+            return `<tr>
+                <td>${i+1}</td>
+                <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+                <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+                <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+                <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+                <td><span class="badge-duration ${productCls}">${r.productText || '--'}</span></td>
+                <td>${formatTime(r.stakeTime)}</td>
+                <td>${formatTime(r.unlockTime)}</td>
+                <td class="${cls}">${timeRemain(remain)}</td>
+                <td class="${cls}">${status}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function clearFilters() {
+        document.getElementById('filterType').value = 'all';
+        document.getElementById('filterDate').value = '';
+        document.getElementById('searchAddress').value = '';
+        applyFilters();
+    }
+
+    function copyAddress(addr) { navigator.clipboard.writeText(addr); alert('✅ 地址已复制: ' + addr); }
+
+    // ================================================================
+    // 存储
+    // ================================================================
+    function saveToStorage() {
+        try {
+            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify({
+                queryResults, allStakeRecords, stats, dailyStartHour, timestamp: Date.now()
+            }));
+        } catch(e) {}
+    }
+
+    function loadFromStorage() {
+        try {
+            const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+            if(!raw) return false;
+            const data = JSON.parse(raw);
+            if(data.queryResults) {
+                queryResults = data.queryResults.map(r => {
+                    if (r.amountWithProfit == null) r.amountWithProfit = (r.amount || 0) + (r.profit || 0);
+                    r.address = (r.address||'').toLowerCase();
+                    return r;
+                });
+            }
+            if(data.allStakeRecords) {
+                allStakeRecords = data.allStakeRecords.map(r => {
+                    if (r.amountWithProfit == null) r.amountWithProfit = (r.amount || 0) + (r.profit || 0);
+                    r.address = (r.address||'').toLowerCase();
+                    return r;
+                });
+            }
+            if(data.stats) stats = Object.assign(stats, data.stats);
+            if(data.dailyStartHour !== undefined) {
+                dailyStartHour = data.dailyStartHour;
+                document.getElementById('dailyStartTime').value = dailyStartHour;
+                const tzMap = { 0: '北京时间 0点 (UTC 16点)', 8: '北京时间 8点 (UTC 0点)' };
+                document.getElementById('timezoneDisplay').innerText = tzMap[dailyStartHour] || `UTC+${dailyStartHour}`;
+            }
+            calcStatsFromRecords();
+            document.getElementById('diagRecordCount').innerText = queryResults.length;
+            addLog(`📂 已加载缓存数据: ${queryResults.length} 条活跃记录`, 'ok');
+            return true;
+        } catch(e) { return false; }
+    }
+
+    function loadLastQuery() {
+        if(loadFromStorage()) {
+            applyFilters(); updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard();
+            alert(`✅ 已加载上次查询数据\n活跃记录: ${queryResults.length} 条\n历史记录: ${allStakeRecords.length} 条`);
+        } else { alert('❌ 没有找到上次查询的数据'); }
+    }
+
+    function resetQuery() {
+        if(confirm('确定重置所有数据吗？')) {
+            queryResults = []; allStakeRecords = [];
+            stats = {
+                totalStaked: 0, activeStaked: 0,
+                staked15d: 0, staked30d: 0,
+                unlock2d: 0, unlock7d: 0, unlock15d: 0,
+                lpBalance: stats.lpBalance || 0, totalOrders: stats.totalOrders || 0
+            };
+            updateStats(); applyFilters(); updateDailyStats(); updateAllCharts(); updateLeaderboard(); saveToStorage();
+            addLog('🔄 已重置所有数据', 'info');
+            alert('✅ 已重置');
+        }
+    }
+
+    async function refreshLPPool() {
+    addLog('🔄 正在刷新LP池余额...', 'info');
+    await fetchLPBalance();
+    updateStats();
+    addLog('💰 LP池余额已刷新: ' + stats.lpBalance.toFixed(2) + ' UUSD', 'ok');
+    alert('✅ LP池余额已刷新: ' + stats.lpBalance.toFixed(2) + ' UUSD'); }
+
+    // ================================================================
+    // 导出
+    // ================================================================
+    function exportCSV() {
+        if(!queryResults.length) { alert('没有数据可导出'); return; }
+        const headers = ['序号', '地址', '本金', '收益', '本金+收益', '产品', '质押时间', '解锁时间', '剩余', '状态'];
+        const rows = queryResults.map((r, i) => [
+            i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
+            r.productText || '--', formatTime(r.stakeTime), formatTime(r.unlockTime),
+            timeRemain(r.unlockTime - Math.floor(Date.now()/1000)),
+            r.unlockTime <= Math.floor(Date.now()/1000) ? '可赎回' : '锁仓'
+        ]);
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `dev_records_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        addLog('📥 CSV已导出', 'ok');
+    }
+
+    function exportDailyStats() {
+        const dailyMap = new Map();
+        allStakeRecords.forEach(r => {
+            if(r.stakeTime <= 0) return;
+            const ds = getDateStr(r.stakeTime);
+            if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
+            const d = dailyMap.get(ds);
+            const p = principalOf(r);
+            d.stake += p;
+            if(r.status === 1 && r.unlockTime > 0) d.active += p;
+            if(r.product === 0) d.p15 += p;
+            if(r.product === 1) d.p30 += p;
+            if(r.status === 3) d.reinvest += p;
+            if(r.status === 2) d.redeem += p;
+        });
+        const sorted = Array.from(dailyMap.keys()).sort().reverse();
+        const headers = ['日期', '新增质押', '活跃质押', '15天周期', '30天周期', '复投', '赎回'];
+        const rows = sorted.map(d => {
+            const v = dailyMap.get(d);
+            return [d, v.stake.toFixed(2), v.active.toFixed(2), v.p15.toFixed(2), v.p30.toFixed(2), v.reinvest.toFixed(2), v.redeem.toFixed(2)];
+        });
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `dev_daily_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        addLog('📥 每日统计已导出', 'ok');
+    }
+
+    // ================================================================
+    // 其他
+    // ================================================================
+    function switchTab(tab) {
+        ['charts', 'daily', 'records'].forEach(t => {
+            document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+            document.getElementById('panel-' + t).classList.toggle('active', t === tab);
+        });
+        if(tab === 'charts') {
+            setTimeout(() => { updateAllCharts(); updateLeaderboard(); }, 300);
+        }
+    }
+
+    function setTrendRange(d, btn) {
+        trendRange = d;
+        // 只针对每日趋势卡片里的按钮切换 active
+        const card = btn.closest('.chart-card');
+        if (card) {
+            card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+        updateTrendChart();
+    }
+    function setExpiryRange(d, btn) {
+        expiryRange = d;
+        const card = btn.closest('.chart-card');
+        if (card) {
+            card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+        updateExpiryChart();
+    }
+
+    function updateDailyStart() {
+        dailyStartHour = parseInt(document.getElementById('dailyStartTime').value);
+        const tzMap = { 0: '北京时间 0点 (UTC 16点)', 8: '北京时间 8点 (UTC 0点)' };
+        document.getElementById('timezoneDisplay').innerText = tzMap[dailyStartHour] || `UTC+${dailyStartHour}`;
+        localStorage.setItem('dailyStartHour', dailyStartHour);
+        if (allStakeRecords.length > 0 || queryResults.length > 0) {
+            calcStatsFromRecords();
+            updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard();
+            saveToStorage();
+            addLog(`📅 起始时间已切换至 ${tzMap[dailyStartHour] || `UTC+${dailyStartHour}`}`, 'ok');
+        }
+    }
+
+    function loadDailyStart() {
+        const v = localStorage.getItem('dailyStartHour');
+        const tzMap = { 0: '北京时间 0点 (UTC 16点)', 8: '北京时间 8点 (UTC 0点)' };
+        dailyStartHour = (v !== null) ? parseInt(v) : 8;
+        document.getElementById('dailyStartTime').value = dailyStartHour;
+        document.getElementById('timezoneDisplay').innerText = tzMap[dailyStartHour] || `UTC+${dailyStartHour}`;
+        if (allStakeRecords.length > 0 || queryResults.length > 0) {
+            calcStatsFromRecords();
+            updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard();
+        }
+    }
+
+    // ================================================================
+    // 每日统计（本金口径）
+    // ================================================================
+    function updateDailyStats() {
+        const dailyMap = new Map();
+        allStakeRecords.forEach(r => {
+            if(r.stakeTime <= 0) return;
+            const ds = getDateStr(r.stakeTime);
+            if(!dailyMap.has(ds)) dailyMap.set(ds, {
+                stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0
+            });
+            const d = dailyMap.get(ds);
+            const p = principalOf(r);
+            d.stake += p;
+            if(r.status === 1 && r.unlockTime > 0) d.active += p;
+            if(r.product === 0) d.p15 += p;
+            if(r.product === 1) d.p30 += p;
+            if(r.status === 3) d.reinvest += p;
+            if(r.status === 2) d.redeem += p;
+        });
+
+        const sorted = Array.from(dailyMap.keys()).sort().reverse().slice(0, 30);
+        const tbody = document.getElementById('dailyStatsBody');
+        if(!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
+
+        tbody.innerHTML = sorted.map(d => {
+            const v = dailyMap.get(d);
+            return `<tr>
+                <td>${d}</td>
+                <td class="amount-cell">${v.stake.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#22c55e;">${v.active.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#60a5fa;">${v.p15.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#a78bfa;">${v.p30.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#8b5cf6;">${v.reinvest.toFixed(2)}</td>
+                <td class="amount-cell" style="color:#f59e0b;">${v.redeem.toFixed(2)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function updateAllCharts() {
+        updateTrendChart();
+        updateUnlockChart();
+        updateExpiryChart();
+        updateAddressTrendChart();
+    }
+
+    async function loadCloudData() { addLog('☁️ 云端加载模拟', 'info'); alert('☁️ 云端加载模拟'); }
+    async function uploadToCloud() { addLog('⬆️ 云端上传模拟', 'info'); alert('⬆️ 云端上传模拟'); }
+
+    // ================================================================
+    // 启动
+    // ================================================================
+    document.getElementById('addressList').addEventListener('input', updateAddressCount);
+    window.onload = function() {
+        init();
+        document.getElementById('addressList').addEventListener('change', updateAddressCount);
+    };
+
+    window.fullQuery = fullQuery; window.incrementalQuery = incrementalQuery; window.resetQuery = resetQuery;
+    window.refreshLPPool = refreshLPPool; window.applyFilters = applyFilters; window.clearFilters = clearFilters;
+    window.copyAddress = copyAddress; window.exportCSV = exportCSV; window.exportDailyStats = exportDailyStats;
+    window.exportExpiryTable = exportExpiryTable; window.exportLeaderboard = exportLeaderboard;
+    window.loadCloudData = loadCloudData; window.uploadToCloud = uploadToCloud;
+    window.setTrendRange = setTrendRange; window.setExpiryRange = setExpiryRange;
+    window.setAddressTrendRange = setAddressTrendRange;
+    window.switchTab = switchTab; window.togglePanel = togglePanel;
+    window.toggleCard = toggleCard;
+    window.updateDailyStart = updateDailyStart; window.downloadQueryData = downloadQueryData;
+    window.importQueryData = importQueryData; window.importAddressesFromExcel = importAddressesFromExcel;
+    window.loadLastQuery = loadLastQuery; window.clearAddresses = clearAddresses;
+    window.dedupeAddressList = dedupeAddressList;
+    window.updateLeaderboard = updateLeaderboard;
+</script>
+</body>
+</html>

