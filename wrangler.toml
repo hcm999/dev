@@ -2,17 +2,13 @@ name = "gana-stake-data"
 main = "src/index.js"
 compatibility_date = "2026-10-15"
 
-# 静态资源绑定
 [assets]
 directory = "./dist"
 binding = "ASSETS"
 
-# 定时采集（每10分钟一次，按需调整）
+[[kv_namespaces]]
+binding = "KV"
+id = "你的 KV 命名空间 ID"
+
 [triggers]
 crons = ["*/10 * * * *"]
-
-# 以后接 D1 数据库时解开注释
-# [[d1_databases]]
-# binding = "MY_DB"
-# database_name = "gana-stake-db"
-# database_id = "你的 D1 ID"
