@@ -1,17 +1,18 @@
 {
   "name": "gana-staking-monitor",
   "version": "2.0.0",
-  "description": "GANA Staking Data Monitor - Admin + Viewer (双数据库支持)",
+  "description": "GANA Staking Data Monitor - Admin + Viewer (Cloudflare Pages)",
   "engines": {
     "node": "22.x"
   },
   "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel deploy --prod"
+    "dev": "wrangler pages dev dist",
+    "deploy": "wrangler pages deploy dist"
   },
   "dependencies": {
-    "ethers": "^6.7.0",
-    "@neondatabase/serverless": "^0.9.0",
-    "@vercel/kv": "^0.2.0"
+    "ethers": "^6.7.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   }
 }
