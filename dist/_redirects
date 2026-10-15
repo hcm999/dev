@@ -1,6 +1,5 @@
-/admin  /admin.html  200
-/dev123  /devdao123.html  200
-/devdao  /devdao.html  200
-/dev  /devstake.html  200
-/devstake  /devlend.html  200
-/*  /:splat  200
+/admin     /admin.html       200
+/dev123    /devdao123.html   200
+/devdao    /devdao.html      200
+/dev       /devstake.html    200
+/devstake  /devlend.html     200
