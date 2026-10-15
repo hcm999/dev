@@ -1,0 +1,9 @@
+name = "gana-stake-data"  # 建议和 Cloudflare 后台的名字保持一致
+main = "src/index.js"     # 或者你改造后 Workers 的入口文件路径
+compatibility_date = "2026-10-15"
+
+# 如果你以后用 D1 数据库，需要解开下面的注释并填入 ID
+# [[d1_databases]]
+# binding = "MY_DB"
+# database_name = "gana-stake-db"
+# database_id = "这里填你创建的 D1 数据库 ID"
