@@ -1,70 +1,49 @@
+// src/index.js
+import { CONFIG } from './config.js';
+import { handleAuth } from './auth.js';
+import { handleAdmin } from './admin.js';
+import { handleUploadData } from './upload-data.js';
+import { handleUploadBatch } from './upload-batch.js';
+import { handleProjectData } from './project-data.js';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Token, X-Access-Password, X-Access-Address',
+};
+
 export default {
-  // 处理 HTTP 请求（静态页面 + API）
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
-    // CORS 头，让 Vercel 前端能跨域调
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
+    const path = url.pathname;
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: CORS });
     }
 
-    // 按路径分发 API
-    // 原来 functions/gana-stake.js 的逻辑
-    if (url.pathname === '/gana-stake') {
-      return handleGanaStake(request, env, corsHeaders);
-    }
-    // 原来 functions/admin.js 的逻辑
-    if (url.pathname === '/admin') {
-      return handleAdmin(request, env, corsHeaders);
-    }
-    // 原来 functions/auth.js 的逻辑
-    if (url.pathname === '/auth') {
-      return handleAuth(request, env, corsHeaders);
-    }
-    // 原来 functions/config.js 的逻辑
-    if (url.pathname === '/config') {
-      return handleConfig(request, env, corsHeaders);
-    }
+    try {
+      if (path === '/api/auth')         return await handleAuth(request, env);
+      if (path === '/api/admin')        return await handleAdmin(request, env);
+      if (path === '/api/upload-data')  return await handleUploadData(request, env);
+      if (path === '/api/upload-batch') return await handleUploadBatch(request, env);
+      if (path === '/api' || path === '/api/') return await handleProjectData(request, env);
+      if (path.startsWith('/api/'))     return await handleProjectData(request, env);
 
-    // 其他路径（比如 /data/*、/proxy/*）走原来的重定向
-    // 或者直接交给静态资源
-    return env.ASSETS.fetch(request);
+      return env.ASSETS.fetch(request);
+    } catch (err) {
+      console.error('Worker error:', err);
+      return json({ success: false, error: err.message }, 500);
+    }
   },
 
-  // 定时采集
   async scheduled(event, env, ctx) {
-    // 采集逻辑写这里，把数据写入 D1
-    await collectData(env);
+    console.log('Cron fired at', new Date().toISOString());
   }
 };
 
-// 各个 API 的处理函数
-async function handleGanaStake(request, env, corsHeaders) {
-  // 把原来 functions/gana-stake.js 的逻辑搬过来
-  return new Response(JSON.stringify({ ok: true }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
   });
-}
-
-async function handleAdmin(request, env, corsHeaders) {
-  // 把原来 functions/admin.js 的逻辑搬过来
-}
-
-async function handleAuth(request, env, corsHeaders) {
-  // 把原来 functions/auth.js 的逻辑搬过来
-}
-
-async function handleConfig(request, env, corsHeaders) {
-  // 把原来 functions/config.js 的逻辑搬过来
-}
-
-// 采集函数
-async function collectData(env) {
-  // 采集逻辑，写入 D1
 }
