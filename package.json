@@ -1,13 +1,9 @@
 {
   "name": "gana-staking-monitor",
   "version": "2.0.0",
-  "description": "GANA Staking Data Monitor (Cloudflare Workers)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
-  },
-  "dependencies": {
-    "ethers": "^6.7.0"
   },
   "devDependencies": {
     "wrangler": "^3.0.0"
