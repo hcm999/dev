@@ -8,7 +8,7 @@ binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "你的 KV 命名空间 ID"
+id = "590dab9b2e664806a4574e66b8fdc2c4"
 
 [triggers]
 crons = ["*/10 * * * *"]
