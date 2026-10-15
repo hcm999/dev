@@ -2,8 +2,9 @@ name = "gana-stake-data"
 main = "src/index.js"
 compatibility_date = "2026-10-15"
 
-[site]
-bucket = "./dist"
+[assets]
+directory = "./dist"
+binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "KV"
