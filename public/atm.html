@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ATM智能抢跑一键赎回</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Ethers.js V6 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { background: #0b0f1c; color: #eef2ff; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+        .card { background: #111827; border: 1px solid #1f2a3e; border-radius: 20px; backdrop-filter: blur(2px); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+        .btn-primary { background: #2563eb; border: none; border-radius: 40px; font-weight: 500; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-success { background: #0d9488; border: none; border-radius: 40px; }
+        .btn-warning { background: #eab308; color: #0f172a; border: none; border-radius: 40px; font-weight: 500; }
+        .btn-danger { background: #dc2626; border-radius: 40px; }
+        .stat-value { font-size: 1.2rem; font-weight: 700; background: linear-gradient(135deg, #fbbf24, #f97316); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; }
+        .address-short { font-family: monospace; background: #1e293b; padding: 3px 8px; border-radius: 20px; font-size: 0.8rem; }
+        .badge-duration { background: #2d3a5e; color: #b9e0ff; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
+        .table { color: #e2e8f0; font-size: 0.8rem; width: 100%; }
+        .table thead th { border-bottom: 1px solid #2d3a5e; color: #9ca3af; padding: 8px 4px; text-align: center; }
+        .table td { border-bottom: 1px solid #1f2a3e; vertical-align: middle; padding: 8px 4px; text-align: center; }
+        .time-two-lines { display: flex; flex-direction: column; line-height: 1.3; }
+        .remaining-top { font-weight: 600; color: #f97316; }
+        .remaining-top.unlocked { color: #2dd4bf; }
+        .amount-value { color: #ffd966; font-weight: 700; }
+        .sub-tab { background: #1e293b; border: 1px solid #475569; border-radius: 40px; padding: 5px 18px; cursor: pointer; font-size: 0.8rem; color: #e2e8f0; }
+        .sub-tab.active { background: #3b82f6; color: white; }
+        .contract-address { font-family: monospace; background: #0f172a; padding: 6px 12px; border-radius: 40px; font-size: 0.75rem; }
+        .btn-sm { border-radius: 30px; padding: 0.2rem 0.7rem; }
+        .nav-tabs .nav-link { color: #94a3b8; border: none; }
+        .nav-tabs .nav-link.active { background: #111827; color: #60a5fa; border-bottom: 2px solid #3b82f6; }
+        input.form-control { background: #1e293b; border: 1px solid #334155; color: white; border-radius: 40px; padding: 10px 18px; }
+        .table-responsive { border-radius: 20px; overflow-x: auto; }
+        .id-value { font-size: 0.7rem; color: #94a3b8; }
+        .remaining-two-lines { display: flex; flex-direction: column; line-height: 1.4; }
+        .remaining-bottom { font-size: 0.8rem; color: #94a3b8; }
+        
+        .auto-status-bar {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 20px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .mode-selector { display: flex; gap: 10px; background: #0f172a; padding: 4px; border-radius: 40px; }
+        .mode-btn { background: transparent; border: none; padding: 6px 16px; border-radius: 40px; color: #94a3b8; font-size: 0.8rem; cursor: pointer; }
+        .mode-btn.active { background: #3b82f6; color: white; }
+        .btn-auto { background: #8b5cf6; border: none; border-radius: 40px; color: white; font-weight: 500; padding: 8px 20px; }
+        .btn-auto:hover { background: #7c3aed; }
+        .timer-display { font-family: monospace; font-size: 1.2rem; font-weight: bold; color: #fbbf24; background: #0f172a; padding: 4px 12px; border-radius: 30px; }
+        .auto-status-text.active { color: #10b981; }
+        .mode-desc { font-size: 0.7rem; color: #6b7280; margin-top: 4px; }
+        
+        /* 收费卡片 */
+        .pay-card { background: #2d3a5e; border-radius: 20px; padding: 15px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; }
+        .btn-pay { background: #10b981; color: white; border: none; border-radius: 40px; padding: 10px 30px; font-weight: bold; }
+        .btn-pay:hover { background: #059669; }
+        .access-card { background: linear-gradient(135deg, #0d9488, #0f766e); border-radius: 20px; padding: 15px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; }
+        .access-badge { background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 40px; font-size: 0.8rem; }
+        .principal-display { font-size: 1.2rem; font-weight: bold; color: #fbbf24; }
+    </style>
+</head>
+<body>
+<div class="container py-4 py-md-5">
+    <!-- 头部 + 钱包 -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h2 class="fw-bold" style="background: linear-gradient(135deg,#c084fc,#3b82f6); -webkit-background-clip:text; background-clip:text; color:transparent;">⚡ ATM 一键赎回</h2>
+            <p class="small text-secondary">按待赎回本金的20%收费 | 白名单免费</p>
+        </div>
+        <button id="connectBtn" class="btn btn-primary px-4" onclick="connectWallet()">🔌 连接钱包</button>
+    </div>
+
+    <!-- 白名单用户提示卡片 -->
+    <div id="whitelistNoticeCard" class="access-card" style="display: none;">
+        <div>
+            <span style="font-size: 1rem;">✅ 白名单用户</span><br>
+            <span class="small">您的地址已在白名单中，可免费使用抢跑功能！</span>
+        </div>
+        <span class="access-badge">🎖️ 免费使用</span>
+    </div>
+
+    <!-- 已付费用户提示卡片 -->
+    <div id="paidNoticeCard" class="access-card" style="display: none; background: linear-gradient(135deg, #1e3a5f, #0f172a);">
+        <div>
+            <span style="font-size: 1rem;">💰 已付费用户</span><br>
+            <span class="small">您已完成支付，本次会话可正常使用抢跑功能！</span>
+        </div>
+        <span class="access-badge" style="background: #8b5cf6;">✨ 已解锁</span>
+    </div>
+
+    <!-- 未授权用户收费卡片（显示待赎回本金和25%费用） -->
+    <div id="payCard" class="pay-card" style="display: none;">
+        <div>
+            <span style="font-size: 1rem;">🔒 需要解锁抢跑功能</span><br>
+            <span class="small">您的待赎回本金: <span id="pendingPrincipal" class="principal-display">0.00</span> USDT</span><br>
+            <span class="small">需支付费用: <strong class="text-warning" id="feeAmount">0.00</strong> USDT (待赎回本金的20%)</span>
+        </div>
+        <button class="btn-pay" onclick="payForAccess()">💳 支付费用解锁</button>
+    </div>
+
+    <!-- 自动赎回控制栏 -->
+    <div class="auto-status-bar">
+        <div>
+            <span class="badge bg-secondary me-2">🤖 抢跑模式</span>
+            <span id="autoStatusText" class="auto-status-text">未启用</span>
+        </div>
+        <div class="mode-selector">
+            <button class="mode-btn" id="mode-timer" onclick="setMode('timer')">📅 定时抢跑</button>
+            <button class="mode-btn" id="mode-expire" onclick="setMode('expire')">⏰ 到期抢跑</button>
+        </div>
+        <div id="expireDesc" class="mode-desc" style="color:#fbbf24; display:block;">⏰ 订单到期后立即抢跑赎回（毫秒级）</div>
+        <div class="d-flex gap-2">
+            <div>
+                <span class="small text-secondary">⏱️ 下次执行: </span>
+                <span id="nextRushTime" class="timer-display">--:--:--</span>
+            </div>
+            <button id="autoRedeemBtn" class="btn-auto" onclick="showPrivateKeyModal()" disabled>🔑 导入私钥启用</button>
+            <button id="stopAutoBtn" class="btn btn-outline-danger" onclick="stopAutoRedeem()" style="display:none;">⏹️ 停止抢跑</button>
+        </div>
+    </div>
+
+    <!-- 4大核心数据 -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">💰 USDT余额</div><div class="stat-value" id="myBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">🔒 合约内质押</div><div class="stat-value" id="stakedBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">🏦 池子储备</div><div class="stat-value" id="poolBalance">0.00</div></div></div>
+        <div class="col-6 col-md-3"><div class="card p-3 text-center"><div class="stat-label">📊 总质押量</div><div class="stat-value" id="totalStaked">0.00</div></div></div>
+    </div>
+
+    <!-- 私钥导入模态框 -->
+    <div id="privateKeyModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+        <div class="card" style="max-width:500px; margin:20px;">
+            <div class="card-body">
+                <h5 class="card-title">🔐 导入私钥（抢跑模式）</h5>
+                <div class="alert alert-warning small mt-2" style="background:#2c1a0e; color:#fbbf24; border-color:#f97316;">
+                    ⚠️ 私钥仅保存在当前浏览器内存，刷新页面后自动清除<br>
+                    请使用当前连接的钱包，只放少量BNB作为Gas费<br>
+                    <strong style="color:#ff9999;">🔐 请导入【当前连接钱包】的私钥，否则自动赎回不会生效！</strong>
+                </div>
+                <label class="form-label">私钥</label>
+                <input type="text" id="privateKeyInput" class="form-control" placeholder="0x... 或直接粘贴私钥">
+                <div class="mt-3 d-flex gap-2">
+                    <button class="btn btn-success" onclick="enableAutoRedeem()">确认启用</button>
+                    <button class="btn btn-secondary" onclick="closePrivateKeyModal()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主选项卡区域 -->
+    <div class="card">
+        <div class="card-body">
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#myStakes">📋 我的质押记录 <span id="myStakeCount" class="badge bg-secondary ms-1">0</span></button></li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="myStakes">
+                    <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                        <div class="sub-tabs d-flex gap-2">
+                            <span class="sub-tab active" onclick="filterMyStakes('all')" id="filter-all">全部</span>
+                            <span class="sub-tab" onclick="filterMyStakes('active')" id="filter-active">锁仓中</span>
+                            <span class="sub-tab" onclick="filterMyStakes('inactive')" id="filter-inactive">已赎回</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-light" onclick="refreshMyStakes()">🔄 刷新</button>
+                            <button class="btn btn-sm btn-outline-info" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⏱️ 自动刷新: 关闭</button>
+                            <button class="btn btn-sm btn-danger" id="batchRedeemBtn" onclick="batchRedeemAll()" disabled>⚡ 一键全部赎回</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead><tr><th>ID</th><th>金额</th><th>周期</th><th>质押时间</th><th>剩余时间</th><th>状态</th><th>操作</th></tr></thead>
+                            <tbody id="stakeListBody"><tr><td colspan="7" class="text-center text-muted">⚡ 连接钱包查看记录</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3 text-center small text-secondary">⚙️ 合约地址: <span id="contractAddrDisplay" class="contract-address"></span></div>
+</div>
+    
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ==================== 配置 ====================
+    const CONFIG = {
+        STAKING: "0xa479Bdcd0EED3A776a4fEFE5E13899baB567f263",
+        ATM_TOKEN: "0x55d398326f99059fF775485246999027B3197955",
+        BUB_PAIR: "0x659b44d603052132fd36cf048d9e0ba1e307ae3a",
+        PAYMENT_RECEIVER: "0xBfC937728bc5F911c1446470A3627508A29dF808",
+        FEE_PERCENT: 0.2,  // 收取待赎回本金的20%作为费用
+        USDT_DECIMALS: 18
+    };
+    
+    // 白名单
+    const WHITELIST = [
+        "0xbfc937728bc5f911c1446470a3627508a29df808",
+        "0xea77e6769a87c394062919fbaef4f3b71bc991a8",
+        "0x211402e8cf1c4117bbe17e61ee62f875e31f100b",
+        "0x54aeb4faf845e90dda95c1966ea151d8c431212a",
+        "0x145c450a3deecf75f6e00d4ff41ebf015fe7a284",
+        "0x0766bce066ccabe77e9a4a9732157c0d0ee26218",
+        "0x2275ED0849fb4dAbb641a7eA454805FE58f72Cc3",
+        "0x9C11FC000327076b1B83c7014FcC7Bc686715e99",
+        "0x39d21D1aE5cFafa43Cd95040BdC5093eA34Ff5ea",
+        "0x4e3c935c53a93fe1461e45f7431c8baeaa3c24d9",
+        "0x39d21D1aE5cFafa43Cd95040BdC5093eA34Ff5ea",
+        "0x7e680Fd841a15F140aa835c18D5A5843363f7CDC",
+        "0xF5c05642d66f86972Ade3376eCe1D01621993db9",
+        "0xb6C2f13d21e4e431C94A7CBbdB990DF87a54a9BA",
+        "0xf8797C07065B3DD240417647ef386399499F6842",
+        "0x8236AfEa4B641A0D7BE5477A6d0361E8f38f00fd",
+        "0x67f7eb9384f2af616bf2ec100e19ea774b48aba8"
+    ].map(addr => addr.toLowerCase());
+    
+    const DURATION_DAYS_MAP = {0: 1, 1: 15, 2: 30};
+    const STAKE_DURATION_LABELS = {0: "1天", 1: "15天", 2: "30天"};
+    
+    let currentMode = 'timer';
+    let timerConfig = { hour: 8, minute: 0, second: 0 };
+    
+    const ABI_ATM_STAKING = [{"inputs":[],"name":"ATM","outputs":[{"internalType":"contract IATMToken","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"balance","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"stakeCount","outputs":[{"internalType":"uint256","name":"count","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"uint256","name":"","type":"uint256"}],"name":"userStakeRecord","outputs":[{"internalType":"uint40","name":"stakeTime","type":"uint40"},{"internalType":"uint160","name":"amount","type":"uint160"},{"internalType":"uint8","name":"stakeIndex","type":"uint8"},{"internalType":"uint40","name":"unstakeTime","type":"uint40"},{"internalType":"uint160","name":"reward","type":"uint160"},{"internalType":"uint40","name":"restakeTime","type":"uint40"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"index","type":"uint256"}],"name":"unstake","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}];
+    const ABI_ERC20 = ["function balanceOf(address) view returns (uint256)","function decimals() view returns (uint8)","function approve(address,uint256) returns (bool)","function allowance(address,address) view returns (uint256)","function transferFrom(address,address,uint256) returns (bool)"];
+    
+    let provider, signer, userAddress, stakingContract, atmContract;
+    let autoRefreshInterval = null, countdownInterval = null, myStakeRecords = [], currentFilter = 'all';
+    let autoWallet = null, autoStakingContract = null, expireMonitorInterval = null, timerRushTimer = null, timerUpdateInterval = null;
+    let isAutoRedeemEnabled = false;
+    let alreadyRedeemedIndices = new Set();
+    let paidSessions = new Set();
+    let currentPendingPrincipal = 0;
+    let currentRequiredFee = 0;
+    
+    async function calculatePendingPrincipal() {
+        if (!stakingContract || !userAddress) return 0;
+        try {
+            const count = Number(await stakingContract.stakeCount(userAddress));
+            let totalPrincipal = 0;
+            for (let i = 0; i < count; i++) {
+                try {
+                    const record = await stakingContract.userStakeRecord(userAddress, i);
+                    const stakeTime = Number(record[0]);
+                    const amountWei = record[1];
+                    const stakeIndex = Number(record[2]);
+                    const unstakeTime = Number(record[3]);
+                    if (unstakeTime === 0) {
+                        const amountNum = parseFloat(ethers.formatUnits(amountWei, 18));
+                        totalPrincipal += amountNum;
+                    }
+                } catch(e) {}
+            }
+            currentPendingPrincipal = totalPrincipal;
+            currentRequiredFee = totalPrincipal * CONFIG.FEE_PERCENT;
+            currentRequiredFee = Math.ceil(currentRequiredFee * 100) / 100;
+            return currentRequiredFee;
+        } catch(e) {
+            console.error("计算待赎回本金失败:", e);
+            return 0;
+        }
+    }
+    
+    function isInWhitelist(addr) { return WHITELIST.includes(addr.toLowerCase()); }
+    function hasAccess() {
+        if(!userAddress) return false;
+        if(isInWhitelist(userAddress)) return true;
+        return paidSessions.has(`${userAddress}_session`);
+    }
+    
+    async function payForAccess() {
+        if(!userAddress) { alert("请先连接钱包"); return; }
+        await calculatePendingPrincipal();
+        if (currentRequiredFee <= 0) {
+            alert("您没有待赎回的质押订单，无需付费即可使用抢跑功能");
+            updateAccessUI();
+            return;
+        }
+        const sessionKey = `${userAddress}_session`;
+        if(paidSessions.has(sessionKey)) { alert("您已付费，可直接启用抢跑"); updateAccessUI(); return; }
+        try {
+            const usdtContract = new ethers.Contract(CONFIG.ATM_TOKEN, ABI_ERC20, signer);
+            const amountWei = ethers.parseUnits(currentRequiredFee.toString(), CONFIG.USDT_DECIMALS);
+            const balance = await usdtContract.balanceOf(userAddress);
+            if(balance < amountWei) { alert(`USDT余额不足，需要 ${currentRequiredFee} USDT`); return; }
+            const allowance = await usdtContract.allowance(userAddress, CONFIG.PAYMENT_RECEIVER);
+            if(allowance < amountWei) { 
+                const approveTx = await usdtContract.approve(CONFIG.PAYMENT_RECEIVER, amountWei); 
+                await approveTx.wait(); 
+            }
+            const transferTx = await usdtContract.transferFrom(userAddress, CONFIG.PAYMENT_RECEIVER, amountWei);
+            await transferTx.wait();
+            paidSessions.add(sessionKey);
+            alert(`✅ 支付成功！已解锁抢跑功能，本次会话有效`);
+            updateAccessUI();
+        } catch(e) { alert(`支付失败: ${e.message}`); }
+    }
+    
+    async function updateAccessUI() {
+        if(!userAddress) return;
+        await calculatePendingPrincipal();
+        const inWhitelistFlag = isInWhitelist(userAddress);
+        const hasPaid = paidSessions.has(`${userAddress}_session`);
+        const canAccess = inWhitelistFlag || hasPaid;
+        
+        const whitelistCard = document.getElementById('whitelistNoticeCard');
+        const paidCard = document.getElementById('paidNoticeCard');
+        const payCardDiv = document.getElementById('payCard');
+        const autoBtn = document.getElementById('autoRedeemBtn');
+        const batchBtn = document.getElementById('batchRedeemBtn');
+        const pendingPrincipalSpan = document.getElementById('pendingPrincipal');
+        const feeAmountSpan = document.getElementById('feeAmount');
+        
+        if (pendingPrincipalSpan) pendingPrincipalSpan.innerText = currentPendingPrincipal.toFixed(2);
+        if (feeAmountSpan) feeAmountSpan.innerText = currentRequiredFee.toFixed(2);
+        
+        if(inWhitelistFlag) {
+            whitelistCard.style.display = 'flex';
+            paidCard.style.display = 'none';
+            payCardDiv.style.display = 'none';
+        } else if(hasPaid) {
+            whitelistCard.style.display = 'none';
+            paidCard.style.display = 'flex';
+            payCardDiv.style.display = 'none';
+        } else {
+            whitelistCard.style.display = 'none';
+            paidCard.style.display = 'none';
+            if (currentPendingPrincipal > 0) {
+                payCardDiv.style.display = 'flex';
+            } else {
+                payCardDiv.style.display = 'none';
+                if(autoBtn) autoBtn.disabled = false;
+            }
+        }
+        
+        if(autoBtn) autoBtn.disabled = !canAccess && currentPendingPrincipal > 0;
+        if(batchBtn) batchBtn.disabled = !canAccess && currentPendingPrincipal > 0;
+    }
+    
+    function formatAmount(wei, d=18) { try { return parseFloat(ethers.formatUnits(wei, d)).toFixed(2); } catch(e){ return "0.00"; } }
+    function formatAmountInteger(wei) { return Math.floor(parseFloat(ethers.formatUnits(wei, 18))).toString(); }
+    function shorten(addr){ return addr?.slice(0,6)+"..."+addr?.slice(-4); }
+    function formatStakeTimeSplit(ts) { try { const d=new Date(ts*1000); return { date:`${d.getMonth()+1}/${d.getDate()}`, time:d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) }; } catch(e){ return {date:"错误",time:"错误"}; } }
+    function formatTimeRemainingSplit(sec) { if(sec<=0) return {top:"0秒",bottom:""}; const d=Math.floor(sec/86400), h=Math.floor((sec%86400)/3600), m=Math.floor((sec%3600)/60), s=sec%60; let top="",bottom=""; if(d>0) top+=`${d}天`; if(h>0) top+=`${h}小时`; if(m>0) bottom+=`${m}分`; if(s>0) bottom+=`${s}秒`; return {top:top||"0小时",bottom:bottom||"0秒"}; }
+    
+    function setMode(mode) { 
+        currentMode=mode; 
+        document.getElementById('mode-expire').classList.toggle('active',mode==='expire'); 
+        document.getElementById('mode-timer').classList.toggle('active',mode==='timer'); 
+        if(isAutoRedeemEnabled && autoWallet) restartAutoRedeem(); 
+        updateNextTimeDisplay(); 
+    }
+    
+    function getMsUntilNextTimer() { 
+        const now=new Date(); 
+        let t=new Date(now); 
+        t.setHours(timerConfig.hour,timerConfig.minute,timerConfig.second,0); 
+        if(t<=now) t.setDate(t.getDate()+1); 
+        return t.getTime()-now.getTime(); 
+    }
+
+async function checkExpiredOrdersAndRedeem() { 
+    if(!autoWallet||!autoStakingContract||currentMode!=='expire') return; 
+    try { 
+        const addr=autoWallet.address; 
+        const cnt=Number(await autoStakingContract.stakeCount(addr)); 
+        const now=Math.floor(Date.now()/1000); 
+        for(let i=0;i<cnt;i++) { 
+            if(alreadyRedeemedIndices.has(i)) continue; 
+            try { 
+                const r=await autoStakingContract.userStakeRecord(addr,i); 
+                const stakeTime=Number(r[0]), stakeIdx=Number(r[2]), unstakeTime=Number(r[3]); 
+                if(unstakeTime>0){ alreadyRedeemedIndices.add(i); continue; } 
+                const days=DURATION_DAYS_MAP[stakeIdx]; 
+                const unlock=stakeTime+(days*86400); 
+                if(now>=unlock-1) { 
+                    console.log(`🔥 到期抢跑订单 ${i}`); 
+                    const tx = await autoStakingContract.unstake(i);
+                    await tx.wait();
+                    alreadyRedeemedIndices.add(i); 
+                    await new Promise(r=>setTimeout(r,500)); 
+                } 
+            } catch(e){} 
+        } 
+    } catch(e){ console.error(e); } 
+}
+    
+    function startExpireMode() { if(expireMonitorInterval) clearInterval(expireMonitorInterval); expireMonitorInterval=setInterval(()=>checkExpiredOrdersAndRedeem(),1000); }
+    function stopExpireMode() { if(expireMonitorInterval){ clearInterval(expireMonitorInterval); expireMonitorInterval=null; } }
+
+async function executeTimerRedeem() { 
+    if(!autoWallet||!autoStakingContract) return; 
+    try { 
+        const addr=autoWallet.address; 
+        const cnt=Number(await autoStakingContract.stakeCount(addr)); 
+        const now=Math.floor(Date.now()/1000); 
+        for(let i=0;i<cnt;i++) { 
+            try { 
+                const r=await autoStakingContract.userStakeRecord(addr,i); 
+                const stakeTime=Number(r[0]), stakeIdx=Number(r[2]), unstakeTime=Number(r[3]); 
+                if(unstakeTime>0) continue; 
+                const days=DURATION_DAYS_MAP[stakeIdx]; 
+                const unlock=stakeTime+(days*86400); 
+                if(now>=unlock-1) { 
+                    console.log(`🚀 定时赎回订单 ${i}`); 
+                    const tx = await autoStakingContract.unstake(i);
+                    await tx.wait();
+                    await new Promise(r=>setTimeout(r,300)); 
+                } 
+            } catch(e){} 
+        } 
+        if(userAddress) refreshMyStakesOnly(); 
+    } catch(e){ console.error(e); } 
+}
+    
+    function startTimerMode() { 
+        if(timerRushTimer) clearTimeout(timerRushTimer); 
+        const schedule=()=>{ 
+            const ms=getMsUntilNextTimer(); 
+            const send=Math.max(0,ms-500); 
+            timerRushTimer=setTimeout(async()=>{ 
+                await executeTimerRedeem(); 
+                schedule(); 
+            },send); 
+        }; 
+        schedule(); 
+    }
+    
+    function stopTimerMode() { if(timerRushTimer){ clearTimeout(timerRushTimer); timerRushTimer=null; } }
+    
+    function restartAutoRedeem() { 
+        stopExpireMode(); 
+        stopTimerMode(); 
+        if(currentMode==='expire') startExpireMode(); 
+        else startTimerMode(); 
+        if(timerUpdateInterval) clearInterval(timerUpdateInterval); 
+        timerUpdateInterval=setInterval(updateNextTimeDisplay,1000); 
+        updateNextTimeDisplay(); 
+    }
+    
+    function updateNextTimeDisplay() { 
+        if(!isAutoRedeemEnabled||!autoWallet){ 
+            document.getElementById('nextRushTime').innerText='--:--:--'; 
+            return; 
+        } 
+        if(currentMode==='expire'){ 
+            let minRem=Infinity; 
+            for(let r of myStakeRecords){ 
+                if(!r.isActive && r.timeRemaining>0 && r.timeRemaining<minRem) minRem=r.timeRemaining; 
+            } 
+            if(minRem!==Infinity && minRem>0){ 
+                const h=Math.floor(minRem/3600), m=Math.floor((minRem%3600)/60), s=minRem%60; 
+                document.getElementById('nextRushTime').innerHTML=`⏰ ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`; 
+                return; 
+            } 
+            document.getElementById('nextRushTime').innerText='等待到期'; 
+            return; 
+        } 
+        const ms=getMsUntilNextTimer(); 
+        const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000); 
+        document.getElementById('nextRushTime').innerHTML=`📅 ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`; 
+    }
+
+    async function enableAutoRedeem() {
+        if(!hasAccess()) { 
+            if (currentPendingPrincipal > 0) {
+                alert(`请先支付 ${currentRequiredFee} USDT 解锁或联系管理员添加白名单`);
+            } else {
+                alert("请联系管理员添加白名单");
+            }
+            return; 
+        }
+        let pk = document.getElementById('privateKeyInput').value.trim();
+        if(!pk){ alert("请输入私钥"); return; }
+        if(!pk.startsWith('0x')) pk='0x'+pk;
+        try {
+            autoWallet = new ethers.Wallet(pk, provider);
+            autoStakingContract = new ethers.Contract(CONFIG.STAKING, ABI_ATM_STAKING, autoWallet);
+            const bal = await provider.getBalance(autoWallet.address);
+            if(parseFloat(ethers.formatEther(bal))<0.01) alert("⚠️ BNB余额不足建议充值");
+            alreadyRedeemedIndices.clear();
+            isAutoRedeemEnabled = true;
+            restartAutoRedeem();
+            closePrivateKeyModal();
+            document.getElementById('autoRedeemBtn').style.display='none';
+            document.getElementById('stopAutoBtn').style.display='inline-block';
+            document.getElementById('autoStatusText').innerHTML=`<span class="text-success">✅ 抢跑模式已启用 (${currentMode==='expire'?'到期抢跑':`定时 ${timerConfig.hour}:${timerConfig.minute}`})</span>`;
+            
+            const batchBtn = document.getElementById('batchRedeemBtn');
+            if(batchBtn) batchBtn.disabled = false;
+            
+            alert(`✅ 抢跑模式已启用！`);
+        } catch(e){ alert("私钥无效"); }
+    }
+    
+    function stopAutoRedeem() { 
+        isAutoRedeemEnabled=false; 
+        stopExpireMode(); 
+        stopTimerMode(); 
+        if(timerUpdateInterval) clearInterval(timerUpdateInterval); 
+        autoWallet=null; 
+        autoStakingContract=null; 
+        alreadyRedeemedIndices.clear(); 
+        document.getElementById('autoRedeemBtn').style.display='inline-block'; 
+        document.getElementById('stopAutoBtn').style.display='none'; 
+        document.getElementById('autoStatusText').innerHTML='未启用'; 
+        document.getElementById('nextRushTime').innerText='--:--:--'; 
+        
+        const batchBtn = document.getElementById('batchRedeemBtn');
+        if(batchBtn) batchBtn.disabled = true;
+        
+        alert("抢跑模式已停止"); 
+    }
+    
+    function showPrivateKeyModal() { document.getElementById('privateKeyModal').style.display='flex'; }
+    function closePrivateKeyModal() { document.getElementById('privateKeyModal').style.display='none'; document.getElementById('privateKeyInput').value=''; }
+    
+    // 一键全部赎回（使用已导入的私钥钱包，免签名确认）
+async function batchRedeemAll() {
+    if(!userAddress) {
+        alert("请先连接钱包");
+        return;
+    }
+    
+    if(!autoWallet || !isAutoRedeemEnabled || !autoStakingContract) {
+        alert("请先导入私钥启用抢跑模式");
+        return;
+    }
+    
+    const redeemableOrders = myStakeRecords.filter(r => !r.isActive && r.timeRemaining <= 0);
+    
+    if(redeemableOrders.length === 0) {
+        alert("没有已到期可赎回的订单");
+        return;
+    }
+    
+    const batchBtn = document.getElementById('batchRedeemBtn');
+    if(batchBtn) {
+        batchBtn.disabled = true;
+        batchBtn.innerText = `批量赎回中... (0/${redeemableOrders.length})`;
+    }
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for(let i = 0; i < redeemableOrders.length; i++) {
+        const order = redeemableOrders[i];
+        const idx = order.index;
+        
+        try {
+            if(batchBtn) batchBtn.innerText = `批量赎回中... (${i+1}/${redeemableOrders.length})`;
+            const tx = await autoStakingContract.unstake(idx);
+            await tx.wait();
+            successCount++;
+            alreadyRedeemedIndices.add(idx);
+            await new Promise(r => setTimeout(r, 500));
+        } catch(e) {
+            console.error(`订单 ${idx} 赎回失败:`, e);
+            failCount++;
+        }
+    }
+    
+    await refreshAllDashboard();
+    
+    if(batchBtn) {
+        batchBtn.disabled = false;
+        batchBtn.innerText = "⚡ 一键全部赎回";
+    }
+    
+    alert(`批量赎回完成！\n成功: ${successCount} 个\n失败: ${failCount} 个`);
+}
+
+async function handleUnstake(idx){ 
+    if(!userAddress) return; 
+    
+    // 使用与 ganavip.html 一致的逻辑
+    const hasPrivateKey = (autoWallet && isAutoRedeemEnabled && autoStakingContract);
+    const hasMetaMask = (signer && userAddress);
+    
+    if (!hasPrivateKey && !hasMetaMask) {
+        alert("请先连接钱包或导入私钥");
+        return;
+    }
+    
+    let btn=document.querySelector(`button[onclick="handleUnstake(${idx})"]`); 
+    if(btn){ btn.innerText="赎回中..."; btn.disabled=true; } 
+    
+    try {
+        let tx;
+        let usedPrivateKey = false;
+        
+        if (hasPrivateKey) {
+            console.log("🔐 使用私钥钱包自动签名");
+            console.log("私钥钱包地址:", autoWallet.address);
+            tx = await autoStakingContract.unstake(idx);
+            usedPrivateKey = true;
+        } else if (hasMetaMask) {
+            console.log("🦊 使用MetaMask钱包");
+            if (!stakingContract) {
+                stakingContract = new ethers.Contract(CONFIG.STAKING, ABI_ATM_STAKING, signer);
+            }
+            tx = await stakingContract.unstake(idx);
+        }
+        
+        if(btn) btn.innerText = "等待确认...";
+        console.log("交易哈希:", tx.hash);
+        await tx.wait();
+        console.log("交易成功:", tx.hash);
+        
+        await refreshAllDashboard();
+        
+        if (usedPrivateKey && autoWallet) {
+            alreadyRedeemedIndices.add(idx);
+        }
+        
+        alert("赎回成功！" + (usedPrivateKey ? " (私钥模式免签)" : ""));
+        
+    } catch(error) { 
+        console.error("赎回失败详情:", error);
+        let errorMsg = error.message || error;
+        if (error.reason) errorMsg = error.reason;
+        if (error.error && error.error.message) errorMsg = error.error.message;
+        alert("赎回失败: " + errorMsg); 
+    } 
+    finally{ 
+        if(btn){ btn.innerText="立即赎回"; btn.disabled=false; } 
+        await refreshMyStakesOnly(); 
+    } 
+}
+    
+    async function connectWallet() { 
+        if(!window.ethereum) return alert("请安装MetaMask"); 
+        provider = new ethers.BrowserProvider(window.ethereum); 
+        signer = await provider.getSigner(); 
+        userAddress = await signer.getAddress(); 
+        document.getElementById('connectBtn').innerText = shorten(userAddress); 
+        stakingContract = new ethers.Contract(CONFIG.STAKING, ABI_ATM_STAKING, signer); 
+        atmContract = new ethers.Contract(CONFIG.ATM_TOKEN, ABI_ERC20, signer); 
+        document.getElementById('contractAddrDisplay').innerText = CONFIG.STAKING; 
+        await refreshAllDashboard(); 
+        startAutoRefresh(); 
+    }
+    
+    async function refreshAllDashboard(){ 
+        if(!userAddress) return; 
+        try{ 
+            let [bal, stakedBal, poolBal, totalSup] = await Promise.all([
+                atmContract.balanceOf(userAddress), 
+                stakingContract.balanceOf(userAddress), 
+                atmContract.balanceOf(CONFIG.BUB_PAIR).catch(()=>0), 
+                stakingContract.totalSupply()
+            ]); 
+            document.getElementById('myBalance').innerText = formatAmount(bal); 
+            document.getElementById('stakedBalance').innerText = formatAmount(stakedBal); 
+            document.getElementById('poolBalance').innerText = formatAmount(poolBal); 
+            document.getElementById('totalStaked').innerText = formatAmount(totalSup); 
+            await refreshMyStakesOnly(); 
+            await updateAccessUI(); 
+        }catch(e){ console.warn(e); } 
+    }
+    
+    async function refreshMyStakesOnly(){ 
+        if(!stakingContract||!userAddress) return; 
+        let cnt=Number(await stakingContract.stakeCount(userAddress)); 
+        let records=[]; 
+        let now=Math.floor(Date.now()/1000); 
+        for(let i=0;i<cnt;i++){ 
+            try{ 
+                let r=await stakingContract.userStakeRecord(userAddress,i); 
+                let stakeTime=Number(r[0]), amountWei=r[1], stakeIdx=Number(r[2]), unstakeTime=Number(r[3]), isActive=unstakeTime>0, days=DURATION_DAYS_MAP[stakeIdx]||1, unlock=stakeTime+(days*86400), remain=isActive?0:Math.max(0,unlock-now); 
+                records.push({index:i,amount:formatAmountInteger(amountWei),stakeTime,isActive,stakeIdx,unlock,timeRemaining:remain}); 
+            }catch(e){} 
+        } 
+        records.sort((a,b)=>b.stakeTime-a.stakeTime); 
+        myStakeRecords=records; 
+        renderStakeList(); 
+        document.getElementById('myStakeCount').innerText=myStakeRecords.length; 
+        startCountdownTimer(); 
+        if(isAutoRedeemEnabled && autoWallet && currentMode==='expire') updateNextTimeDisplay(); 
+    }
+    
+    function startCountdownTimer() { 
+        if(countdownInterval) clearInterval(countdownInterval); 
+        countdownInterval=setInterval(()=>{ 
+            let now=Math.floor(Date.now()/1000), need=false; 
+            for(let r of myStakeRecords){ 
+                if(!r.isActive){ 
+                    let nr=Math.max(0,r.unlock-now); 
+                    if(r.timeRemaining!==nr){ 
+                        r.timeRemaining=nr; 
+                        need=true; 
+                    } 
+                } 
+            } 
+            if(need) renderStakeList(); 
+            if(isAutoRedeemEnabled && autoWallet && currentMode==='expire') updateNextTimeDisplay(); 
+        },1000); 
+    }
+    
+    function renderStakeList() { 
+        const tbody=document.getElementById('stakeListBody'); 
+        if(!tbody) return; 
+        let filtered=myStakeRecords; 
+        if(currentFilter==='active') filtered=myStakeRecords.filter(r=>!r.isActive); 
+        else if(currentFilter==='inactive') filtered=myStakeRecords.filter(r=>r.isActive); 
+        if(filtered.length===0){ 
+            tbody.innerHTML='<td><td colspan="7" class="text-center">暂无记录</td></tr>'; 
+            return; 
+        } 
+        let html=''; 
+        for(let r of filtered){ 
+            let isLocked=r.timeRemaining>0 && !r.isActive, isUnlocked=r.timeRemaining<=0 && !r.isActive; 
+            let timeObj=formatStakeTimeSplit(r.stakeTime), remainObj=formatTimeRemainingSplit(r.timeRemaining); 
+            let status='', action='', remainHtml=''; 
+            if(r.isActive){ 
+                status='<span class="text-muted">已提取</span>'; 
+                action='-'; 
+                remainHtml='-'; 
+            }else if(isLocked){ 
+                status='<span class="text-danger">锁仓中</span>'; 
+                action='<button class="btn btn-sm btn-secondary" disabled>等待解锁</button>'; 
+                remainHtml=`<div class="remaining-two-lines"><span class="remaining-top">${remainObj.top}</span><span class="remaining-bottom">${remainObj.bottom}</span></div>`; 
+            }else if(isUnlocked){ 
+                status='<span class="text-success">可赎回</span>'; 
+                action=`<button class="btn btn-sm btn-warning" onclick="handleUnstake(${r.index})">立即赎回</button>`; 
+                remainHtml='<span class="remaining-top unlocked">已解锁</span>'; 
+            }else{ 
+                status='<span class="text-warning">未知</span>'; 
+                action='-'; 
+                remainHtml='-'; 
+            } 
+            html+=`<tr><td class="id-value">${r.index}</td><td class="amount-value">${r.amount}</td><td class="badge-duration">${STAKE_DURATION_LABELS[r.stakeIdx]||DURATION_DAYS_MAP[r.stakeIdx]+"天"}</td><td class="stake-time-cell"><div class="time-two-lines"><span class="time-date">${timeObj.date}</span><span class="time-clock">${timeObj.time}</span></div></td><td class="remaining-time-cell">${remainHtml}</td><td class="status-cell">${status}</td><td class="action-cell">${action}</td></tr>`; 
+        } 
+        tbody.innerHTML=html; 
+    }
+    
+    function filterMyStakes(f){ 
+        currentFilter=f; 
+        document.getElementById('filter-all').classList.toggle('active',f==='all'); 
+        document.getElementById('filter-active').classList.toggle('active',f==='active'); 
+        document.getElementById('filter-inactive').classList.toggle('active',f==='inactive'); 
+        renderStakeList(); 
+    }
+    
+    async function refreshMyStakes(){ await refreshMyStakesOnly(); }
+    
+    function toggleAutoRefresh() { 
+        const btn=document.getElementById('autoRefreshBtn'); 
+        if(autoRefreshInterval){ 
+            clearInterval(autoRefreshInterval); 
+            autoRefreshInterval=null; 
+            btn.textContent="⏱️ 自动刷新: 关闭"; 
+        } else { 
+            startAutoRefresh(); 
+            btn.textContent="⏱️ 自动刷新: 开启"; 
+        } 
+    }
+    
+    function startAutoRefresh() { 
+        if(autoRefreshInterval) clearInterval(autoRefreshInterval); 
+        autoRefreshInterval=setInterval(()=>{ if(userAddress) refreshAllDashboard(); },30000); 
+    }
+    
+    document.addEventListener('DOMContentLoaded',()=>{ 
+        document.getElementById('mode-timer').classList.add('active'); 
+        document.getElementById('expireDesc').style.display = 'none';
+    });
+    
+    window.addEventListener('load',()=>{ 
+        if(window.ethereum) window.ethereum.request({method:'eth_accounts'}).then(accs=>{ if(accs.length>0) connectWallet(); }); 
+    });
+    
+    window.addEventListener('beforeunload',()=>{ 
+        if(autoRefreshInterval) clearInterval(autoRefreshInterval); 
+        if(countdownInterval) clearInterval(countdownInterval); 
+        if(expireMonitorInterval) clearInterval(expireMonitorInterval); 
+        if(timerRushTimer) clearTimeout(timerRushTimer); 
+        if(timerUpdateInterval) clearInterval(timerUpdateInterval); 
+    });
+</script>
+</body>
+</html>

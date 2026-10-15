@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>GANA质押数据分析 - 高级风控版</title>
+    <!-- 引入 Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- 引入 Ethers.js V6 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body { 
+            background-color: #0f172a; 
+            color: #e2e8f0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 12px;
+            min-height: 100vh;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .container-fluid {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+            transform: translateZ(0);
+        }
+        
+        @media (min-width: 768px) {
+            .stats-grid {
+                gap: 16px;
+            }
+        }
+        
+        .stat-card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 10px 6px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            backface-visibility: hidden;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-title {
+            color: #94a3b8;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .stat-value {
+            color: #38bdf8;
+            font-size: 1rem;
+            font-weight: bold;
+            line-height: 1.2;
+            margin-bottom: 2px;
+            word-break: break-word;
+        }
+        
+        @media (min-width: 768px) {
+            .stat-value {
+                font-size: 1.6rem;
+            }
+        }
+        
+        .stat-sub {
+            color: #4ade80;
+            font-size: 0.6rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .restriction-mask {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 15, 30, 0.85);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            z-index: 10;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            border: 1px dashed #f59e0b;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            pointer-events: auto;
+            user-select: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .restriction-mask:hover {
+            background: rgba(20, 30, 50, 0.9);
+            border-color: #3b82f6;
+        }
+        .restriction-mask span {
+            background: #0f172a;
+            padding: 6px 14px;
+            border-radius: 30px;
+            border: 1px solid #f59e0b;
+            color: #fbbf24;
+            font-size: 0.8rem;
+            backdrop-filter: blur(2px);
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .restriction-mask .small-note {
+            font-size: 0.65rem;
+            color: #94a3b8;
+            background: transparent;
+            border: none;
+            padding: 2px;
+        }
+        
+        .stats-badge {
+            display: inline-block;
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 0.65rem;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+        
+        .header {
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .header h1 {
+            font-size: 1.3rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+            line-height: 1.2;
+        }
+        
+        @media (min-width: 768px) {
+            .header h1 { font-size: 1.5rem; }
+        }
+        
+        .header .subtitle { color: #94a3b8; font-size: 0.7rem; }
+        
+        .viewer-badge {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            border: 1px solid #60a5fa;
+            white-space: nowrap;
+        }
+        
+        .contract-address {
+            font-family: 'Courier New', monospace;
+            background: #1e293b;
+            border: 1px solid #334155;
+            padding: 4px 8px;
+            border-radius: 20px;
+            color: #60a5fa;
+            font-size: 0.6rem;
+            display: inline-block;
+            margin-top: 8px;
+            word-break: break-all;
+        }
+        
+        .btn-export {
+            background-color: #334155;
+            border: 1px solid #475569;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: #e2e8f0;
+            font-size: 0.8rem;
+            cursor: pointer;
+            touch-action: manipulation;
+            min-height: 44px;
+        }
+        
+        .stats-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .stats-info h5 { font-size: 1rem; margin: 0; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 12px;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        
+        .data-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .data-tab {
+            background-color: transparent;
+            border: 1px solid #475569;
+            color: #94a3b8;
+            padding: 10px 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background-color 0.2s, color 0.2s;
+            touch-action: manipulation;
+            min-height: 44px;
+            user-select: none;
+            flex: 1;
+            text-align: center;
+        }
+        .data-tab:active {
+            background-color: #334155;
+            transform: scale(0.98);
+        }
+        .data-tab.active {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-color: #60a5fa;
+            color: white;
+        }
+        
+        .data-panel { display: none; }
+        .data-panel.active { display: block; }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .chart-title {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .range-selector {
+            display: flex;
+            gap: 4px;
+            background: #1e293b;
+            padding: 4px;
+            border-radius: 30px;
+            border: 1px solid #334155;
+        }
+        .range-btn {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: #94a3b8;
+            transition: all 0.2s;
+            background: transparent;
+            border: none;
+            min-height: 32px;
+        }
+        .range-btn.active {
+            background: #3b82f6;
+            color: white;
+        }
+        .range-btn:active {
+            background: #2563eb;
+            color: white;
+        }
+        
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        @media (min-width: 992px) {
+            .chart-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .chart-card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        .chart-container { position: relative; height: 260px; width: 100%; }
+        
+        @media (min-width: 768px) {
+            .chart-container { height: 260px; }
+        }
+        
+        .status-bar {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 30px;
+            padding: 10px 16px;
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .last-update { color: #94a3b8; font-size: 0.8rem; }
+        .last-update span { color: #4ade80; font-weight: 600; }
+        
+        .btn-refresh {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 30px;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            min-height: 40px;
+            min-width: 100px;
+            transition: all 0.2s;
+        }
+        
+        .btn-refresh:active { transform: scale(0.96); }
+        .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .btn-lp-small {
+            background: linear-gradient(135deg, #10b981, #059669);
+            border: 1px solid #34d399;
+            padding: 8px 12px;
+            border-radius: 30px;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            touch-action: manipulation;
+            min-height: 40px;
+            min-width: 90px;
+            white-space: nowrap;
+        }
+        .btn-lp-small:active { transform: scale(0.96); }
+        .btn-lp-small:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        
+        .percentage-badge {
+            display: inline-block;
+            background-color: #1e293b;
+            border: 1px solid #3b82f6;
+            border-radius: 12px;
+            padding: 2px 6px;
+            font-size: 0.6rem;
+            color: #60a5fa;
+            margin-left: 4px;
+        }
+        
+        .pie-legend {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 8px;
+            font-size: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .table-container {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border-radius: 16px;
+            padding: 12px;
+            border: 1px solid #334155;
+            margin-top: 16px;
+        }
+        
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin: 0 -12px;
+            padding: 0 12px;
+            width: calc(100% + 24px);
+        }
+        
+        .table { 
+            color: #e2e8f0; 
+            font-size: 0.8rem; 
+            width: 100%;
+            min-width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table thead th { 
+            border-bottom: 2px solid #334155; 
+            color: #94a3b8; 
+            font-size: 0.7rem; 
+            padding: 12px 4px;
+            text-align: center;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .table td { 
+            border-bottom: 1px solid #334155; 
+            padding: 10px 4px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        
+        .amount-cell { font-weight: 500; }
+
+/* 每日统计表格 - 与管理端保持一致 */
+#dailyStatsBody tr td:nth-child(2),
+#dailyStatsBody tr td:nth-child(4) {
+    color: #38bdf8 !important;
+}
+
+#dailyStatsBody tr td:nth-child(3) {
+    color: #4ade80 !important;
+}
+
+#dailyStatsBody tr td:nth-child(5) {
+    color: #fbbf24 !important;
+}
+
+#dailyStatsBody tr td:nth-child(6) {
+    color: #f87171 !important;
+}
+
+#dailyStatsBody td {
+    font-size: 0.75rem;
+}
+
+/* 赎回明细表格 - 与管理端保持一致 */
+#redemptionTableBody td:nth-child(2),
+#redemptionTableFooter td:nth-child(2) {
+    color: #38bdf8 !important;
+}
+
+#redemptionTableBody td:nth-child(3),
+#redemptionTableFooter td:nth-child(3) {
+    color: #f87171 !important;
+}
+
+#redemptionTableBody td:nth-child(4),
+#redemptionTableFooter td:nth-child(4) {
+    color: #fbbf24 !important;
+}
+
+#redemptionTableBody td:nth-child(5),
+#redemptionTableFooter td:nth-child(5) {
+    color: #3b82f6 !important;
+}
+
+#redemptionTableBody td:nth-child(6),
+#redemptionTableFooter td:nth-child(6) {
+    color: #8b5cf6 !important;
+}
+
+#redemptionTableBody td:nth-child(7),
+#redemptionTableFooter td:nth-child(7) {
+    color: #ec4899 !important;
+}
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+        .loading-spinner {
+            width: 50px; height: 50px;
+            border: 3px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .loading-text { color: #e2e8f0; margin-top: 20px; font-size: 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .key-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .metric-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 8px;
+            border: 1px solid #334155;
+            text-align: center;
+        }
+        .metric-label {
+            color: #94a3b8;
+            font-size: 0.65rem;
+            margin-bottom: 4px;
+        }
+        .metric-value {
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        
+        .redemption-table-container {
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .key-metrics { gap: 4px; }
+            .metric-value { font-size: 0.75rem; }
+        }
+
+        /* 授权弹窗样式 */
+        .auth-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+            padding: 10px;
+        }
+        .auth-dialog {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 2px solid #334155;
+            border-radius: 24px;
+            padding: 20px;
+            max-width: 450px;
+            width: 100%;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+            animation: slideUp 0.4s ease;
+        }
+        .auth-tab {
+            flex: 1;
+            padding: 12px 5px;
+            background: #334155;
+            border: none;
+            border-radius: 30px;
+            color: #94a3b8;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            min-height: 44px;
+        }
+        .auth-tab.active { background: #3b82f6; color: white; }
+        .fixed-price-box {
+            background: #1e293b;
+            border: 1px solid #3b82f6;
+            border-radius: 16px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .price-label { color: #94a3b8; font-size: 0.85rem; margin-bottom: 8px; }
+        .price-amount { color: #38bdf8; font-size: 2rem; font-weight: bold; line-height: 1.2; margin-bottom: 4px; }
+        .price-days { color: #4ade80; font-size: 0.9rem; }
+        .btn-pay {
+            width: 100%;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            padding: 14px;
+            border-radius: 40px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn-pay:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-admin {
+            width: 100%;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: none;
+            padding: 14px;
+            border-radius: 40px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-close {
+            background: #ef4444;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 30px;
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="header">
+            <div style="width: 100%;">
+                <h1>🔍 GANA 质押数据超级VIP版 <span class="viewer-badge">风控版</span></h1>
+                <div class="subtitle">超级VIP版数据为团队专属服务，禁止外传。</div>
+                <div class="contract-address" id="stakingContractAddress">0x72212F35aC448FE7763aA1BFdb360193Fa098E52</div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="last-update">
+                📅 云端数据: <span id="lastUpdateTime">加载中...</span>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn-lp-small" onclick="refreshLPPool()" id="refreshLPBtn" style="font-size: 0.65rem; padding: 4px 10px; min-height: 32px;">💰 LP池</button>
+                <button class="btn-refresh" onclick="handleManualRefresh()" id="refreshBtn" style="font-size: 0.65rem; padding: 4px 10px; min-height: 32px;">🔄 刷新</button>
+            </div>
+        </div>
+
+        <!-- 第一行统计 -->
+        <div class="stats-grid">
+            <div class="stat-card" id="cardLpFirst">
+                <div class="stat-title">💧 LP池余额</div>
+                <div class="stat-value" id="lpPoolBalanceDisplay">0.00</div>
+                <div class="stat-sub">USDT</div>
+            </div>
+            <div class="stat-card" id="card1d">
+                <div class="stat-title">1天质押本息</div>
+                <div class="stat-value" id="totalStaked1d">0.00</div>
+                <div class="stat-sub"><span id="count1d">USDT</span></div>
+            </div>
+            <div class="stat-card" id="card15d">
+                <div class="stat-title">15天质押本息</div>
+                <div class="stat-value" id="totalStaked15d">0.00</div>
+                <div class="stat-sub"><span id="count15d">USDT</span></div>
+            </div>
+            <div class="stat-card" id="card30d">
+                <div class="stat-title">30天质押本息</div>
+                <div class="stat-value" id="totalStaked30d">0.00</div>
+                <div class="stat-sub"><span id="count30d">USDT</span></div>
+            </div>
+        </div>
+
+        <!-- 第二行敏感数据 -->
+        <div class="stats-grid">
+            <div class="stat-card" id="cardTotalStaked">
+                <div class="stat-title">💰 总质押本息</div>
+                <div class="stat-value" id="totalStaked">0.00</div>
+                <div class="stat-sub">USDT</div>
+                <div class="restriction-mask" onclick="unlockRestrictedCards()">
+                    <span>🔒</span>
+                    <span class="small-note">总质押金额</span>
+                </div>
+            </div>
+            <div class="stat-card" id="cardUnlock2d">
+                <div class="stat-title">2天可赎回本息</div>
+                <div class="stat-value" id="unlock2d">0.00</div>
+                <div class="stat-sub">USDT</div>
+                <div class="restriction-mask" onclick="unlockRestrictedCards()">
+                    <span>🔒</span>
+                    <span class="small-note">2天可赎回</span>
+                </div>
+            </div>
+            <div class="stat-card" id="cardUnlock7d">
+                <div class="stat-title">7天可赎回本息</div>
+                <div class="stat-value" id="unlock7d">0.00</div>
+                <div class="stat-sub">USDT</div>
+                <div class="restriction-mask" onclick="unlockRestrictedCards()">
+                    <span>🔒</span>
+                    <span class="small-note">7天可赎回</span>
+                </div>
+            </div>
+            <div class="stat-card" id="cardUnlock15d">
+                <div class="stat-title">15天可赎回本息</div>
+                <div class="stat-value" id="unlock15d">0.00</div>
+                <div class="stat-sub">USDT</div>
+                <div class="restriction-mask" onclick="unlockRestrictedCards()">
+                    <span>🔒</span>
+                    <span class="small-note">15天可赎回</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 选项卡 -->
+        <div class="data-tabs">
+            <span class="data-tab active" data-tab="charts">📊 数据图表</span>
+            <span class="data-tab" data-tab="daily">📅 每日质押数据</span>
+            <span class="data-tab" data-tab="solvency">💹 偿付能力分析</span>
+        </div>
+
+        <!-- 面板1: 图表 -->
+        <div id="panel-charts" class="data-panel active">
+            <div class="chart-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <span class="chart-title">📈 每日质押趋势</span>
+                        <div class="range-selector">
+                            <button class="range-btn" onclick="setTrendRange(7)">7天</button>
+                            <button class="range-btn" onclick="setTrendRange(15)">15天</button>
+                            <button class="range-btn" onclick="setTrendRange(30)">30天</button>
+                            <button class="range-btn active" onclick="setTrendRange(90)">90天</button>
+                        </div>
+                    </div>
+                    <div class="chart-container"><canvas id="trendChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><span class="chart-title">🥧 各周期质押分布</span></div>
+                    <div class="chart-container"><canvas id="pieChart"></canvas></div>
+                    <div id="pieLegend" class="pie-legend"></div>
+                </div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">⏳ 解锁时间分布</div>
+                <div class="chart-container"><canvas id="unlockChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 面板2: 每日统计 -->
+        <div id="panel-daily" class="data-panel">
+            <div class="table-container">
+                <div class="stats-info">
+                    <h5>📅 每日质押数据 <span class="stats-badge">最近30天</span></h5>
+                    <button class="btn-export" onclick="exportDailyStats()">📥 导出CSV</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead><tr><th>日期</th><th>新增质押</th><th>仍在质押</th><th>1天新增</th><th>15天新增</th><th>30天新增</th></tr></thead>
+                        <tbody id="dailyStatsBody"><tr><td colspan="6" class="empty-state">⏳ 加载云端数据中...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 面板3: 偿付能力分析 -->
+        <div id="panel-solvency" class="data-panel">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">💰 泡沫与偿付能力分析</span>
+                    <div class="range-selector">
+                        <button class="range-btn" onclick="setSolvencyRange(7)">7天</button>
+                        <button class="range-btn" onclick="setSolvencyRange(15)">15天</button>
+                        <button class="range-btn active" onclick="setSolvencyRange(30)">30天</button>
+                    </div>
+                </div>
+                
+                <div class="key-metrics">
+                    <div class="metric-card"><div class="metric-label">📊 泡沫率</div><div class="metric-value" id="bubbleRate" style="color:#f87171;">0%</div><div class="metric-label" style="font-size:0.6rem;">总质押/LP池</div></div>
+                    <div class="metric-card"><div class="metric-label">💰 总质押本息</div><div class="metric-value" id="dailyInterest" style="color:#f87171;">0</div><div class="metric-label" style="font-size:0.6rem;">USDT</div></div>
+                    <div class="metric-card"><div class="metric-label">⚠️ 未来30天总赎回本息</div><div class="metric-value" id="stopDay" style="color:#fbbf24;">0</div><div class="metric-label" style="font-size:0.6rem;">USDT</div></div>
+                    <div class="metric-card"><div class="metric-label">💸 LP池覆盖比例</div><div class="metric-value" id="totalRedemption" style="color:#60a5fa;">0%</div><div class="metric-label" style="font-size:0.6rem;">(LP池/30天赎回)</div></div>
+                </div>
+                
+                <div class="chart-container" style="height: 250px;"><canvas id="solvencyChart"></canvas></div>
+                
+                <div class="redemption-table-container">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="color: #94a3b8; font-size: 0.9rem;">📋 未来30天每日赎回明细</span>
+                        <button class="btn-export" onclick="exportRedemptionTable()" style="width: auto; padding: 4px 12px;">📥 导出表格</button>
+                    </div>
+                    <div class="table-responsive" style="max-height: 300px;">
+                        <table class="table" style="font-size: 0.7rem;">
+                            <thead><tr><th>日期</th><th>赎回本息 (USDT)</th><th>1天本息</th><th>15天本息</th><th>30天本息</th>
+                            <tbody id="redemptionTableBody"><tr><td colspan="7" class="empty-state">加载数据中...</td></tr></tbody>
+                            <tfoot id="redemptionTableFooter" style="background: #1e293b; border-top: 2px solid #334155;"></tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">加载中...</div>
+    </div>
+
+    <script>
+        // ================= 配置 =================
+        const CONFIG = {
+            STAKING: "0x72212F35aC448FE7763aA1BFdb360193Fa098E52",
+            LP_POOL: "0xa2f464a2462aed49b9b31eb8861bc6b0bbb0483f",
+            USDT: "0x55d398326f99059fF775485246999027B3197955",
+            API_BASE: '/api',
+            AUTH_STORAGE_KEY: 'HYBRID_AUTH',
+            UNLOCK_STORAGE_KEY: 'RESTRICTED_UNLOCKED'
+        };
+
+        const USDT_ABI = ["function balanceOf(address account) view returns (uint256)", "function decimals() view returns (uint8)", "function transfer(address to, uint amount) returns (bool)", "function approve(address spender, uint256 amount) returns (bool)", "function allowance(address owner, address spender) view returns (uint256)"];
+
+        const AUTH_CONFIG = {
+            payment: { usdtAddress: "0x55d398326f99059fF775485246999027B3197955", receiveAddress: "0x9728D428764F846E8DD62C34371db716A9228238", days: 360, amount: 100 },
+            admin: { password: "GANA9120", addresses: ["0xEa77e6769A87c394062919FBaEf4F3B71bC991a8", "0xBfC937728bc5F911c1446470A3627508A29dF808", "0x211402E8cF1c4117Bbe17e61Ee62F875E31f100B", "0x54Aeb4faF845e90DDA95C1966Ea151d8c431212a", "0x67f7eb9384f2AF616bF2Ec100E19eA774B48aba8", "0x552ce1C4C45A500921943111fc0ce7210683f119", "0xF7e4227a7A6F86eb8FC9A7421a586A9b2C9834fF", "0x9728D428764F846E8DD62C34371db716A9228238"] }
+        };
+
+        let currentData = { stats: { totalStaked:0,totalStaked1d:0,totalStaked15d:0,totalStaked30d:0, count1d:0,count15d:0,count30d:0, unlock2d:0,unlock7d:0,unlock15d:0, lpWithdrawable:0 }, allRecords: [], lastUpdate: null };
+        let trendChart, pieChart, unlockChart, solvencyChart;
+        let trendRange = 90, solvencyRange = 30;
+        let isLoading = false;
+        let restrictedUnlocked = localStorage.getItem(CONFIG.UNLOCK_STORAGE_KEY) === 'true';
+
+        // ================= 授权管理 =================
+        const DateUtils = {
+            getExpireTimestamp(days) { const now = new Date(); now.setDate(now.getDate() + days); return now.getTime(); },
+            formatDate(timestamp) { if (!timestamp) return '永久'; const d = new Date(timestamp); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; },
+            getRemainingDays(timestamp) { if (!timestamp) return '永久'; const diff = timestamp - new Date().getTime(); if (diff <= 0) return 0; return Math.ceil(diff / (86400000)); },
+            isExpired(timestamp) { return timestamp ? new Date().getTime() > timestamp : false; }
+        };
+
+        const AuthManager = {
+            isAdminAddress(address) { return AUTH_CONFIG.admin.addresses.some(a => a.toLowerCase() === address?.toLowerCase()); },
+            validateAdminPassword(pwd) { return pwd === AUTH_CONFIG.admin.password; },
+            isAuthorized() {
+                try {
+                    const auth = localStorage.getItem(CONFIG.AUTH_STORAGE_KEY);
+                    if (!auth) return false;
+                    const data = JSON.parse(auth);
+                    if (data.type === 'admin') return true;
+                    if (data.expireTime && DateUtils.isExpired(data.expireTime)) { this.clearAuth(); return false; }
+                    return true;
+                } catch { return false; }
+            },
+            getAuthInfo() {
+                try {
+                    const auth = localStorage.getItem(CONFIG.AUTH_STORAGE_KEY);
+                    if (!auth) return null;
+                    const data = JSON.parse(auth);
+                    if (data.type === 'admin') return { ...data, type: 'admin', remainingDays: '永久', displayName: '👑 管理员' };
+                    if (data.type === 'payment') {
+                        if (DateUtils.isExpired(data.expireTime)) { this.clearAuth(); return null; }
+                        return { ...data, type: 'payment', remainingDays: DateUtils.getRemainingDays(data.expireTime), displayName: '💎 支付用户' };
+                    }
+                    return null;
+                } catch { return null; }
+            },
+            saveAuth(type, data) { const auth = { type, timestamp: new Date().toISOString(), ...data }; localStorage.setItem(CONFIG.AUTH_STORAGE_KEY, JSON.stringify(auth)); return auth; },
+            saveAdminAuth(address, method) { return this.saveAuth('admin', { address, method, loginTime: Date.now() }); },
+            savePaymentAuth(address, days, amount, txHash) { return this.saveAuth('payment', { address, days, amount, txHash, payTime: Date.now(), expireTime: DateUtils.getExpireTimestamp(days) }); },
+            clearAuth() { localStorage.removeItem(CONFIG.AUTH_STORAGE_KEY); },
+            async checkWallet() { if (typeof window.ethereum === 'undefined') { throw new Error('NO_WALLET'); } return true; },
+            async connectWallet() { const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }); return accounts[0]; },
+            async checkNetwork() {
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                const targetChainId = '0x38';
+                if (chainId !== targetChainId) {
+                    try { await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChainId }] }); } catch (switchError) {
+                        if (switchError.code === 4902) {
+                            await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: targetChainId, chainName: 'Binance Smart Chain', rpcUrls: ['https://bsc-dataseed.binance.org/'], nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 } }] });
+                        } else { throw switchError; }
+                    }
+                }
+            },
+            async checkUSDTBalance(address, provider, requiredAmount) {
+                const contract = new ethers.Contract(AUTH_CONFIG.payment.usdtAddress, USDT_ABI, provider);
+                const balance = await contract.balanceOf(address);
+                const decimals = await contract.decimals();
+                const formattedBalance = parseFloat(ethers.formatUnits(balance, decimals));
+                if (formattedBalance < requiredAmount) { throw new Error(`INSUFFICIENT_BALANCE:${formattedBalance}`); }
+                return true;
+            },
+            async checkAllowance(owner, provider, requiredAmount) {
+                const contract = new ethers.Contract(AUTH_CONFIG.payment.usdtAddress, USDT_ABI, provider);
+                const allowance = await contract.allowance(owner, AUTH_CONFIG.payment.receiveAddress);
+                const decimals = await contract.decimals();
+                const formattedAllowance = parseFloat(ethers.formatUnits(allowance, decimals));
+                return formattedAllowance >= requiredAmount;
+            },
+            async approveUSDT(owner, provider, amount) {
+                const contract = new ethers.Contract(AUTH_CONFIG.payment.usdtAddress, USDT_ABI, provider);
+                const decimals = await contract.decimals();
+                const amountWei = ethers.parseUnits(amount.toString(), decimals);
+                const signer = await provider.getSigner();
+                const contractWithSigner = contract.connect(signer);
+                const tx = await contractWithSigner.approve(AUTH_CONFIG.payment.receiveAddress, amountWei);
+                await tx.wait();
+                return tx.hash;
+            },
+            async sendUSDT(fromAddress, provider, amount) {
+                const contract = new ethers.Contract(AUTH_CONFIG.payment.usdtAddress, USDT_ABI, provider);
+                const decimals = await contract.decimals();
+                const amountWei = ethers.parseUnits(amount.toString(), decimals);
+                const signer = await provider.getSigner();
+                const contractWithSigner = contract.connect(signer);
+                const tx = await contractWithSigner.transfer(AUTH_CONFIG.payment.receiveAddress, amountWei);
+                await tx.wait();
+                return tx.hash;
+            }
+        };
+
+        function showSuccessToast(message) { 
+            const toast = document.createElement('div');
+            toast.style.cssText = `position: fixed; top:20px; left:50%; transform:translateX(-50%); background: #10b981; color:white; padding:12px 24px; border-radius:50px; z-index:10001; font-weight:600; box-shadow:0 10px 30px rgba(16,185,129,0.3);`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function showLoading(message) { document.getElementById('loadingOverlay').style.display = 'flex'; document.getElementById('loadingText').textContent = message || '加载中...'; }
+        function hideLoading() { document.getElementById('loadingOverlay').style.display = 'none'; }
+
+        // 显示授权弹窗
+        function showAuthDialog() {
+            const old = document.getElementById('authOverlay');
+            if (old) old.remove();
+            
+            const overlay = document.createElement('div');
+            overlay.className = 'auth-overlay';
+            overlay.id = 'authOverlay';
+            const expireDate = DateUtils.formatDate(DateUtils.getExpireTimestamp(AUTH_CONFIG.payment.days));
+            
+            overlay.innerHTML = `
+                <div class="auth-dialog">
+                    <div style="text-align:center;margin-bottom:20px;">
+                        <div style="font-size:48px;">🔐</div>
+                        <h2 style="color:#e2e8f0;font-size:1.5rem;">数据授权</h2>
+                        <p style="color:#94a3b8;">请选择授权方式</p>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid #334155;padding-bottom:15px;">
+                        <button class="auth-tab active" data-tab="pay">💎 钱包支付</button>
+                        <button class="auth-tab" data-tab="admin">👑 直推用户</button>
+                    </div>
+                    <div id="payPanel" class="auth-panel">
+                        <div class="fixed-price-box">
+                            <div class="price-label">授权费用</div>
+                            <div class="price-amount">100 USDT</div>
+                            <div class="price-days">有效期 ${AUTH_CONFIG.payment.days} 天</div>
+                            <div style="color:#94a3b8; font-size:0.75rem; margin-top:10px;">到期日: ${expireDate}</div>
+                        </div>
+                        <button id="payBtn" class="btn-pay">💎 连接钱包并支付100 USDT</button>
+                    </div>
+                    <div id="adminPanel" class="auth-panel" style="display:none;">
+                        <div style="margin:20px 0;">
+                            <input type="password" id="adminPassword" placeholder="请输入密码" style="width:100%;padding:14px;background:#0f172a;border:2px solid #334155;border-radius:30px;color:#e2e8f0;font-size:1rem;text-align:center;outline:none;margin-bottom:15px;">
+                            <button id="adminBtn" class="btn-admin">👑 会员登录</button>
+                        </div>
+                        <div style="margin-top:15px;padding:10px;background:#1e293b;border-radius:16px;">
+                            <div style="color:#94a3b8;font-size:0.8rem;display:flex;align-items:center;gap:5px;"><span>ℹ️</span><span>直推用户联系QQ：601483868获取密码</span></div>
+                        </div>
+                    </div>
+                    <div style="margin-top:20px;text-align:center;"><button id="closeBtn" class="btn-close">关闭</button></div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target.classList.contains('auth-tab')) {
+                    document.querySelectorAll('.auth-tab').forEach(t => { t.classList.remove('active'); t.style.background = '#334155'; t.style.color = '#94a3b8'; });
+                    e.target.classList.add('active');
+                    e.target.style.background = '#3b82f6';
+                    e.target.style.color = 'white';
+                    const tab = e.target.dataset.tab;
+                    document.getElementById('payPanel').style.display = tab === 'pay' ? 'block' : 'none';
+                    document.getElementById('adminPanel').style.display = tab === 'admin' ? 'block' : 'none';
+                }
+                if (e.target.id === 'closeBtn' || e.target.closest('#closeBtn')) {
+                    document.body.removeChild(overlay);
+                    if (!AuthManager.isAuthorized()) {
+                        setTimeout(() => showAuthDialog(), 500);
+                    }
+                }
+            });
+
+            document.getElementById('payBtn').addEventListener('click', async () => {
+                const btn = document.getElementById('payBtn');
+                try {
+                    btn.disabled = true;
+                    btn.textContent = '支付处理中...';
+                    await AuthManager.checkWallet();
+                    await AuthManager.checkNetwork();
+                    const address = await AuthManager.connectWallet();
+                    if (AuthManager.isAdminAddress(address)) {
+                        const authData = AuthManager.saveAdminAuth(address, 'address');
+                        document.body.removeChild(overlay);
+                        showSuccessToast('👑 管理员地址登录成功');
+                        location.reload();
+                        return;
+                    }
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    await AuthManager.checkUSDTBalance(address, provider, 100);
+                    const hasAllowance = await AuthManager.checkAllowance(address, provider, 100);
+                    if (!hasAllowance) {
+                        btn.textContent = '授权中...';
+                        await AuthManager.approveUSDT(address, provider, 100);
+                    }
+                    btn.textContent = '支付中...';
+                    const txHash = await AuthManager.sendUSDT(address, provider, 100);
+                    const authData = AuthManager.savePaymentAuth(address, AUTH_CONFIG.payment.days, 100, txHash);
+                    document.body.removeChild(overlay);
+                    showSuccessToast(`✅ 授权成功！有效期至：${DateUtils.formatDate(authData.expireTime)}`);
+                    location.reload();
+                } catch (error) {
+                    console.error('支付错误:', error);
+                    let errorMsg = '❌ 授权失败：';
+                    if (error.message === 'NO_WALLET') {
+                        errorMsg += '未安装钱包';
+                        if (confirm('未安装MetaMask，是否前往安装？')) window.open('https://metamask.io/download/', '_blank');
+                    } else if (error.message.includes('INSUFFICIENT_BALANCE')) {
+                        const balance = error.message.split(':')[1];
+                        errorMsg = `❌ USDT余额不足 (当前: ${balance} USDT)`;
+                    } else { errorMsg += error.message || '未知错误'; }
+                    alert(errorMsg);
+                    btn.disabled = false;
+                    btn.textContent = '💎 连接钱包并支付100 USDT';
+                }
+            });
+
+            document.getElementById('adminBtn').addEventListener('click', () => {
+                const password = document.getElementById('adminPassword').value.trim();
+                if (AuthManager.validateAdminPassword(password)) {
+                    const authData = AuthManager.saveAdminAuth('password', 'password');
+                    document.body.removeChild(overlay);
+                    showSuccessToast('👑 管理员登录成功');
+                    location.reload();
+                } else { alert('❌ 管理员密码错误'); }
+            });
+            document.getElementById('adminPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('adminBtn').click(); });
+        }
+
+        function showAuthBadge(authData) {
+            const old = document.getElementById('authBadge');
+            if (old) old.remove();
+            const badge = document.createElement('div');
+            badge.id = 'authBadge';
+            const bgColor = authData.type === 'admin' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #10b981, #059669)';
+            badge.style.cssText = `position: fixed; top: 10px; right: 10px; background: ${bgColor}; border: 1px solid; color: white; padding: 6px 12px; border-radius: 30px; font-size: 0.7rem; font-weight: 600; z-index: 9999; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 6px;`;
+            badge.innerHTML = `<span>${authData.type === 'admin' ? '👑' : '💎'}</span><span>${authData.type === 'admin' ? '管理员' : `支付用户${authData.remainingDays && authData.remainingDays !== '永久' ? `(${authData.remainingDays}天)` : ''}`}</span>`;
+            badge.addEventListener('click', () => { if (confirm('是否清除授权？')) { AuthManager.clearAuth(); localStorage.removeItem(CONFIG.UNLOCK_STORAGE_KEY); location.reload(); } });
+            document.body.appendChild(badge);
+        }
+
+        function removeRestrictionMasks() { document.querySelectorAll('.restriction-mask').forEach(mask => mask.remove()); restrictedUnlocked = true; localStorage.setItem(CONFIG.UNLOCK_STORAGE_KEY, 'true'); }
+        
+        function unlockRestrictedCards() {
+            if (restrictedUnlocked) { removeRestrictionMasks(); return; }
+            if (!AuthManager.isAuthorized()) { showAuthDialog(); return; }
+            const authInfo = AuthManager.getAuthInfo();
+            if (authInfo && (authInfo.type === 'admin' || (authInfo.type === 'payment' && !DateUtils.isExpired(authInfo.expireTime)))) {
+                removeRestrictionMasks();
+                showSuccessToast('✅ 敏感数据已解锁');
+            } else { showAuthDialog(); }
+        }
+
+        function checkAuthAndLoad() {
+            const baseAuthorized = AuthManager.isAuthorized();
+            if (!baseAuthorized) {
+                showAuthDialog();
+            } else {
+                const authInfo = AuthManager.getAuthInfo();
+                if (authInfo) showAuthBadge(authInfo);
+                loadCloudData(false);
+                if (restrictedUnlocked) removeRestrictionMasks();
+            }
+        }
+
+        // ================= 数据加载 =================
+        async function loadCloudData(showLoadingFlag = false) {
+            if (isLoading) return;
+            isLoading = true;
+            const btn = document.getElementById('refreshBtn');
+            if (btn) { btn.disabled = true; btn.innerText = '刷新中...'; }
+            if (showLoadingFlag) showLoading('加载云端数据...');
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/?projectId=gana`);
+                const result = await response.json();
+                if (result.success && result.data) {
+                    let cloudData = result.data;
+                    if (typeof cloudData === 'string') try { cloudData = JSON.parse(cloudData); } catch (e) {}
+                    if (cloudData?.allRecords) currentData.allRecords = cloudData.allRecords;
+                    else if (cloudData?.records) currentData.allRecords = cloudData.records.map(r => ({ ...r, isRedeemed: false }));
+                    if (cloudData?.stats) currentData.stats = { ...currentData.stats, ...cloudData.stats };
+                    if (cloudData?.lastUpdate) { currentData.lastUpdate = cloudData.lastUpdate; updateLastUpdateTime(cloudData.lastUpdate); }
+                    calculateStatsFromRecords();
+                    renderStats();
+                    renderDailyStats();
+                    updateCharts();
+                    if (showLoadingFlag) showSuccessToast('✅ 数据已更新');
+                } else { console.error('数据格式错误'); if (showLoadingFlag) showSuccessToast('❌ 数据格式错误'); }
+            } catch (error) { console.error('加载失败:', error); if (showLoadingFlag) showSuccessToast('❌ 加载失败'); }
+            finally { isLoading = false; if (btn) { btn.disabled = false; btn.innerText = '🔄 刷新'; } if (showLoadingFlag) hideLoading(); }
+        }
+
+        function calculateStatsFromRecords() {
+            const records = currentData.allRecords || [];
+            const stats = { totalStaked: 0, totalStaked1d: 0, totalStaked15d: 0, totalStaked30d: 0, count1d: 0, count15d: 0, count30d: 0, unlock2d: 0, unlock7d: 0, unlock15d: 0, lpWithdrawable: currentData.stats?.lpWithdrawable || 0 };
+            const nowSec = Math.floor(Date.now() / 1000);
+            records.forEach(rec => {
+                if (rec.isRedeemed) return;
+                let amt = rec.amount || 0, idx = rec.stakeIndex || 0;
+                stats.totalStaked += amt;
+                if (idx === 0) { stats.totalStaked1d += amt; stats.count1d++; }
+                else if (idx === 1) { stats.totalStaked15d += amt; stats.count15d++; }
+                else if (idx === 2) { stats.totalStaked30d += amt; stats.count30d++; }
+                let stakeTime = rec.stakeTime || 0, dur = idx === 0 ? 86400 : idx === 1 ? 1296000 : 2592000;
+                let unlock = stakeTime + dur, remain = unlock - nowSec;
+                if (remain <= 172800) stats.unlock2d += amt;
+                if (remain <= 604800) stats.unlock7d += amt;
+                if (remain <= 1296000) stats.unlock15d += amt;
+            });
+            currentData.stats = stats;
+        }
+
+        function updateLastUpdateTime(ts) { if (ts) { let d = new Date(ts); document.getElementById('lastUpdateTime').innerText = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; } }
+
+        function renderStats() {
+            let s = currentData.stats || {};
+            document.getElementById('lpPoolBalanceDisplay').innerText = (s.lpWithdrawable || 0).toFixed(2);
+            document.getElementById('totalStaked1d').innerText = (s.totalStaked1d || 0).toFixed(2);
+            document.getElementById('totalStaked15d').innerText = (s.totalStaked15d || 0).toFixed(2);
+            document.getElementById('totalStaked30d').innerText = (s.totalStaked30d || 0).toFixed(2);
+            document.getElementById('totalStaked').innerText = (s.totalStaked || 0).toFixed(2);
+            document.getElementById('unlock2d').innerText = (s.unlock2d || 0).toFixed(2);
+            document.getElementById('unlock7d').innerText = (s.unlock7d || 0).toFixed(2);
+            document.getElementById('unlock15d').innerText = (s.unlock15d || 0).toFixed(2);
+        }
+
+        function renderDailyStats() {
+            let records = currentData.allRecords || [];
+            if (records.length === 0) { document.getElementById('dailyStatsBody').innerHTML = '<tr><td colspan="6" class="empty-state">暂无数据</td></tr>'; return; }
+            let dailyMap = new Map(), activeMap = new Map();
+            records.forEach(rec => {
+                if (!rec.stakeTime) return;
+                let ds = getDateStrFromTimestamp(rec.stakeTime), amt = rec.amount || 0, idx = rec.stakeIndex || 0;
+                if (!dailyMap.has(ds)) dailyMap.set(ds, { newStake: 0, byPool: { 0: 0, 1: 0, 2: 0 }, count: { 0: 0, 1: 0, 2: 0 } });
+                let day = dailyMap.get(ds);
+                day.newStake += amt; day.byPool[idx] += amt; day.count[idx]++;
+                if (!rec.isRedeemed) { if (!activeMap.has(ds)) activeMap.set(ds, 0); activeMap.set(ds, activeMap.get(ds) + amt); }
+            });
+            let sorted = Array.from(dailyMap.entries()).map(([date, data]) => ({ date, newStake: data.newStake, activeStake: activeMap.get(date) || 0, new1d: data.byPool[0], new15d: data.byPool[1], new30d: data.byPool[2], count1d: data.count[0], count15d: data.count[1], count30d: data.count[2] })).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
+            document.getElementById('dailyStatsBody').innerHTML = sorted.map(d => `<tr><td>${d.date}</td><td class="amount-cell">${d.newStake.toFixed(2)}</td><td class="amount-cell">${d.activeStake.toFixed(2)}</td><td>${d.new1d.toFixed(2)} <span class="stats-badge">${d.count1d}</span></td><td>${d.new15d.toFixed(2)} <span class="stats-badge">${d.count15d}</span></td><td>${d.new30d.toFixed(2)} <span class="stats-badge">${d.count30d}</span></td></tr>`).join('');
+        }
+
+        function getDateStrFromTimestamp(ts) { let d = new Date(ts * 1000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; }
+
+        function updateCharts() { updateTrendChart(); updatePieAndUnlockCharts(); updateSolvencyAnalysis(); }
+        function setTrendRange(d) { trendRange = d; document.querySelectorAll('#panel-charts .range-btn').forEach(b => b.classList.remove('active')); if (event?.target) event.target.classList.add('active'); updateTrendChart(); }
+        function setSolvencyRange(d) { solvencyRange = d; document.querySelectorAll('#panel-solvency .range-btn').forEach(b => b.classList.remove('active')); if (event?.target) event.target.classList.add('active'); updateSolvencyAnalysis(); }
+
+        function updateTrendChart() {
+            let records = currentData.allRecords || [];
+            if (records.length === 0) { if (trendChart) trendChart.destroy(); trendChart = null; return; }
+            let daily = new Map(), active = new Map();
+            records.forEach(r => { if (r.stakeTime) { let ds = getDateStrFromTimestamp(r.stakeTime), amt = r.amount || 0; daily.set(ds, (daily.get(ds) || 0) + amt); if (!r.isRedeemed) active.set(ds, (active.get(ds) || 0) + amt); } });
+            let dates = Array.from(daily.keys()).sort().slice(-trendRange);
+            let ctx = document.getElementById('trendChart')?.getContext('2d'); if (!ctx) return;
+            if (trendChart) trendChart.destroy();
+            trendChart = new Chart(ctx, { type: 'line', data: { labels: dates, datasets: [{ label: '新增质押', data: dates.map(d => daily.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true }, { label: '仍在质押', data: dates.map(d => active.get(d) || 0), borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)', tension: 0.2, fill: true }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8', maxRotation: 45 } } }, plugins: { legend: { labels: { color: '#e2e8f0' } } } } });
+        }
+
+        function updatePieAndUnlockCharts() {
+            let records = currentData.allRecords?.filter(r => !r.isRedeemed) || [];
+            let sum1d = 0, sum15d = 0, sum30d = 0;
+            records.forEach(r => { let a = r.amount || 0; if (r.stakeIndex === 0) sum1d += a; else if (r.stakeIndex === 1) sum15d += a; else if (r.stakeIndex === 2) sum30d += a; });
+            let total = sum1d + sum15d + sum30d;
+            let p1d = total ? ((sum1d / total) * 100).toFixed(1) : 0, p15d = total ? ((sum15d / total) * 100).toFixed(1) : 0, p30d = total ? ((sum30d / total) * 100).toFixed(1) : 0;
+            document.getElementById('pieLegend').innerHTML = `<div class="legend-item"><span class="legend-color" style="background:#3b82f6;"></span>1天: ${sum1d.toFixed(2)} (${p1d}%)</div><div class="legend-item"><span class="legend-color" style="background:#8b5cf6;"></span>15天: ${sum15d.toFixed(2)} (${p15d}%)</div><div class="legend-item"><span class="legend-color" style="background:#ec4899;"></span>30天: ${sum30d.toFixed(2)} (${p30d}%)</div>`;
+            let uExpired = 0, u0_2 = 0, u2_7 = 0, u7_15 = 0, u15_25 = 0, u25p = 0, nowSec = Math.floor(Date.now() / 1000);
+            records.forEach(r => { let a = r.amount || 0, stakeTime = r.stakeTime || 0, dur = r.stakeIndex === 0 ? 86400 : r.stakeIndex === 1 ? 1296000 : 2592000, unlock = stakeTime + dur, rem = unlock - nowSec; if (rem <= 0) uExpired += a; else if (rem <= 172800) u0_2 += a; else if (rem <= 604800) u2_7 += a; else if (rem <= 1296000) u7_15 += a; else if (rem <= 2160000) u15_25 += a; else u25p += a; });
+            let pieCtx = document.getElementById('pieChart')?.getContext('2d'); if (pieCtx) { if (pieChart) pieChart.destroy(); pieChart = new Chart(pieCtx, { type: 'doughnut', data: { labels: ['1天', '15天', '30天'], datasets: [{ data: [sum1d, sum15d, sum30d], backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899'], borderColor: '#1e293b', borderWidth: 2 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } }); }
+            let unlockCtx = document.getElementById('unlockChart')?.getContext('2d'); if (unlockCtx) { if (unlockChart) unlockChart.destroy(); unlockChart = new Chart(unlockCtx, { type: 'bar', data: { labels: ['已到期', '0-2天', '2-7天', '7-15天', '15-25天', '>25天'], datasets: [{ label: '可赎回金额 (USDT)', data: [uExpired, u0_2, u2_7, u7_15, u15_25, u25p], backgroundColor: ['#10b981', '#f87171', '#fbbf24', '#60a5fa', '#a78bfa', '#ec4899'], borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } } }); }
+        }
+
+function updateSolvencyAnalysis() {
+    let records = currentData.allRecords?.filter(r => !r.isRedeemed) || [];
+    let lpBalance = currentData.stats?.lpWithdrawable || 0;
+    let totalStaked = currentData.stats?.totalStaked || 0;
+    let bubbleRate = lpBalance > 0 ? ((totalStaked / lpBalance) * 100).toFixed(1) : '∞';
+    document.getElementById('bubbleRate').innerHTML = `<span style="color:${bubbleRate !== '∞' && parseFloat(bubbleRate) > 200 ? '#f87171' : '#fbbf24'};">${bubbleRate}%</span>`;
+    document.getElementById('dailyInterest').innerText = totalStaked.toFixed(2);
+    
+    const nowSec = Math.floor(Date.now() / 1000);
+    let dailyRedemption = new Map(); // 只存本金，不存利息
+    records.forEach(r => {
+        let amt = r.amount || 0, idx = r.stakeIndex || 0, stakeTime = r.stakeTime || 0;
+        let dur = idx === 0 ? 86400 : idx === 1 ? 1296000 : 2592000;
+        let unlockTime = stakeTime + dur;
+        let d = new Date(unlockTime * 1000);
+        let dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!dailyRedemption.has(dateStr)) dailyRedemption.set(dateStr, { total: 0, byPool: { 0: 0, 1: 0, 2: 0 } });
+        let dayData = dailyRedemption.get(dateStr);
+        dayData.total += amt;
+        dayData.byPool[idx] += amt;
+    });
+    
+    let today = new Date(); today.setHours(0, 0, 0, 0);
+    let labels = [], redemption = [], redeem1d = [], redeem15d = [], redeem30d = [];
+    let totalRedemption30 = 0;
+    for (let i = 0; i <= 30; i++) {
+        let date = new Date(today); date.setDate(today.getDate() + i);
+        let ds = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        let rd = dailyRedemption.get(ds) || { total: 0, byPool: { 0: 0, 1: 0, 2: 0 } };
+        redemption.push(rd.total);
+        redeem1d.push(rd.byPool[0]);
+        redeem15d.push(rd.byPool[1]);
+        redeem30d.push(rd.byPool[2]);
+        totalRedemption30 += rd.total;
+        labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+    }
+    
+    // ✅ 修正：直接使用 totalRedemption30 作为赎回本金总额
+    document.getElementById('stopDay').innerHTML = totalRedemption30.toFixed(2);
+    let coverage = totalRedemption30 > 0 ? ((lpBalance / totalRedemption30) * 100).toFixed(1) : (lpBalance > 0 ? 100 : 0);
+    document.getElementById('totalRedemption').innerHTML = `${coverage}%`;
+    
+    // 填充表格（只显示本金，无利息列）
+    let tbody = document.getElementById('redemptionTableBody');
+    let html = '';
+    for (let i = 0; i < 30; i++) {
+        html += `<tr>
+                    <td>${labels[i]}</td>
+                    <td class="amount-cell">${redemption[i].toFixed(2)}</td>
+                    <td class="amount-cell">${redeem1d[i] > 0 ? redeem1d[i].toFixed(2) : '-'}</td>
+                    <td class="amount-cell">${redeem15d[i] > 0 ? redeem15d[i].toFixed(2) : '-'}</td>
+                    <td class="amount-cell">${redeem30d[i] > 0 ? redeem30d[i].toFixed(2) : '-'}</td>
+                </tr>`;
+    }
+    let totalR1d = redeem1d.reduce((a, b) => a + b, 0);
+    let totalR15d = redeem15d.reduce((a, b) => a + b, 0);
+    let totalR30d = redeem30d.reduce((a, b) => a + b, 0);
+    
+    // ✅ 修正：Footer 只显示本金合计，删除利息相关列
+    document.getElementById('redemptionTableFooter').innerHTML = `<tr>
+        <td><strong>合计</strong></td>
+        <td><strong>${totalRedemption30.toFixed(2)}</strong></td>
+        <td><strong>${totalR1d.toFixed(2)}</strong></td>
+        <td><strong>${totalR15d.toFixed(2)}</strong></td>
+        <td><strong>${totalR30d.toFixed(2)}</strong></td>
+    </tr>`;
+    tbody.innerHTML = html;
+    
+    // 更新图表：仅展示本金
+    let solvencyCtx = document.getElementById('solvencyChart')?.getContext('2d');
+    if (solvencyCtx) {
+        if (solvencyChart) solvencyChart.destroy();
+        solvencyChart = new Chart(solvencyCtx, { 
+            type: 'bar', 
+            data: { 
+                labels: labels.slice(0, solvencyRange), 
+                datasets: [{ 
+                    label: '到期赎回本息 (USDT)', 
+                    data: redemption.slice(0, solvencyRange), 
+                    backgroundColor: 'rgba(96,165,250,0.8)', 
+                    borderColor: '#60a5fa', 
+                    borderRadius: 4 
+                }] 
+            }, 
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8', callback: (v) => v.toFixed(0) + ' USDT' } }, 
+                    x: { ticks: { color: '#94a3b8', maxRotation: 45 } } 
+                }, 
+                plugins: { 
+                    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toFixed(2)} USDT` } } 
+                } 
+            } 
+        });
+    }
+}
+
+function exportRedemptionTable() {
+    if (!currentData.allRecords.length) { alert('无数据'); return; }
+    let records = currentData.allRecords.filter(r => !r.isRedeemed);
+    let dailyRedemption = new Map();
+    records.forEach(r => {
+        let amt = r.amount || 0, idx = r.stakeIndex || 0, stakeTime = r.stakeTime || 0;
+        let dur = idx === 0 ? 86400 : idx === 1 ? 1296000 : 2592000;
+        let unlock = stakeTime + dur;
+        let d = new Date(unlock * 1000);
+        let ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!dailyRedemption.has(ds)) dailyRedemption.set(ds, { total: 0, byPool: { 0: 0, 1: 0, 2: 0 } });
+        let day = dailyRedemption.get(ds);
+        day.total += amt;
+        day.byPool[idx] += amt;
+    });
+    let today = new Date(); today.setHours(0, 0, 0, 0);
+    let rows = [['日期', '赎回本金(USDT)', '1天本金', '15天本金', '30天本金']];
+    for (let i = 0; i < 30; i++) {
+        let date = new Date(today); date.setDate(today.getDate() + i);
+        let ds = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        let rd = dailyRedemption.get(ds) || { total: 0, byPool: { 0: 0, 1: 0, 2: 0 } };
+        rows.push([`${date.getMonth() + 1}/${date.getDate()}`, rd.total.toFixed(2), rd.byPool[0].toFixed(2), rd.byPool[1].toFixed(2), rd.byPool[2].toFixed(2)]);
+    }
+    let csv = rows.map(r => r.join(',')).join('\n');
+    let blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+    let a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `赎回本金明细_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+        function exportDailyStats() {
+            let records = currentData.allRecords || [];
+            if (!records.length) { alert('无数据'); return; }
+            let dailyMap = new Map(), activeMap = new Map();
+            records.forEach(r => { if (r.stakeTime) { let ds = getDateStrFromTimestamp(r.stakeTime), amt = r.amount || 0, idx = r.stakeIndex || 0; if (!dailyMap.has(ds)) dailyMap.set(ds, { newStake: 0, byPool: { 0: 0, 1: 0, 2: 0 }, count: { 0: 0, 1: 0, 2: 0 } }); let d = dailyMap.get(ds); d.newStake += amt; d.byPool[idx] += amt; d.count[idx]++; if (!r.isRedeemed) activeMap.set(ds, (activeMap.get(ds) || 0) + amt); } });
+            let sorted = Array.from(dailyMap.entries()).map(([date, data]) => [date, data.newStake, activeMap.get(date) || 0, data.byPool[0], data.byPool[1], data.byPool[2], data.count[0], data.count[1], data.count[2]]).sort((a, b) => b[0].localeCompare(a[0]));
+            let csvRows = [['日期', '新增质押', '仍在质押', '1天新增', '15天新增', '30天新增', '1天人数', '15天人数', '30天人数']];
+            sorted.forEach(r => csvRows.push([r[0], r[1].toFixed(2), r[2].toFixed(2), r[3].toFixed(2), r[4].toFixed(2), r[5].toFixed(2), r[6], r[7], r[8]]));
+            let csv = csvRows.map(r => r.join(',')).join('\n'); let blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' }); let a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `质押数据_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+        }
+
+        async function refreshLPPool() {
+            let btn = document.getElementById('refreshLPBtn'); if (btn.disabled) return;
+            btn.disabled = true; let original = btn.innerText; btn.innerText = '刷新中...';
+            try {
+                let provider = new ethers.JsonRpcProvider('https://bsc-dataseed1.binance.org');
+                let contract = new ethers.Contract(CONFIG.USDT, USDT_ABI, provider);
+                let bal = await contract.balanceOf(CONFIG.LP_POOL);
+                let decimals = await contract.decimals();
+                let formatted = parseFloat(ethers.formatUnits(bal, decimals));
+                currentData.stats.lpWithdrawable = formatted;
+                document.getElementById('lpPoolBalanceDisplay').innerText = formatted.toFixed(2);
+                btn.innerText = '✅ 成功'; setTimeout(() => { btn.innerText = original; btn.disabled = false; }, 1500);
+            } catch (e) { console.error(e); btn.innerText = '❌ 重试'; setTimeout(() => { btn.innerText = original; btn.disabled = false; }, 1500); }
+        }
+
+        function handleManualRefresh() { if (!isLoading) loadCloudData(true); }
+        
+        function switchDataTab(tab) {
+            document.querySelectorAll('.data-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.data-panel').forEach(p => p.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+            document.getElementById(`panel-${tab}`).classList.add('active');
+            if (tab === 'charts') setTimeout(updateCharts, 50);
+            if (tab === 'solvency') setTimeout(updateSolvencyAnalysis, 50);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('stakingContractAddress').innerText = CONFIG.STAKING;
+            checkAuthAndLoad();
+            document.querySelector('.data-tabs').addEventListener('click', (e) => { let tab = e.target.closest('.data-tab'); if (tab) switchDataTab(tab.dataset.tab); });
+            if (restrictedUnlocked) removeRestrictionMasks();
+        });
+
+        window.handleManualRefresh = handleManualRefresh; window.refreshLPPool = refreshLPPool; window.setTrendRange = setTrendRange; window.setSolvencyRange = setSolvencyRange;
+        window.exportDailyStats = exportDailyStats; window.exportRedemptionTable = exportRedemptionTable; window.unlockRestrictedCards = unlockRestrictedCards;
+    </script>
+</body>
+</html>

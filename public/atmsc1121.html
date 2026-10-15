@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATM - 自动抢跑赎回</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+        .project-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        textarea {
+            width: 100%;
+            min-height: 250px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            color: #e2e8f0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            padding: 12px;
+            resize: vertical;
+        }
+        textarea:focus { outline: none; border-color: #3b82f6; }
+        .data-count {
+            color: #94a3b8;
+            font-size: 0.75rem;
+            margin: 8px 0 16px;
+        }
+        button {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px;
+        }
+        button:hover { transform: translateY(-2px); opacity: 0.9; }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-secondary { background: #334155; }
+        .status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 12px;
+            display: none;
+        }
+        .status.success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid #10b981;
+            color: #4ade80;
+        }
+        .status.warning {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid #f59e0b;
+            color: #fbbf24;
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #f87171;
+        }
+        .preview-section {
+            margin-top: 20px;
+            border-top: 1px solid #334155;
+            padding-top: 20px;
+        }
+        .preview-title {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 12px;
+        }
+        .preview-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .preview-item {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+        }
+        .empty-preview {
+            color: #64748b;
+            text-align: center;
+            padding: 20px;
+            font-size: 0.8rem;
+        }
+        
+        .uploaded-section {
+            margin-top: 20px;
+            border-top: 1px solid #334155;
+            padding-top: 20px;
+            display: none;
+        }
+        .uploaded-title {
+            font-size: 0.9rem;
+            color: #4ade80;
+            margin-bottom: 12px;
+        }
+        .uploaded-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .uploaded-item {
+            background: #1e293b;
+            border: 1px solid #10b981;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+            color: #4ade80;
+        }
+        .duplicate-item {
+            border-color: #f59e0b;
+            color: #fbbf24;
+        }
+        .clear-uploaded {
+            background: #334155;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: #e2e8f0;
+            font-size: 0.7rem;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>
+                📝 ATM 自动抢跑赎回系统
+                <span class="project-badge">atmvip</span>
+            </h1>
+            <div class="subtitle">请上传质押ATM的钱包私钥</div>
+            
+            <textarea id="dataInput" placeholder="每行一条数据，不限格式&#10;例如：&#10;0x72212F35aC448FE7763aA1BFdb3601336346393Fa098E52"></textarea>
+            
+            <div class="data-count">
+                📊 <span id="dataCount">0</span> 条数据
+            </div>
+            
+            <div>
+                <button id="uploadBtn" onclick="uploadData()">⬆️ 上传数据</button>
+                <button class="btn-secondary" onclick="clearInput()">🗑️ 清空</button>
+                <button class="btn-secondary" onclick="loadSample()">📋 示例数据</button>
+            </div>
+            
+            <div id="status" class="status"></div>
+            
+            <div class="preview-section">
+                <div class="preview-title">📌 本次待上传的数据</div>
+                <div id="previewList" class="preview-list">
+                    <div class="empty-preview">暂无数据，请在上方输入</div>
+                </div>
+            </div>
+            
+            <div id="uploadedSection" class="uploaded-section">
+                <div class="uploaded-title">✅ 本次上传结果</div>
+                <div id="uploadedList" class="uploaded-list"></div>
+                <button class="clear-uploaded" onclick="clearUploadedDisplay()">清除记录</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PROJECT_ID = 'atmvip';
+        const API_URL = '/api/upload-data';
+        
+        let lastUploadedData = [];
+        let lastDuplicateData = [];
+        
+        function updatePreview() {
+            const text = document.getElementById('dataInput').value;
+            const lines = text.split('\n').filter(l => l.trim().length > 0);
+            document.getElementById('dataCount').innerText = lines.length;
+            
+            const previewDiv = document.getElementById('previewList');
+            if (lines.length === 0) {
+                previewDiv.innerHTML = '<div class="empty-preview">暂无数据，请在上方输入</div>';
+                return;
+            }
+            
+            let html = '';
+            lines.forEach((line, index) => {
+                const displayLine = line.trim().substring(0, 60) + (line.trim().length > 60 ? '...' : '');
+                html += `<div class="preview-item">${index + 1}. ${escapeHtml(displayLine)}</div>`;
+            });
+            previewDiv.innerHTML = html;
+        }
+        
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+        
+        document.getElementById('dataInput').addEventListener('input', updatePreview);
+        
+        function clearInput() {
+            document.getElementById('dataInput').value = '';
+            updatePreview();
+            showStatus('已清空', 'success');
+        }
+        
+        function loadSample() {
+            const samples = [
+                "0x72212F35aC448FE7763aA57571BFdb360193Fa098E52"
+            ];
+            document.getElementById('dataInput').value = samples.join('\n');
+            updatePreview();
+            showStatus('已加载示例数据（包含重复项测试）', 'success');
+        }
+        
+        function showStatus(msg, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = msg;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 4000);
+        }
+        
+        function showUploadedResult(newItems, duplicateItems) {
+            const section = document.getElementById('uploadedSection');
+            const listDiv = document.getElementById('uploadedList');
+            
+            if ((!newItems || newItems.length === 0) && (!duplicateItems || duplicateItems.length === 0)) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            let html = '';
+            
+            if (newItems && newItems.length > 0) {
+                html += `<div style="color:#4ade80; margin-bottom:8px;">✨ 新增成功 (${newItems.length}条):</div>`;
+                newItems.forEach((item, index) => {
+                    const uploadTime = new Date().toLocaleTimeString();
+                    html += `<div class="uploaded-item">${index + 1}. ${escapeHtml(item)} <span style="color:#64748b; font-size:0.65rem;">(${uploadTime})</span></div>`;
+                });
+            }
+            
+            if (duplicateItems && duplicateItems.length > 0) {
+                html += `<div style="color:#fbbf24; margin:12px 0 8px;">⚠️ 重复已忽略 (${duplicateItems.length}条):</div>`;
+                duplicateItems.forEach((item, index) => {
+                    html += `<div class="uploaded-item duplicate-item">${index + 1}. ${escapeHtml(item)} <span style="color:#64748b; font-size:0.65rem;">(已存在，跳过)</span></div>`;
+                });
+            }
+            
+            listDiv.innerHTML = html;
+            section.style.display = 'block';
+        }
+        
+        function clearUploadedDisplay() {
+            lastUploadedData = [];
+            lastDuplicateData = [];
+            document.getElementById('uploadedSection').style.display = 'none';
+            showStatus('已清除上传记录', 'success');
+        }
+        
+        async function uploadData() {
+            const textarea = document.getElementById('dataInput');
+            const rawData = textarea.value;
+            const lines = rawData.split('\n').filter(l => l.trim().length > 0);
+            
+            if (lines.length === 0) {
+                showStatus('❌ 没有数据可上传', 'error');
+                return;
+            }
+            
+            const dataList = lines.map(l => l.trim());
+            
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = true;
+            btn.textContent = '上传中...';
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        projectId: PROJECT_ID,
+                        data: dataList
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const newCount = result.newCount || 0;
+                    const duplicateCount = result.duplicateCount || 0;
+                    
+                    if (duplicateCount > 0) {
+                        showStatus(`✅ 上传完成！新增 ${newCount} 条，重复 ${duplicateCount} 条已忽略`, 'warning');
+                    } else {
+                        showStatus(`✅ 上传成功！新增 ${newCount} 条数据`, 'success');
+                    }
+                    
+                    // 显示本次上传结果（需要前端计算哪些是新增的，哪些是重复的）
+                    // 简化：直接显示所有提交的数据，用不同颜色区分
+                    // 实际去重结果由后端返回，这里我们只显示提交的数据
+                    showUploadedResult(dataList, []);
+                    
+                } else {
+                    showStatus(`❌ 上传失败: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('上传失败:', error);
+                showStatus(`❌ 上传失败: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⬆️ 上传数据';
+            }
+        }
+        
+        updatePreview();
+    </script>
+</body>
+</html>

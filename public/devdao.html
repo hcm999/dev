@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>DevDao - 质押协议</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+:root {
+  --bg-primary:#0a0e1a; --bg-card:#111827; --bg-input:#1a2332; --border-color:#2a3a5a;
+  --text-primary:#e8edf5; --text-secondary:#8899bb; --text-muted:#4a5a7a;
+  --blue:#3b82f6; --purple:#8b5cf6; --green:#22c55e; --gold:#f59e0b; --red:#ef4444;
+  --gradient-main:linear-gradient(135deg,#3b82f6,#8b5cf6);
+  --gradient-gold:linear-gradient(135deg,#f59e0b,#ef4444);
+  --radius:16px; --radius-sm:10px;
+  --shadow:0 8px 32px rgba(0,0,0,0.4);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+body {
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  background:var(--bg-primary); color:var(--text-primary); min-height:100vh;
+  padding-bottom:80px; overflow-x:hidden;
+}
+.app-container { max-width:480px; margin:0 auto; padding:0 16px 16px; position:relative; }
+.top-header {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:16px 0 12px; position:sticky; top:0; background:var(--bg-primary); z-index:50;
+}
+.top-header .logo {
+  font-size:22px; font-weight:700;
+  background:var(--gradient-main); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  letter-spacing:-0.5px;
+}
+.top-header .logo span { font-weight:300; -webkit-text-fill-color:var(--text-secondary); font-size:18px; }
+.header-actions { display:flex; align-items:center; gap:10px; }
+.wallet-btn {
+  padding:8px 16px; border:none; border-radius:20px; font-size:13px; font-weight:600;
+  cursor:pointer; background:var(--gradient-main); color:#fff; transition:all 0.3s; white-space:nowrap;
+}
+.wallet-btn:hover { transform:scale(1.03); box-shadow:0 4px 20px rgba(59,130,246,0.4); }
+.wallet-btn.connected { background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-primary); }
+.wallet-address { font-size:12px; color:var(--text-secondary); font-family:monospace; }
+.network-badge {
+  font-size:10px; padding:2px 10px; border-radius:12px;
+  background:var(--bg-input); color:var(--text-secondary); border:1px solid var(--border-color);
+}
+.page { display:none; animation:fadeUp 0.35s ease; }
+.page.active { display:block; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(16px);} to{opacity:1;transform:translateY(0);} }
+.card {
+  background:var(--bg-card); border:1px solid var(--border-color);
+  border-radius:var(--radius); padding:18px 16px; margin-bottom:16px;
+}
+.card-title { font-size:16px; font-weight:600; margin-bottom:12px; color:var(--text-primary); }
+.card-title .badge {
+  font-size:11px; font-weight:400; background:var(--bg-input);
+  padding:2px 10px; border-radius:12px; color:var(--text-secondary); margin-left:6px;
+}
+.empty-state { text-align:center; padding:40px 0; color:var(--text-muted); font-size:14px; }
+.empty-state i { font-size:40px; display:block; margin-bottom:12px; color:var(--border-color); }
+.hero-section { text-align:center; padding:24px 0 16px; }
+.hero-section .hero-icon { font-size:48px; margin-bottom:8px; }
+.hero-section h1 {
+  font-size:26px; font-weight:700;
+  background:var(--gradient-gold); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.hero-section p { color:var(--text-secondary); font-size:14px; margin-top:4px; }
+.hero-btn {
+  padding:12px 32px; border:none; border-radius:20px; font-size:16px; font-weight:700;
+  cursor:pointer; background:var(--gradient-gold); color:#fff; transition:all 0.3s;
+}
+.hero-btn:hover { transform:scale(1.03); box-shadow:0 8px 30px rgba(245,158,11,0.35); }
+.hero-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px; }
+.hero-stats .stat-item {
+  background:var(--bg-input); border-radius:var(--radius-sm); padding:12px 8px; text-align:center;
+}
+.hero-stats .stat-item .num { font-size:20px; font-weight:700; color:var(--gold); }
+.hero-stats .stat-item .label { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.quick-actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.quick-actions .qa-btn {
+  padding:14px; border:1px solid var(--border-color); border-radius:var(--radius-sm);
+  background:transparent; color:var(--text-primary); font-size:14px; font-weight:500;
+  cursor:pointer; transition:all 0.3s; text-align:center;
+}
+.quick-actions .qa-btn i { display:block; font-size:22px; margin-bottom:4px; color:var(--blue); }
+.quick-actions .qa-btn:hover { background:var(--bg-input); border-color:var(--blue); }
+.status-bar {
+  display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px;
+  background:var(--bg-input); border-radius:var(--radius-sm); margin-bottom:16px;
+  font-size:12px; align-items:center;
+}
+.status-bar .status-item { display:flex; align-items:center; gap:4px; color:var(--text-secondary); }
+.status-bar .status-item .dot-green {
+  width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block;
+}
+.status-bar .status-item .dot-red {
+  width:8px; height:8px; border-radius:50%; background:var(--red); display:inline-block;
+}
+.status-bar .status-item .val { color:var(--text-primary); font-weight:600; }
+.stake-header {
+  display:flex; justify-content:space-between; align-items:center; padding:8px 0 12px;
+}
+.stake-header .title { font-size:20px; font-weight:700; }
+.stake-header .address { font-size:12px; color:var(--text-secondary); font-family:monospace; }
+.stake-info-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px; }
+.stake-info-item {
+  background:var(--bg-input); border-radius:var(--radius-sm); padding:12px 14px; text-align:center;
+}
+.stake-info-item .label { font-size:11px; color:var(--text-secondary); }
+.stake-info-item .value { font-size:18px; font-weight:700; margin-top:2px; }
+.stake-info-item .value.green { color:var(--green); }
+.stake-info-item .value.blue { color:var(--blue); }
+.stake-info-item .value.gold { color:var(--gold); }
+.stake-form .form-group { margin-bottom:14px; }
+.stake-form .form-group label {
+  display:block; font-size:13px; color:var(--text-secondary); margin-bottom:4px;
+}
+.stake-form .form-group input {
+  width:100%; padding:12px 14px; background:var(--bg-input);
+  border:1px solid var(--border-color); border-radius:var(--radius-sm);
+  color:var(--text-primary); font-size:15px; outline:none; transition:border 0.3s;
+}
+.stake-form .form-group input:focus { border-color:var(--blue); }
+.stake-form .range-labels {
+  display:flex; justify-content:space-between; font-size:12px;
+  color:var(--text-muted); margin-top:2px;
+}
+.product-selector { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.product-btn {
+  padding:14px 12px; border:2px solid var(--border-color); border-radius:var(--radius-sm);
+  background:var(--bg-input); color:var(--text-secondary); cursor:pointer;
+  transition:all 0.3s; text-align:center;
+}
+.product-btn .p-name { font-size:15px; font-weight:700; color:var(--text-primary); }
+.product-btn .p-rate { font-size:12px; margin-top:4px; }
+.product-btn.active { border-color:var(--blue); background:rgba(59,130,246,0.1); }
+.product-btn.active .p-name { color:var(--blue); }
+.product-btn.active .p-rate { color:var(--green); }
+.stake-preview {
+  background:var(--bg-input); padding:12px; border-radius:8px;
+  margin-bottom:14px; font-size:13px; color:var(--text-secondary);
+}
+.preview-row { display:flex; justify-content:space-between; align-items:center; }
+.preview-row + .preview-row { margin-top:8px; }
+.btn-stake {
+  width:100%; padding:14px; border:none; border-radius:var(--radius-sm);
+  font-size:16px; font-weight:700; cursor:pointer;
+  background:var(--gradient-main); color:#fff; transition:all 0.3s;
+}
+.btn-stake:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 8px 30px rgba(59,130,246,0.35); }
+.btn-stake:disabled { opacity:0.5; cursor:not-allowed; }
+.tabs {
+  display:flex; gap:4px; background:var(--bg-input); border-radius:var(--radius-sm);
+  padding:4px; margin-bottom:16px; overflow-x:auto;
+}
+.tabs .tab {
+  flex:1; padding:8px 12px; border:none; border-radius:8px; font-size:13px; font-weight:500;
+  cursor:pointer; background:transparent; color:var(--text-secondary);
+  transition:all 0.3s; white-space:nowrap; min-width:60px;
+}
+.tabs .tab.active { background:var(--bg-primary); color:var(--text-primary); }
+.tabs .tab:hover:not(.active) { color:var(--text-primary); }
+.order-item {
+  background:var(--bg-input); border-radius:var(--radius-sm); padding:14px 16px;
+  margin-bottom:10px; border-left:3px solid var(--blue);
+}
+.order-item.status-staking { border-left-color:var(--green); }
+.order-item.status-redeemed { border-left-color:var(--text-muted); }
+.order-item.status-reinvested { border-left-color:var(--purple); }
+.order-header {
+  display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;
+}
+.order-id { font-weight:600; color:var(--blue); font-size:14px; }
+.order-product {
+  font-size:11px; padding:2px 8px; border-radius:10px;
+  background:var(--bg-primary); color:var(--gold); margin-left:6px;
+}
+.status-badge { font-size:11px; padding:2px 12px; border-radius:12px; font-weight:500; }
+.status-badge.staking { background:#1a3a2a; color:var(--green); }
+.status-badge.redeemed { background:#1a2a3a; color:var(--text-secondary); }
+.status-badge.reinvested { background:#2a1a3a; color:var(--purple); }
+.status-badge.none { background:#2a2a2a; color:var(--text-muted); }
+.detail-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:4px 16px;
+  margin-top:8px; font-size:13px; color:var(--text-secondary);
+}
+.detail-grid span strong { color:var(--text-primary); }
+.order-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.btn-sm {
+  padding:6px 16px; border:none; border-radius:8px; font-size:12px;
+  font-weight:600; cursor:pointer; transition:all 0.3s; color:#fff;
+}
+.btn-sm.green { background:var(--green); }
+.btn-sm.gold { background:var(--gold); }
+.btn-sm.blue { background:var(--blue); }
+.btn-sm.purple { background:var(--purple); }
+.btn-sm:hover { transform:scale(1.03); }
+.btn-sm:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+.profile-balance {
+  display:flex; justify-content:space-between; align-items:center;
+  background:var(--bg-input); border-radius:var(--radius-sm);
+  padding:16px 20px; margin-bottom:16px;
+}
+.profile-balance .bal { font-size:28px; font-weight:700; color:var(--green); }
+.profile-balance .bal-label { font-size:13px; color:var(--text-secondary); }
+.bottom-nav {
+  position:fixed; bottom:0; left:0; right:0; background:var(--bg-card);
+  border-top:1px solid var(--border-color); display:flex; justify-content:space-around;
+  padding:8px 0 calc(8px + var(--safe-bottom)); z-index:100;
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  max-width:480px; margin:0 auto;
+}
+.bottom-nav .nav-item {
+  display:flex; flex-direction:column; align-items:center; padding:4px 12px;
+  border:none; background:transparent; color:var(--text-muted); font-size:10px;
+  cursor:pointer; transition:all 0.3s; font-family:inherit; min-width:56px;
+}
+.bottom-nav .nav-item i { font-size:22px; margin-bottom:2px; transition:all 0.3s; }
+.bottom-nav .nav-item.active { color:var(--blue); }
+.bottom-nav .nav-item.active i { color:var(--blue); transform:scale(1.1); }
+.bottom-nav .nav-item:hover { color:var(--text-primary); }
+.toast-container {
+  position:fixed; top:16px; left:50%; transform:translateX(-50%);
+  z-index:999; max-width:420px; width:calc(100% - 32px); pointer-events:none;
+}
+.toast {
+  background:var(--bg-card); border:1px solid var(--border-color);
+  border-radius:var(--radius-sm); padding:14px 18px; margin-bottom:8px;
+  box-shadow:var(--shadow); pointer-events:auto;
+  border-left:4px solid var(--blue); animation:slideDown 0.4s ease; position:relative;
+}
+@keyframes slideDown { from{transform:translateY(-20px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+.toast.error { border-left-color:var(--red); }
+.toast.success { border-left-color:var(--green); }
+.toast.warning { border-left-color:var(--gold); }
+.toast .toast-title { font-weight:600; font-size:14px; }
+.toast .toast-msg { font-size:13px; color:var(--text-secondary); margin-top:2px; }
+.toast-close {
+  position:absolute; right:12px; top:8px; background:none; border:none;
+  color:var(--text-muted); font-size:20px; cursor:pointer;
+}
+.spinner {
+  display:inline-block; width:14px; height:14px;
+  border:2px solid var(--border-color); border-top-color:var(--blue);
+  border-radius:50%; animation:spin 0.8s linear infinite;
+  vertical-align:middle; margin-right:6px;
+}
+@keyframes spin { to{transform:rotate(360deg);} }
+@media (max-width:400px) {
+  .hero-stats { grid-template-columns:1fr 1fr; }
+  .hero-stats .stat-item:last-child { grid-column:span 2; }
+  .stake-info-grid { grid-template-columns:1fr 1fr; }
+}
+@media (min-width:481px) {
+  .app-container { padding:0 24px 16px; }
+  .bottom-nav { border-radius:20px 20px 0 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <header class="top-header">
+    <div class="logo">DevDao <a href="https://devdao.io/?invite=NRDPC6" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">🟢 前往官方dapp</a></div>
+    <div class="header-actions">
+      <span class="network-badge" id="networkBadge">未连接</span>
+      <span class="wallet-address" id="walletAddress"></span>
+      <button class="wallet-btn" id="walletBtn">
+        <i class="fas fa-wallet" style="margin-right:4px;"></i>
+        <span id="walletBtnText">连接钱包</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== 首页 ===== -->
+  <div class="page active" id="page-home">
+    <div class="hero-section">
+      <div class="hero-icon">✳️</div>
+      <h1>DevDao</h1>
+      <p>链上质押协议 · 15 天 / 30 天双周期</p>
+      <div style="margin-top:12px;">
+        <button class="hero-btn" onclick="navigateTo('stake')">
+          <i class="fas fa-rocket"></i> 立即质押
+        </button>
+      </div>
+    </div>
+
+    <div class="status-bar" id="contractStatusBar">
+      <div class="status-item">
+        <span class="dot-green" id="statusDot"></span>
+        <span id="statusText">加载中...</span>
+      </div>
+      <div class="status-item">
+        管理权: <span class="val" id="statusFunder">--</span>
+      </div>
+      <div class="status-item">
+        DEV: <span class="val" id="statusDevPrice">--</span>
+      </div>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat-item">
+        <div class="num" id="homeNextOrderId">--</div>
+        <div class="label">累计订单</div>
+      </div>
+      <div class="stat-item">
+        <div class="num" id="homeLiquidity">--</div>
+        <div class="label">LP 流动性 (UUSD)</div>
+      </div>
+      <div class="stat-item">
+        <div class="num" id="homeMyComp">--</div>
+        <div class="label">我的计算力</div>
+      </div>
+    </div>🟢推荐码：NRDPC6 <a href="https://devdao.ai/?invite=NRDPC6" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">🟢 前往官方dapp</a>
+
+    <div class="card">
+      <div class="card-title">核心功能</div>
+      <div class="quick-actions">
+        <button class="qa-btn" onclick="navigateTo('stake')">
+          <i class="fas fa-hand-holding-usd"></i> 质押入口
+        </button>
+        <button class="qa-btn" onclick="navigateTo('orders')">
+          <i class="fas fa-list-ul"></i> 我的订单
+        </button>
+        <button class="qa-btn" onclick="navigateTo('profile')">
+          <i class="fas fa-user"></i> 个人中心
+        </button>
+        <button class="qa-btn" onclick="refreshAll()">
+          <i class="fas fa-sync"></i> 刷新数据
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 质押页面 ===== -->
+  <div class="page" id="page-stake">
+    <div class="stake-header">
+      <span class="title">💎 质押</span>
+      <span class="address" id="stakeAddress">--</span>
+    </div>
+    <div class="stake-info-grid">
+      <div class="stake-info-item">
+        <div class="label">LP 流动性 (UUSD)</div>
+        <div class="value blue" id="stakeLiquidity">--</div>
+      </div>
+      <div class="stake-info-item">
+        <div class="label">DEV 价格</div>
+        <div class="value gold" id="stakeDevPrice">--</div>
+      </div>
+      <div class="stake-info-item">
+        <div class="label">最小/最大</div>
+        <div class="value" id="stakeRange" style="color:var(--text-primary);font-size:14px;">--</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">选择产品</div>
+      <div class="product-selector">
+        <div class="product-btn active" data-product="0" onclick="selectProduct(0)">
+          <div class="p-name">15 天</div>
+          <div class="p-rate" style="color:var(--green);">日利率 1.5% · 总 22.5%</div>
+        </div>
+        <div class="product-btn" data-product="1" onclick="selectProduct(1)">
+          <div class="p-name">30 天</div>
+          <div class="p-rate" style="color:var(--green);">日利率 2% · 总 60%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">质押数量</div>
+      <div class="stake-form">
+        <div class="form-group">
+          <label>质押数量 (UUSD)</label>
+          <input type="number" id="stakeInput" placeholder="10 - 1000" step="1" min="10" />
+          <div class="range-labels">
+            <span>最小: <span id="minStakeLabel">10</span></span>
+            <span>最大: <span id="maxStakeLabel">1000</span></span>
+          </div>
+        </div>
+        <div class="stake-preview">
+          <div class="preview-row">
+            <span>产品</span>
+            <span style="color:var(--blue);font-weight:600;" id="previewProduct">15 天</span>
+          </div>
+          <div class="preview-row">
+            <span>预期收益</span>
+            <span style="color:var(--green);font-weight:600;" id="previewProfit">0.00 UUSD</span>
+          </div>
+          <div class="preview-row">
+            <span>预计到期</span>
+            <span style="color:var(--text-primary);" id="previewEndTime">--</span>
+          </div>
+        </div>
+        <button class="btn-stake" id="stakeSubmitBtn">
+          <i class="fas fa-lock"></i> 质押
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">质押记录 <span class="badge" id="stakeRecordCount">0</span></div>
+      <div class="tabs" id="stakeTabs">
+        <button class="tab active" data-filter="all">全部</button>
+        <button class="tab" data-filter="staking">质押中</button>
+        <button class="tab" data-filter="redeemed">已赎回</button>
+        <button class="tab" data-filter="reinvested">已复投</button>
+      </div>
+      <div id="stakeRecords">
+        <div class="empty-state"><i class="fas fa-inbox"></i>暂无记录</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 订单中心 ===== -->
+  <div class="page" id="page-orders">
+    <div class="stake-header">
+      <span class="title">📋 订单中心</span>
+      <span class="address" id="orderCountBadge">0 笔</span>
+    </div>
+    <div class="card">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        流程：质押 → 到期 → 赎回本金 → 复投（需再掏一份本金）。复投要求订单已赎回且未复投过。
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn-sm green" onclick="batchRedeem()">🔄 批量赎回</button>
+        <button class="btn-sm purple" onclick="refreshOrders()">🔄 刷新</button>
+      </div>
+      <div id="orderList">
+        <div class="empty-state"><i class="fas fa-file-invoice"></i>暂无订单</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 个人中心 ===== -->
+  <div class="page" id="page-profile">
+    <div class="stake-header">
+      <span class="title">👤 个人中心</span>
+    </div>
+    <div class="profile-balance">
+      <div>
+        <div class="bal-label">计算力</div>
+        <div class="bal" id="profileComp">0.00</div>
+      </div>
+      <div>
+        <div class="bal-label">累计质押</div>
+        <div style="font-size:20px;font-weight:700;color:var(--gold);" id="profileTotalStaked">0.00</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📊 我的统计</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:var(--blue);" id="pOrderCount">0</div>
+          <div style="font-size:11px;color:var(--text-secondary);">订单总数</div>
+        </div>
+        <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:var(--gold);" id="pActiveStake">0.00</div>
+          <div style="font-size:11px;color:var(--text-secondary);">质押中</div>
+        </div>
+        <div style="background:var(--bg-input);border-radius:var(--radius-sm);padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:var(--green);" id="pTotalProfit">0.00</div>
+          <div style="font-size:11px;color:var(--text-secondary);">累计收益</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔗 复投链追踪</div>
+      <div id="reinvestmentChain">
+        <div class="empty-state" style="padding:20px 0;">
+          <i class="fas fa-link" style="font-size:28px;"></i>
+          输入订单ID查看复投链
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <input type="number" id="chainOrderInput" placeholder="订单ID" style="flex:1;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-sm);color:var(--text-primary);font-size:14px;outline:none;">
+        <button class="btn-sm blue" onclick="showReinvestmentChain()">查看</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" data-page="home"><i class="fas fa-home"></i><span>首页</span></button>
+  <button class="nav-item" data-page="stake"><i class="fas fa-hand-holding-usd"></i><span>质押</span></button>
+  <button class="nav-item" data-page="orders"><i class="fas fa-list-ul"></i><span>订单</span></button>
+  <button class="nav-item" data-page="profile"><i class="fas fa-user"></i><span>我的</span></button>
+</nav>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ================================================================
+// 配置
+// ================================================================
+const CONFIG = {
+  stakingContract: '0x8aEDd13e3D4b3B03a6291C8E3Cbb2333fc54232c',
+  devToken: '0x950Bb8Cb6CC140b76818FABE463289EA88888888',
+  pair: '0xbe432d066ee1c664fc28ee7263a44edfbfb1e1ed',
+  chainId: 56,
+  chainName: 'BSC',
+  rpcUrl: 'https://bsc-dataseed.binance.org/',
+  explorerUrl: 'https://bscscan.com/',
+  nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+};
+
+// ===== UUSD 代币 ABI =====
+const UUSD_ABI = [
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) external view returns (uint256)",
+  "function decimals() external view returns (uint8)",
+  "function balanceOf(address) external view returns (uint256)"
+];
+
+// ===== 质押合约 ABI（与链上 TestDevStakingCollections 完全匹配）=====
+const STAKING_ABI = [
+  // ===== 常量 =====
+  "function MIN_STAKE_UUSD() view returns (uint256)",
+  "function MAX_STAKE_UUSD() view returns (uint256)",
+  "function PRODUCT_15() view returns (uint256)",
+  "function PRODUCT_30() view returns (uint256)",
+  "function DURATION_15() view returns (uint256)",
+  "function DURATION_30() view returns (uint256)",
+  "function DAILY_RATE_15_BP() view returns (uint256)",
+  "function DAILY_RATE_30_BP() view returns (uint256)",
+  "function RATE_15_BP() view returns (uint256)",
+  "function RATE_30_BP() view returns (uint256)",
+  "function DEAD() view returns (address)",
+  "function FUNDER_BURN_ADDRESS() view returns (address)",
+
+  // ===== 地址 =====
+  "function uusd() view returns (address)",
+  "function dev() view returns (address)",
+  "function router() view returns (address)",
+  "function collectionWallet() view returns (address)",
+  "function bottomCollectionWallet() view returns (address)",
+  "function foundation() view returns (address)",
+  "function serverSigner() view returns (address)",
+  "function settlementReserve() view returns (address)",
+  "function funder() view returns (address)",
+  "function pendingFunder() view returns (address)",
+  "function managementRenounced() view returns (bool)",
+  "function uusdDecimals() view returns (uint8)",
+
+  // ===== 参数 =====
+  "function minStakeAmount() view returns (uint256)",
+  "function maxStakeAmount() view returns (uint256)",
+  "function nextOrderId() view returns (uint256)",
+
+  // ===== 订单 =====
+  "function getOrder(uint256) view returns (tuple(uint256 id, address user, uint256 principal, uint8 product, uint256 startTime, uint256 endTime, uint256 computility, uint256 profitBasis, uint256 collectionAmount, uint256 previousOrderId, uint256 nextOrderId, uint256 redeemedAt, bool settled, uint8 status))",
+  "function userOrderIds(address, uint256) view returns (uint256)",
+  "function computilityBalances(address) view returns (uint256)",
+  "function computilityBalanceOf(address) view returns (uint256)",
+
+  // ===== 写 =====
+  "function deposit(uint256 amount, uint8 product, uint256 minDevOut, uint256 minLpOut, uint256 deadline)",
+  "function redeem(uint256 orderId, uint256 maxDevIn, uint256 deadline)",
+  "function reinvest(uint256 orderId, uint8 product, uint256 minDevOut, uint256 minLpOut, uint256 deadline)",
+  "function settleProfit(uint256 orderId, uint256 maxDevIn)",
+
+  // ===== 事件 =====
+  "event Staked(address indexed user, uint256 indexed orderId, uint8 product, uint256 principal, uint256 startTime, uint256 endTime)",
+  "event Redeemed(address indexed user, uint256 indexed orderId, uint256 principalReturned, uint256 yieldRetained, uint256 redeemedAt)",
+  "event Reinvested(address indexed user, uint256 indexed orderId, uint256 indexed newOrderId, uint8 product, uint256 principal)",
+];
+
+const PAIR_ABI = [
+  "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+  "function token0() external view returns (address)",
+  "function token1() external view returns (address)",
+];
+
+// ================================================================
+// 全局状态
+// ================================================================
+let provider, signer, stakingContract;
+let userAddress = null;
+let allOrders = [];
+let currentFilter = 'all';
+let isConnected = false;
+let lastError = '无';
+let uusdAddress = null;
+let devAddress = null;
+let pairAddress = CONFIG.pair;
+let uusdContract = null;
+let uusdAllowance = 0n;
+let selectedProduct = 0;
+let uusdDecimals = 18;
+
+const OrderStatus = { None: 0, Staking: 1, Redeemed: 2, Reinvested: 3 };
+
+const $ = id => document.getElementById(id);
+
+// ================================================================
+// Toast
+// ================================================================
+function showToast(title, msg, type = 'info') {
+  const container = $('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <div class="toast-title">${title}</div>
+    <div class="toast-msg">${msg}</div>
+    <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+  `;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// ================================================================
+// 工具函数
+// ================================================================
+function formatEther(val, decimals = 18) {
+  if (!val) return '0';
+  return parseFloat(ethers.formatUnits(val, decimals)).toFixed(2);
+}
+
+function formatTime(ts) {
+  if (!ts || ts === '0') return '--';
+  const d = new Date(Number(ts) * 1000);
+  return d.toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function getStatusText(status) {
+  return { 0:'不存在', 1:'质押中', 2:'已赎回', 3:'已复投' }[status] || '未知';
+}
+
+function getStatusClass(status) {
+  return { 0:'none', 1:'staking', 2:'redeemed', 3:'reinvested' }[status] || '';
+}
+
+function getProductText(product) {
+  return product === 0 ? '15天' : '30天';
+}
+
+function shortenAddress(addr) {
+  if (!addr) return '';
+  return addr.slice(0, 2) + '...' + addr.slice(-6);
+}
+
+function isValidAddress(address) {
+  return address && address.length === 42 && address.startsWith('0x');
+}
+
+// ================================================================
+// 订单解析（14 字段）
+// ================================================================
+function parseOrder(raw) {
+  if (!raw) return null;
+  try {
+    return {
+      id: Number(raw.id ?? raw[0] ?? 0),
+      user: raw.user ?? raw[1] ?? '0x0000000000000000000000000000000000000000',
+      principal: raw.principal ?? raw[2] ?? 0n,
+      product: Number(raw.product ?? raw[3] ?? 0),
+      startTime: Number(raw.startTime ?? raw[4] ?? 0),
+      endTime: Number(raw.endTime ?? raw[5] ?? 0),
+      computility: raw.computility ?? raw[6] ?? 0n,
+      profitBasis: raw.profitBasis ?? raw[7] ?? 0n,
+      collectionAmount: raw.collectionAmount ?? raw[8] ?? 0n,
+      previousOrderId: Number(raw.previousOrderId ?? raw[9] ?? 0),
+      nextOrderId: Number(raw.nextOrderId ?? raw[10] ?? 0),
+      redeemedAt: Number(raw.redeemedAt ?? raw[11] ?? 0),
+      settled: Boolean(raw.settled ?? raw[12] ?? false),
+      status: Number(raw.status ?? raw[13] ?? 0),
+    };
+  } catch (e) {
+    console.error('解析订单失败:', e);
+    return null;
+  }
+}
+
+// ================================================================
+// 产品选择
+// ================================================================
+function selectProduct(product) {
+  selectedProduct = product;
+  document.querySelectorAll('.product-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.product) === product);
+  });
+  $('previewProduct').textContent = getProductText(product);
+  updatePreview();
+}
+
+function updatePreview() {
+  const val = parseFloat($('stakeInput').value) || 0;
+  const rate = selectedProduct === 0 ? 0.225 : 0.6;
+  const profit = val * rate;
+  $('previewProfit').textContent = profit.toFixed(2) + ' UUSD';
+
+  const days = selectedProduct === 0 ? 15 : 30;
+  const end = new Date(Date.now() + days * 86400 * 1000);
+  $('previewEndTime').textContent = end.toLocaleString('zh-CN', {
+    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+  });
+}
+
+$('stakeInput').addEventListener('input', updatePreview);
+
+// ================================================================
+// 连接钱包
+// ================================================================
+async function connectWallet() {
+  if (!window.ethereum) {
+    showToast('错误', '请安装 MetaMask 或 TP 钱包', 'error');
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    if (!accounts || accounts.length === 0) {
+      showToast('错误', '未获取到账户', 'error');
+      return;
+    }
+
+    const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
+    const currentChainId = parseInt(chainIdHex, 16);
+    if (currentChainId !== CONFIG.chainId) {
+      const targetHex = '0x' + CONFIG.chainId.toString(16);
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: targetHex }],
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      } catch (e) {
+        if (e.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: targetHex,
+              chainName: CONFIG.chainName,
+              rpcUrls: [CONFIG.rpcUrl],
+              nativeCurrency: CONFIG.nativeCurrency,
+              blockExplorerUrls: [CONFIG.explorerUrl]
+            }],
+          });
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          showToast('网络错误', '请切换到 ' + CONFIG.chainName, 'error');
+          return;
+        }
+      }
+    }
+
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer = await provider.getSigner();
+    userAddress = await signer.getAddress();
+
+    const code = await provider.getCode(CONFIG.stakingContract);
+    if (code === '0x' || code === '0x0') {
+      showToast('合约错误', '质押合约地址无代码', 'error');
+      return;
+    }
+
+    stakingContract = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, signer);
+
+    try {
+      uusdAddress = await stakingContract.uusd();
+      devAddress = await stakingContract.dev();
+      uusdDecimals = Number(await stakingContract.uusdDecimals());
+      uusdContract = new ethers.Contract(uusdAddress, UUSD_ABI, signer);
+    } catch (e) {
+      console.warn('读取代币地址失败:', e);
+    }
+
+    isConnected = true;
+    $('walletBtnText').textContent = '已连接';
+    $('walletBtn').classList.add('connected');
+    $('walletAddress').textContent = shortenAddress(userAddress);
+    $('networkBadge').textContent = CONFIG.chainName;
+    $('stakeAddress').textContent = shortenAddress(userAddress);
+
+    showToast('成功', '钱包已连接', 'success');
+
+    await loadAllData();
+
+    window.ethereum.on('accountsChanged', (newAccounts) => {
+      if (newAccounts.length === 0) { disconnectWallet(); }
+      else {
+        userAddress = newAccounts[0];
+        $('walletAddress').textContent = shortenAddress(userAddress);
+        loadAllData();
+      }
+    });
+    window.ethereum.on('chainChanged', () => window.location.reload());
+
+  } catch (err) {
+    console.error('连接失败:', err);
+    lastError = err.message || '未知错误';
+    showToast('连接失败', lastError, 'error');
+  }
+}
+
+function disconnectWallet() {
+  isConnected = false;
+  userAddress = null;
+  stakingContract = null;
+  signer = null;
+  uusdContract = null;
+  $('walletBtnText').textContent = '连接钱包';
+  $('walletBtn').classList.remove('connected');
+  $('walletAddress').textContent = '';
+  $('networkBadge').textContent = '未连接';
+  showToast('已断开', '钱包已断开', 'info');
+  resetUI();
+}
+
+function resetUI() {
+  $('homeNextOrderId').textContent = '--';
+  $('homeLiquidity').textContent = '--';
+  $('homeMyComp').textContent = '--';
+  $('stakeLiquidity').textContent = '--';
+  $('stakeDevPrice').textContent = '--';
+  $('statusDevPrice').textContent = '--';
+  $('statusFunder').textContent = '--';
+  $('profileComp').textContent = '0.00';
+  $('profileTotalStaked').textContent = '0.00';
+  $('pOrderCount').textContent = '0';
+  $('pActiveStake').textContent = '0.00';
+  $('pTotalProfit').textContent = '0.00';
+  $('orderList').innerHTML = `<div class="empty-state"><i class="fas fa-file-invoice"></i>请连接钱包</div>`;
+  $('stakeRecords').innerHTML = `<div class="empty-state"><i class="fas fa-inbox"></i>请连接钱包</div>`;
+  $('stakeRecordCount').textContent = '0';
+  $('orderCountBadge').textContent = '0 笔';
+}
+
+// ================================================================
+// UUSD 授权
+// ================================================================
+async function checkAllowance() {
+  if (!uusdContract || !userAddress) return 0n;
+  try {
+    const allowance = await uusdContract.allowance(userAddress, CONFIG.stakingContract);
+    uusdAllowance = allowance;
+    return allowance;
+  } catch (e) {
+    return 0n;
+  }
+}
+
+async function approveUUSD(amount) {
+  if (!uusdContract || !userAddress) {
+    showToast('提示', '请先连接钱包', 'warning');
+    return false;
+  }
+  try {
+    const amountWei = ethers.parseUnits(amount.toString(), uusdDecimals);
+    const tx = await uusdContract.approve(CONFIG.stakingContract, amountWei);
+    showToast('⏳ 授权中', `授权 ${amount} UUSD ...`, 'info');
+    await tx.wait();
+    showToast('✅ 授权成功', `已授权 ${amount} UUSD`, 'success');
+    await checkAllowance();
+    return true;
+  } catch (err) {
+    showToast('授权失败', err.message || '交易被拒绝', 'error');
+    return false;
+  }
+}
+
+async function ensureAllowance(amount) {
+  const allowance = await checkAllowance();
+  const amountWei = ethers.parseUnits(amount.toString(), uusdDecimals);
+  if (allowance >= amountWei) return true;
+
+  return new Promise((resolve) => {
+    if (confirm(`当前授权不足 (${ethers.formatUnits(allowance, uusdDecimals)} UUSD)，需授权 ${amount} UUSD。是否立即授权？`)) {
+      approveUUSD(amount).then(resolve);
+    } else {
+      resolve(false);
+    }
+  });
+}
+
+// ================================================================
+// 读取 LP 流动性和 DEV 价格
+// ================================================================
+async function fetchLiquidityAndPrice() {
+  if (!provider) return { liquidity: null, price: null };
+  try {
+    if (!uusdAddress) {
+      uusdAddress = await stakingContract.uusd();
+    }
+    if (!devAddress) {
+      devAddress = await stakingContract.dev();
+    }
+    const pairContract = new ethers.Contract(CONFIG.pair, PAIR_ABI, provider);
+    const reserves = await pairContract.getReserves();
+    const token0 = await pairContract.token0();
+
+    let uusdReserve, devReserve;
+    if (token0.toLowerCase() === uusdAddress.toLowerCase()) {
+      uusdReserve = reserves[0];
+      devReserve = reserves[1];
+    } else {
+      uusdReserve = reserves[1];
+      devReserve = reserves[0];
+    }
+
+    const price = Number(uusdReserve) / Number(devReserve);
+    const liquidity = Number(ethers.formatUnits(uusdReserve, uusdDecimals));
+    return { liquidity, price };
+  } catch (err) {
+    console.error('读取 LP 数据失败:', err);
+    return { liquidity: null, price: null };
+  }
+}
+
+// ================================================================
+// 加载订单（遍历 userOrderIds）
+// ================================================================
+async function loadOrders() {
+  if (!stakingContract || !userAddress) return;
+  try {
+    const ids = [];
+    let i = 0;
+    while (i < 500) {
+      try {
+        const id = await stakingContract.userOrderIds(userAddress, i);
+        if (id === 0n || id === undefined) break;
+        ids.push(Number(id));
+        i++;
+      } catch {
+        break;
+      }
+    }
+
+    const orders = [];
+    for (const id of ids) {
+      try {
+        const raw = await stakingContract.getOrder(id);
+        const o = parseOrder(raw);
+        if (o) orders.push(o);
+      } catch (e) {
+        console.warn(`读取订单 ${id} 失败:`, e);
+      }
+    }
+
+    allOrders = orders.sort((a, b) => b.id - a.id);
+    $('stakeRecordCount').textContent = allOrders.length;
+    $('orderCountBadge').textContent = allOrders.length + ' 笔';
+    $('pOrderCount').textContent = allOrders.length;
+
+    renderOrderList();
+    renderStakeRecords();
+  } catch (err) {
+    console.error('加载订单失败:', err);
+    allOrders = [];
+    renderOrderList();
+    renderStakeRecords();
+  }
+}
+
+// ================================================================
+// 加载所有数据
+// ================================================================
+async function loadAllData() {
+  if (!stakingContract || !userAddress) return;
+  try {
+    const [nextId, minAmt, maxAmt, myComp] = await Promise.all([
+      stakingContract.nextOrderId().catch(() => 1n),
+      stakingContract.minStakeAmount().catch(() => 0n),
+      stakingContract.maxStakeAmount().catch(() => 0n),
+      stakingContract.computilityBalanceOf(userAddress).catch(() => 0n),
+    ]);
+
+    $('homeNextOrderId').textContent = (Number(nextId) - 1).toString();
+    $('minStakeLabel').textContent = formatEther(minAmt, uusdDecimals);
+    $('maxStakeLabel').textContent = formatEther(maxAmt, uusdDecimals);
+    $('stakeRange').textContent = `${formatEther(minAmt, uusdDecimals)} - ${formatEther(maxAmt, uusdDecimals)}`;
+    $('homeMyComp').textContent = formatEther(myComp, uusdDecimals);
+    $('profileComp').textContent = formatEther(myComp, uusdDecimals);
+
+    // 管理权状态
+    try {
+      const renounced = await stakingContract.managementRenounced();
+      if (renounced) {
+        $('statusDot').className = 'dot-red';
+        $('statusText').textContent = '管理权已放弃';
+        $('statusFunder').textContent = '已锁死';
+      } else {
+        $('statusDot').className = 'dot-green';
+        $('statusText').textContent = '运行中';
+        const f = await stakingContract.funder();
+        $('statusFunder').textContent = shortenAddress(f);
+      }
+    } catch (e) {
+      $('statusFunder').textContent = '--';
+    }
+
+    // LP 数据
+    const { liquidity, price } = await fetchLiquidityAndPrice();
+    if (liquidity !== null && price !== null) {
+      $('homeLiquidity').textContent = liquidity.toFixed(2);
+      $('stakeLiquidity').textContent = liquidity.toFixed(2);
+      const priceStr = '$' + price.toFixed(6);
+      $('stakeDevPrice').textContent = priceStr;
+      $('statusDevPrice').textContent = priceStr;
+    } else {
+      $('homeLiquidity').textContent = '--';
+      $('stakeLiquidity').textContent = '--';
+      $('stakeDevPrice').textContent = '--';
+      $('statusDevPrice').textContent = '--';
+    }
+
+    await loadOrders();
+    updateProfileData();
+  } catch (err) {
+    console.error('加载数据失败:', err);
+    lastError = err.message || '加载失败';
+  }
+}
+
+// ================================================================
+// 渲染订单
+// ================================================================
+function renderOrderList() {
+  let filtered = [...allOrders];
+  if (currentFilter !== 'all') {
+    const statusMap = { staking: 1, redeemed: 2, reinvested: 3 };
+    const target = statusMap[currentFilter];
+    if (target !== undefined) filtered = filtered.filter(o => o.status === target);
+  }
+
+  if (filtered.length === 0) {
+    $('orderList').innerHTML = `<div class="empty-state"><i class="fas fa-file-invoice"></i>暂无订单</div>`;
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  let html = '';
+  for (const o of filtered) {
+    const status = o.status;
+    const isMatured = o.endTime > 0 && o.endTime < now;
+    const canRedeem = status === OrderStatus.Staking && isMatured;
+    const canReinvest = status === OrderStatus.Redeemed && o.nextOrderId === 0;
+
+    const principalDisplay = formatEther(o.principal, uusdDecimals);
+    const profitDisplay = formatEther(o.profitBasis, uusdDecimals);
+    const startDisplay = formatTime(o.startTime);
+    const endDisplay = formatTime(o.endTime);
+
+    let statusDisplay = getStatusText(status);
+    if (status === OrderStatus.Staking && isMatured) statusDisplay = '🔴 已到期';
+
+    html += `
+      <div class="order-item status-${getStatusClass(status)}">
+        <div class="order-header">
+          <span>
+            <span class="order-id">#${o.id}</span>
+            <span class="order-product">${getProductText(o.product)}</span>
+          </span>
+          <span class="status-badge ${getStatusClass(status)}">${statusDisplay}</span>
+        </div>
+        <div class="detail-grid">
+          <span>本金: <strong>${principalDisplay} UUSD</strong></span>
+          <span>预期收益: <strong>${profitDisplay} UUSD</strong></span>
+          <span>开始: <strong>${startDisplay}</strong></span>
+          <span>到期: <strong>${endDisplay}</strong></span>
+          ${o.previousOrderId > 0 ? `<span style="grid-column:span 2;">来源订单: <strong>#${o.previousOrderId}</strong></span>` : ''}
+          ${o.nextOrderId > 0 ? `<span style="grid-column:span 2;">复投至: <strong>#${o.nextOrderId}</strong></span>` : ''}
+        </div>
+        <div class="order-actions">
+          ${canRedeem ? `<button class="btn-sm green" onclick="doRedeem(${o.id})">🔄 赎回</button>` : ''}
+          ${canReinvest ? `<button class="btn-sm gold" onclick="doReinvest(${o.id}, ${o.product})">🔁 复投</button>` : ''}
+          <button class="btn-sm blue" onclick="viewOrder(${o.id})">📄 详情</button>
+        </div>
+      </div>
+    `;
+  }
+  $('orderList').innerHTML = html;
+}
+
+function renderStakeRecords() {
+  let filtered = [...allOrders];
+  if (currentFilter !== 'all') {
+    const statusMap = { staking: 1, redeemed: 2, reinvested: 3 };
+    const target = statusMap[currentFilter];
+    if (target !== undefined) filtered = filtered.filter(o => o.status === target);
+  }
+
+  if (filtered.length === 0) {
+    $('stakeRecords').innerHTML = `<div class="empty-state"><i class="fas fa-inbox"></i>暂无记录</div>`;
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  let html = '';
+  for (const o of filtered) {
+    const status = o.status;
+    const isMatured = o.endTime > 0 && o.endTime < now;
+    const canRedeem = status === OrderStatus.Staking && isMatured;
+    const canReinvest = status === OrderStatus.Redeemed && o.nextOrderId === 0;
+
+    const principalDisplay = formatEther(o.principal, uusdDecimals);
+    const profitDisplay = formatEther(o.profitBasis, uusdDecimals);
+    const startDisplay = formatTime(o.startTime);
+    const endDisplay = formatTime(o.endTime);
+
+    let statusDisplay = getStatusText(status);
+    if (status === OrderStatus.Staking && isMatured) statusDisplay = '🔴 已到期';
+
+    html += `
+      <div class="order-item status-${getStatusClass(status)}">
+        <div class="order-header">
+          <span>
+            <span class="order-id">#${o.id}</span>
+            <span class="order-product">${getProductText(o.product)}</span>
+          </span>
+          <span class="status-badge ${getStatusClass(status)}">${statusDisplay}</span>
+        </div>
+        <div class="detail-grid">
+          <span>本金: <strong>${principalDisplay} UUSD</strong></span>
+          <span>预期收益: <strong>${profitDisplay} UUSD</strong></span>
+          <span>开始: <strong>${startDisplay}</strong></span>
+          <span>到期: <strong>${endDisplay}</strong></span>
+        </div>
+        <div class="order-actions">
+          ${canRedeem ? `<button class="btn-sm green" onclick="doRedeem(${o.id})">🔄 赎回</button>` : ''}
+          ${canReinvest ? `<button class="btn-sm gold" onclick="doReinvest(${o.id}, ${o.product})">🔁 复投</button>` : ''}
+          <button class="btn-sm blue" onclick="viewOrder(${o.id})">📄 详情</button>
+        </div>
+      </div>
+    `;
+  }
+  $('stakeRecords').innerHTML = html;
+}
+
+// ================================================================
+// 个人统计
+// ================================================================
+function updateProfileData() {
+  let totalPrincipal = 0;
+  let activePrincipal = 0;
+  let totalProfit = 0;
+
+  for (const o of allOrders) {
+    const principal = parseFloat(formatEther(o.principal, uusdDecimals));
+    const profit = parseFloat(formatEther(o.profitBasis, uusdDecimals));
+    totalPrincipal += principal;
+    if (o.status === OrderStatus.Staking) activePrincipal += principal;
+    if (o.status === OrderStatus.Redeemed || o.status === OrderStatus.Reinvested) {
+      totalProfit += profit;
+    }
+  }
+
+  $('profileTotalStaked').textContent = totalPrincipal.toFixed(2);
+  $('pActiveStake').textContent = activePrincipal.toFixed(2);
+  $('pTotalProfit').textContent = totalProfit.toFixed(2);
+}
+
+// ================================================================
+// 查看订单
+// ================================================================
+window.viewOrder = async function(orderId) {
+  if (!stakingContract) { showToast('提示', '请先连接钱包', 'warning'); return; }
+  try {
+    const raw = await stakingContract.getOrder(orderId);
+    const o = parseOrder(raw);
+    if (!o) { showToast('错误', '订单解析失败', 'error'); return; }
+    showToast('📄 订单详情',
+      `#${orderId} | ${getProductText(o.product)} | 本金: ${formatEther(o.principal, uusdDecimals)} UUSD | 预期收益: ${formatEther(o.profitBasis, uusdDecimals)} UUSD | 状态: ${getStatusText(o.status)}`,
+      'info');
+  } catch (e) {
+    showToast('错误', '订单不存在或加载失败', 'error');
+  }
+};
+
+// ================================================================
+// 赎回
+// ================================================================
+window.doRedeem = async function(orderId) {
+  if (!stakingContract || !userAddress) { showToast('提示', '请先连接钱包', 'warning'); return; }
+  try {
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+    const maxDevIn = ethers.MaxUint256;
+    showToast('⏳ 赎回中', `订单 #${orderId} 已提交`, 'info');
+    const tx = await stakingContract.redeem(orderId, maxDevIn, deadline);
+    await tx.wait();
+    showToast('✅ 赎回成功', `订单 #${orderId} 已赎回`, 'success');
+    await loadAllData();
+    navigateTo('orders');
+  } catch (err) {
+    console.error('赎回失败:', err);
+    let msg = err.message || '交易失败';
+    if (msg.includes('not matured')) msg = '订单尚未到期';
+    else if (msg.includes('status')) msg = '订单状态不允许赎回';
+    showToast('赎回失败', msg, 'error');
+  }
+};
+
+// ================================================================
+// 复投（只有一个入口）
+// ================================================================
+window.doReinvest = async function(orderId, product) {
+  if (!stakingContract || !userAddress) { showToast('提示', '请先连接钱包', 'warning'); return; }
+  try {
+    const raw = await stakingContract.getOrder(orderId);
+    const o = parseOrder(raw);
+    if (!o) { showToast('错误', '订单不存在', 'error'); return; }
+    if (o.status !== OrderStatus.Redeemed) {
+      showToast('错误', `订单状态为 "${getStatusText(o.status)}"，无法复投`, 'error');
+      return;
+    }
+    if (o.nextOrderId !== 0) {
+      showToast('错误', '该订单已复投过', 'error');
+      return;
+    }
+
+    const principalNum = parseFloat(formatEther(o.principal, uusdDecimals));
+    const authorized = await ensureAllowance(principalNum);
+    if (!authorized) return;
+
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+    showToast('⏳ 复投中', `订单 #${orderId} 已提交`, 'info');
+    const tx = await stakingContract.reinvest(orderId, product, 0n, 0n, deadline);
+    await tx.wait();
+    showToast('✅ 复投成功', `订单 #${orderId} 已复投`, 'success');
+    await loadAllData();
+  } catch (err) {
+    console.error('复投失败:', err);
+    let msg = err.message || '交易失败';
+    if (msg.includes('insufficient')) msg = 'UUSD 余额不足';
+    else if (msg.includes('allowance')) msg = '请先授权 UUSD';
+    else if (msg.includes('status')) msg = '订单状态不允许复投';
+    else if (msg.includes('reinvested')) msg = '该订单已复投';
+    showToast('复投失败', msg, 'error');
+  }
+};
+
+// ================================================================
+// 批量赎回
+// ================================================================
+window.batchRedeem = async function() {
+  if (!stakingContract || !userAddress) { showToast('提示', '请先连接钱包', 'warning'); return; }
+  const now = Math.floor(Date.now() / 1000);
+  const matured = allOrders.filter(o =>
+    o.status === OrderStatus.Staking && o.endTime > 0 && o.endTime < now
+  );
+  if (matured.length === 0) { showToast('提示', '没有可赎回的订单', 'info'); return; }
+  showToast('⏳ 批量赎回', `正在赎回 ${matured.length} 个订单...`, 'info');
+  let success = 0;
+  for (const o of matured) {
+    try {
+      const deadline = Math.floor(Date.now() / 1000) + 600;
+      const tx = await stakingContract.redeem(o.id, ethers.MaxUint256, deadline);
+      await tx.wait();
+      success++;
+    } catch (e) {
+      console.error(`订单 #${o.id} 赎回失败:`, e);
+    }
+  }
+  showToast('✅ 批量赎回完成', `成功 ${success}/${matured.length}`, 'success');
+  await loadAllData();
+};
+
+window.refreshOrders = function() {
+  loadOrders();
+  showToast('已刷新', '订单数据已更新', 'success');
+};
+
+window.refreshAll = function() {
+  loadAllData();
+  showToast('已刷新', '数据已更新', 'success');
+};
+
+// ================================================================
+// 复投链追踪
+// ================================================================
+window.showReinvestmentChain = async function() {
+  const input = $('chainOrderInput');
+  const orderId = parseInt(input.value);
+  if (!orderId || orderId <= 0) { showToast('输入错误', '请输入有效订单ID', 'error'); return; }
+  if (!stakingContract) { showToast('提示', '请先连接钱包', 'warning'); return; }
+  try {
+    const chain = [];
+    let currentId = orderId;
+    let maxLoop = 20;
+    while (currentId > 0 && maxLoop > 0) {
+      maxLoop--;
+      const raw = await stakingContract.getOrder(currentId);
+      const o = parseOrder(raw);
+      if (!o || o.id === 0) break;
+      chain.push({
+        id: currentId,
+        status: o.status,
+        product: o.product,
+        principal: formatEther(o.principal, uusdDecimals),
+        nextOrderId: o.nextOrderId
+      });
+      if (o.nextOrderId === 0 || o.nextOrderId === currentId) break;
+      currentId = o.nextOrderId;
+    }
+
+    const container = $('reinvestmentChain');
+    if (chain.length === 0) {
+      container.innerHTML = `<div class="empty-state" style="padding:20px 0;"><i class="fas fa-link" style="font-size:28px;"></i>未找到订单</div>`;
+      return;
+    }
+    let html = `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">复投链 (共 ${chain.length} 个订单)</div>`;
+    for (let i = 0; i < chain.length; i++) {
+      const c = chain[i];
+      const arrow = i < chain.length - 1 ? ' ➜ ' : '';
+      html += `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-primary);border-radius:6px;margin-bottom:4px;font-size:13px;">
+          <span>
+            <strong style="color:var(--blue);">#${c.id}</strong>
+            <span style="color:var(--gold);margin-left:6px;">${getProductText(c.product)}</span>
+            <span style="color:var(--text-secondary);margin-left:6px;">${getStatusText(c.status)}</span>
+            <span style="color:var(--text-muted);margin-left:6px;">${c.principal} UUSD</span>
+          </span>
+          <span style="color:var(--text-secondary);">${c.nextOrderId > 0 ? '✅ 已复投' : '❌ 未复投'}${arrow}</span>
+        </div>
+      `;
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    showToast('错误', '查询失败: ' + e.message, 'error');
+  }
+};
+
+// ================================================================
+// 质押提交
+// ================================================================
+$('stakeSubmitBtn').addEventListener('click', async () => {
+  if (!stakingContract || !userAddress) { showToast('提示', '请先连接钱包', 'warning'); return; }
+
+  const amount = $('stakeInput').value.trim();
+  if (!amount || parseFloat(amount) <= 0) { showToast('输入错误', '请输入有效质押数量', 'error'); return; }
+
+  const min = parseFloat($('minStakeLabel').textContent) || 10;
+  const max = parseFloat($('maxStakeLabel').textContent) || 1000;
+  const val = parseFloat(amount);
+  if (val < min || val > max) {
+    showToast('输入错误', `质押数量需在 ${min} - ${max} UUSD 之间`, 'error');
+    return;
+  }
+
+  const authorized = await ensureAllowance(val);
+  if (!authorized) return;
+
+  try {
+    const amtWei = ethers.parseUnits(amount, uusdDecimals);
+    const deadline = Math.floor(Date.now() / 1000) + 600;
+    $('stakeSubmitBtn').disabled = true;
+    $('stakeSubmitBtn').innerHTML = '<span class="spinner"></span> 处理中...';
+
+    const tx = await stakingContract.deposit(amtWei, selectedProduct, 0n, 0n, deadline);
+    showToast('⏳ 质押中', `${amount} UUSD 已提交`, 'info');
+    await tx.wait();
+    showToast('✅ 质押成功', `${amount} UUSD 已质押`, 'success');
+    $('stakeInput').value = '';
+    updatePreview();
+    await loadAllData();
+  } catch (err) {
+    console.error('质押失败:', err);
+    let msg = err.message || '交易失败';
+    if (msg.includes('amount')) msg = '金额超出范围';
+    else if (msg.includes('product')) msg = '产品类型错误';
+    showToast('质押失败', msg, 'error');
+  } finally {
+    $('stakeSubmitBtn').disabled = false;
+    $('stakeSubmitBtn').innerHTML = '<i class="fas fa-lock"></i> 质押';
+  }
+});
+
+// ================================================================
+// 页面导航
+// ================================================================
+function navigateTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById('page-' + page);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.page === page);
+  });
+  if (isConnected && stakingContract) loadAllData();
+}
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => navigateTo(item.dataset.page));
+});
+
+document.querySelectorAll('#stakeTabs .tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('#stakeTabs .tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.dataset.filter;
+    renderStakeRecords();
+  });
+});
+
+// ================================================================
+// 钱包按钮
+// ================================================================
+$('walletBtn').addEventListener('click', () => {
+  if (isConnected) disconnectWallet();
+  else connectWallet();
+});
+
+// ================================================================
+// 初始化
+// ================================================================
+updatePreview();
+if (window.ethereum && window.ethereum.selectedAddress) {
+  setTimeout(connectWallet, 500);
+}
+
+console.log('🚀 DevDao DApp 已加载');
+console.log('📋 质押合约:', CONFIG.stakingContract);
+console.log('📋 DEV 代币:', CONFIG.devToken);
+console.log('📋 Pair:', CONFIG.pair);
+
+window.navigateTo = navigateTo;
+window.connectWallet = connectWallet;
+window.selectProduct = selectProduct;
+</script>
+
+</body>
+</html>
