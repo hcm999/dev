@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<title>DEV 质押数据 · 展示端</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding:12px; min-height:100vh; }
+.container { max-width:1400px; margin:0 auto; padding:0; }
+.header { margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #2a3a5a; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+.header h1 { font-size:1.5rem; font-weight:700; background:linear-gradient(135deg,#3b82f6,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.user-info { font-size:0.75rem; color:#8899bb; font-family:monospace; }
+.user-info .ok { color:#22c55e; }
+.stats-grid { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; margin-bottom:16px; }
+@media (min-width:768px) { .stats-grid { gap:16px; } }
+.stat-card { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:10px 6px; }
+.stat-title { color:#8899bb; font-size:0.65rem; text-transform:uppercase; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stat-value { color:#3b82f6; font-size:0.8rem; font-weight:700; line-height:1.2; word-break:break-word; }
+@media (min-width:768px) { .stat-value { font-size:1.6rem; } }
+/* ===== 统计卡片百分比 ===== */
+.stat-sub { color:#22c55e; font-size:0.6rem; display:flex; justify-content:space-between; align-items:center; }
+.stat-pct { color:#fbbf24; font-size:0.6rem; margin-left:auto; }
+
+/* ===== 排行榜序号 ===== */
+.rank-badge { display:inline-block; width:24px; height:24px; line-height:24px; border-radius:50%; background:#1a2332; color:#8899bb; font-weight:600; font-size:0.7rem; text-align:center; }
+.rank-1 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#0a0e1a; }
+.rank-2 { background:linear-gradient(135deg,#9ca3af,#6b7280); color:#0a0e1a; }
+.rank-3 { background:linear-gradient(135deg,#f59e0b,#b45309); color:#0a0e1a; }
+
+/* ===== 可折叠卡片 ===== */
+.collapsible-card .card-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    transition: color 0.2s;
+}
+.collapsible-card .card-header:hover { color: #60a5fa; }
+.collapsible-card .collapse-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    color: #3b82f6;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.collapsible-card.collapsed .collapse-icon { transform: rotate(-90deg); }
+.collapsible-card .card-body-wrapper {
+    max-height: 3000px;
+    overflow: hidden;
+    transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+    opacity: 1;
+    margin-top: 10px;
+}
+.collapsible-card.collapsed .card-body-wrapper {
+    max-height: 0 !important;
+    opacity: 0;
+    margin-top: 0;
+}
+
+/* ===== LP池刷新按钮 ===== */
+.refresh-icon { font-size:0.7rem; color:#60a5fa; cursor:pointer; }
+
+/* ===== 日期筛选 ===== */
+.filter-select { background:#1a2332; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 12px; border-radius:20px; font-size:0.75rem; cursor:pointer; }
+.table-container { background:linear-gradient(145deg,#111827,#0a0e1a); border-radius:16px; padding:12px; border:1px solid #2a3a5a; margin-top:16px; }
+.table-responsive { overflow-x:auto; max-height:600px; overflow-y:auto; }
+.table { color:#e8edf5; font-size:0.75rem; width:100%; border-collapse:collapse; }
+.table thead th { position:sticky; top:0; background:#111827; z-index:10; border-bottom:2px solid #2a3a5a; color:#8899bb; font-size:0.65rem; padding:10px 4px; text-align:center; white-space:nowrap; }
+.table td { border-bottom:1px solid #2a3a5a; padding:8px 4px; text-align:center; }
+.address-cell { font-size:0.7rem; color:#60a5fa; cursor:pointer; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.amount-cell { font-size:0.7rem; color:#3b82f6; font-weight:600; }
+.badge-duration { padding:3px 12px; border-radius:20px; font-size:0.65rem; font-weight:600; background:linear-gradient(135deg,#8b5cf6,#7c3aed); color:white; display:inline-block; }
+.badge-duration.p15 { background:linear-gradient(135deg,#3b82f6,#2563eb); }
+.status-unlocked { color:#22c55e; font-weight:500; }
+.status-locked { color:#f87171; font-weight:500; }
+.data-tabs { display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #2a3a5a; padding-bottom:10px; flex-wrap:wrap; }
+.data-tab { background:transparent; border:1px solid #4a5a7a; color:#8899bb; padding:6px 18px; border-radius:30px; cursor:pointer; font-size:0.85rem; }
+.data-tab.active { background:linear-gradient(135deg,#3b82f6,#2563eb); border-color:#60a5fa; color:white; }
+.data-panel { display:none; }
+.data-panel.active { display:block; }
+.chart-card { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:16px; margin-bottom:16px; }
+.chart-container { position:relative; height:200px; width:100%; }
+.range-btn { background:#1a2332; border:1px solid #2a3a5a; color:#8899bb; padding:2px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; }
+.range-btn.active { background:#3b82f6; border-color:#60a5fa; color:white; }
+.empty-state { text-align:center; padding:40px 0; color:#4a5a7a; font-size:14px; }
+
+/* ===== 登录遮罩 ===== */
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,0.95); backdrop-filter:blur(10px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
+.login-dialog { background:linear-gradient(145deg,#1e293b,#0f172a); border:2px solid #3b82f6; border-radius:24px; padding:32px 24px; max-width:440px; width:100%; box-shadow:0 30px 60px rgba(0,0,0,0.8); }
+.login-title { font-size:1.6rem; font-weight:700; background:linear-gradient(135deg,#60a5fa,#c084fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px; text-align:center; }
+.login-sub { color:#94a3b8; font-size:0.85rem; margin-bottom:24px; text-align:center; line-height:1.5; }
+.login-label { color:#8899bb; font-size:0.75rem; margin-bottom:6px; display:block; }
+.login-input { width:100%; padding:12px; background:#0a0e1a; border:1px solid #2a3a5a; border-radius:10px; color:#e8edf5; font-size:0.9rem; outline:none; margin-bottom:14px; font-family:monospace; }
+.login-input:focus { border-color:#3b82f6; }
+.login-btn { width:100%; background:linear-gradient(135deg,#3b82f6,#2563eb); border:none; padding:12px; border-radius:10px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; margin-bottom:10px; }
+.login-btn:hover { opacity:0.9; }
+.login-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.login-btn-secondary { background:#2a3a5a; }
+.login-error { color:#f87171; font-size:0.8rem; margin-top:10px; min-height:20px; text-align:center; }
+.login-hint { color:#64748b; font-size:0.7rem; margin-top:16px; text-align:center; line-height:1.6; }
+
+/* ===== 付费面板 ===== */
+.pay-panel { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #fbbf24; border-radius:16px; padding:20px; margin-top:16px; }
+.pay-title { color:#fbbf24; font-size:1.1rem; font-weight:700; margin-bottom:12px; }
+.pay-info-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a2332; font-size:0.8rem; }
+.pay-info-row:last-child { border-bottom:none; }
+.pay-label { color:#8899bb; }
+.pay-value { color:#e8edf5; font-family:monospace; word-break:break-all; max-width:65%; text-align:right; }
+.pay-copy { background:#2a3a5a; border:none; padding:2px 8px; border-radius:6px; color:#e8edf5; font-size:0.65rem; cursor:pointer; margin-left:6px; }
+.plan-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+.plan-card { background:#0a0e1a; border:2px solid #2a3a5a; border-radius:12px; padding:16px; text-align:center; cursor:default; }
+.plan-card.featured { border-color:#fbbf24; background:rgba(251,191,36,0.05); }
+.plan-name { color:#e8edf5; font-weight:700; font-size:0.9rem; margin-bottom:6px; }
+.plan-price { color:#fbbf24; font-size:1.5rem; font-weight:700; margin:8px 0; }
+.plan-price small { font-size:0.7rem; color:#8899bb; font-weight:400; }
+.plan-desc { color:#8899bb; font-size:0.7rem; }
+</style>
+</head>
+<body>
+
+<!-- ============ 登录/付费遮罩 ============ -->
+<div class="overlay" id="loginOverlay">
+    <div class="login-dialog" id="loginDialog">
+        <!-- 步骤 1：连钱包 -->
+        <div id="stepLogin">
+            <div class="login-title">🔐 DEV 数据展示端</div>
+            <div class="login-sub">请连接钱包并签名验证白名单</div>
+
+            <div style="background:#0a0e1a;border:1px solid #2a3a5a;border-radius:10px;padding:12px;margin-bottom:14px;">
+                <div style="color:#8899bb;font-size:0.7rem;margin-bottom:4px;">当前钱包</div>
+                <div id="walletDisplay" style="font-family:monospace;font-size:0.8rem;color:#60a5fa;">未连接</div>
+            </div>
+
+            <button class="login-btn login-btn-secondary" id="connectBtn" onclick="connectWallet()">🦊 连接钱包</button>
+
+            <button class="login-btn" id="verifyBtn" onclick="verifyAccess()">进入</button>
+            <div class="login-error" id="loginError"></div>
+            <div class="login-hint">💡 使用 MetaMask / TP 钱包连接<br>连接后需签名验证，只有白名单地址才能访问</div>
+        </div>
+
+        <!-- 步骤 2：付费引导 -->
+        <div id="stepPay" style="display:none;">
+            <div class="login-title">💎 需要付费访问</div>
+            <div class="login-sub" id="payReason">你的地址不在白名单</div>
+
+            <div class="pay-panel" style="margin-top:0;">
+                <div class="pay-title">💰 套餐选择</div>
+
+                <div class="plan-cards">
+                    <div class="plan-card">
+                        <div class="plan-name">单次查看</div>
+                        <div class="plan-price">5<small> U</small></div>
+                        <div class="plan-desc">有效期 24 小时</div>
+                    </div>
+                    <div class="plan-card featured">
+                        <div class="plan-name">月卡 ⭐</div>
+                        <div class="plan-price">15<small> U</small></div>
+                        <div class="plan-desc">有效期 30 天</div>
+                    </div>
+                </div>
+
+                <div class="pay-info-row">
+                    <span class="pay-label">收款地址</span>
+                    <span class="pay-value" id="payWallet">--<button class="pay-copy" onclick="copyPayWallet()">复制</button></span>
+                </div>
+                <div class="pay-info-row">
+                    <span class="pay-label">币种 / 网络</span>
+                    <span class="pay-value">USDT (BSC / BEP20)</span>
+                </div>
+                <div class="pay-info-row">
+                    <span class="pay-label">TG</span>
+                    <span class="pay-value" id="payTG">--</span>
+                </div>
+                <div class="pay-info-row">
+                    <span class="pay-label">QQ</span>
+                    <span class="pay-value" id="payQQ">3751235417</span>
+                </div>
+            </div>
+
+            <div style="margin-top:16px;padding:12px;background:#0a0e1a;border:1px dashed #2a3a5a;border-radius:10px;font-size:0.75rem;color:#94a3b8;line-height:1.6;">
+                📌 付款后请联系客服，提供你的钱包地址：<br>
+                <span style="color:#60a5fa;font-family:monospace;word-break:break-all;" id="payMyAddr">--</span>
+            </div>
+
+            <button class="login-btn login-btn-secondary" style="margin-top:16px;" onclick="backToLogin()">← 返回</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ 主界面 ============ -->
+<div class="container" id="mainApp" style="display:none;">
+    <div class="header">
+        <div>
+            <h1>💎 DEV 质押数据展示</h1>
+            <div class="user-info" style="margin-top:4px;">
+                钱包: <span id="headerWallet" class="ok">--</span>
+                · 有效期: <span id="headerExpire" class="ok">--</span>
+            </div>
+        </div>
+        <button class="range-btn" onclick="logout()">退出</button>
+    </div>
+
+    <!-- 第一排：本金 -->
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">UUSD</div></div>
+        <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="activePct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">🟦 15天周期(本金)</div><div class="stat-value" id="staked15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p15Pct">占比 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
+    </div>
+
+    <!-- 第二排：本金+收益 -->
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期(本金+收益)</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期(本金+收益)</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期(本金+收益)</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
+            <div class="stat-title">💰 LP池余额 <span class="refresh-icon">🔄</span></div>
+            <div class="stat-value" id="lpBalance">0.00</div>
+            <div class="stat-sub">UUSD</div>
+        </div>
+    </div>
+
+    <div class="data-tabs">
+        <span class="data-tab active" onclick="switchTab('charts')" id="tab-charts">📊 图表</span>
+        <span class="data-tab" onclick="switchTab('daily')" id="tab-daily">📅 每日统计</span>
+        <span class="data-tab" onclick="switchTab('records')" id="tab-records">📋 质押记录</span>
+    </div>
+
+    <!-- 图表面板 -->
+    <div id="panel-charts" class="data-panel active">
+        <!-- 卡片1：每日地址趋势 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">👥 每日地址趋势 (活跃/新增)</span>
+                    <span id="totalActiveAddresses" style="color:#3b82f6;font-weight:700;font-size:0.85rem;">🟢 当前活跃: 0</span>
+                    <div>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(15, this)">15天</span>
+                        <span class="range-btn address-range-btn active" onclick="event.stopPropagation(); setAddressTrendRange(30, this)">30天</span>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(90, this)">90天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:220px;"><canvas id="addressTrendChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片2：每日趋势 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📈 每日趋势 (新增/活跃/复投/赎回)</span>
+                    <div>
+                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(30, this)">30天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(90, this)">90天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setTrendRange(120, this)">120天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container"><canvas id="trendChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片3：到期分布 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                    <div style="font-size:0.7rem;">
+                        <span style="color:#3b82f6;">■ 本金</span>
+                        <span style="color:#ef4444;margin-left:8px;">■ 收益</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:200px;"><canvas id="unlockChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片4：未来每日到期 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📊 未来每日到期本金 + 收益</span>
+                    <div>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(7, this)">7天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
+                    </div>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="chart-container" style="height:220px;"><canvas id="expiryChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- 卡片5：未来30天每日到期记录（表格） -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">📋 未来30天每日到期记录</span>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="table-responsive" style="max-height:600px;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>合计到期</th>
+                                <th>15天到期本金</th>
+                                <th>15天到期收益</th>
+                                <th>30天到期本金</th>
+                                <th>30天到期收益</th>
+                                <th>累计到期</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expiryTableBody"><tr><td colspan="7" class="empty-state">加载数据中...</td></tr></tbody>
+                        <tfoot id="expiryTableFooter"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 卡片6：排行榜 -->
+        <div class="chart-card collapsible-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
+                    <span style="color:#8899bb;">🏆 前500质押金额排行榜（本金）</span>
+                </div>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="card-body-wrapper">
+                <div class="table-responsive" style="max-height:600px;">
+                    <table class="table leaderboard-table" id="leaderboardTable">
+                        <thead><tr><th>#</th><th>地址</th><th>质押金额 (UUSD)</th><th>订单数</th></tr></thead>
+                        <tbody id="leaderboardBody"><tr><td colspan="4" class="empty-state">暂无数据</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 每日统计 -->
+    <div id="panel-daily" class="data-panel">
+        <div class="table-container">
+            <h5 style="color:#e8edf5;margin-bottom:12px;">📅 每日统计（本金）</h5>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr><th>日期</th><th>新增质押</th><th>活跃质押</th><th>15天周期</th><th>30天周期</th><th>复投</th><th>赎回</th></tr>
+                    </thead>
+                    <tbody id="dailyStatsBody"><tr><td colspan="7" class="empty-state">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 质押记录 -->
+    <div id="panel-records" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                <h5 style="color:#e8edf5;">📋 质押记录 <span class="badge-duration" style="font-size:0.7rem;" id="resultCount">0</span></h5>
+            </div>
+            <div class="filter-bar" style="display:flex;gap:8px;margin:15px 0;flex-wrap:wrap;align-items:center;background:#111827;padding:12px;border-radius:12px;border:1px solid #2a3a5a;">
+                <select id="filterType" class="filter-select" onchange="applyFilters()">
+                    <option value="all">全部</option>
+                    <option value="product0">15天</option>
+                    <option value="product1">30天</option>
+                    <option value="stake">质押中</option>
+                    <option value="reinvest">已复投</option>
+                    <option value="redeem">已赎回</option>
+                </select>
+                <input type="date" id="filterDate" class="filter-select" style="width:auto;" onchange="applyFilters()">
+                <input type="text" id="searchAddress" class="filter-select" style="flex:1;min-width:180px;" placeholder="搜索地址..." oninput="applyFilters()">
+                <span id="filterStats" style="color:#8899bb;font-size:0.75rem;margin-left:auto;">显示 0/0</span>
+                <button class="range-btn" onclick="clearFilters()">清除</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table"><thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>本金+收益</th><th>产品</th><th>质押时间</th><th>解锁时间</th><th>剩余</th><th>状态</th></tr></thead>
+                <tbody id="resultTableBody"><tr><td colspan="10" class="empty-state">请填入钱包地址后查询</td></tr></tbody>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+// 配置
+// ================================================================
+const CONFIG = {
+    API_BASE: '/api',
+    PROJECT_ID: 'dev',
+    ACCESS_PASSWORD: 'dev-2025',
+};
+
+let payInfo = {
+    receiveWallet: '--',
+    price: { SINGLE: 5, MONTHLY: 15 },
+    duration: { SINGLE: 86400, MONTHLY: 2592000 },
+    contact: { TG: '--', QQ: '3751235417' }
+};
+
+// ================================================================
+// 状态
+// ================================================================
+let userAddress = null;
+let accessPassword = CONFIG.ACCESS_PASSWORD;
+let accessInfo = null;
+
+let queryResults = [];
+let allStakeRecords = [];
+let filteredResults = [];
+let trendRange = 120;
+let expiryRange = 15;
+let addressTrendRange = 30;
+let stats = {
+    totalStaked: 0, activeStaked: 0,
+    staked15d: 0, staked30d: 0,
+    unlock2d: 0, unlock7d: 0, unlock15d: 0,
+    lpBalance: 0
+};
+let trendChart, unlockChart, expiryChart, addressTrendChart;
+
+// ================================================================
+// 工具
+// ================================================================
+const $ = id => document.getElementById(id);
+function shorten(a) { return a ? a.slice(0,6)+'…'+a.slice(-4) : ''; }
+function formatDate(ts) {
+    if (!ts) return '--';
+    const d = new Date(ts * 1000 + 8 * 3600 * 1000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function formatTime(ts) {
+    if (!ts) return '--';
+    const d = new Date(ts * 1000 + 8 * 3600 * 1000);
+    return `${d.getUTCMonth()+1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+}
+function getDateStr(ts) {
+    const d = new Date(ts * 1000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function timeRemain(sec) {
+    if (sec <= 0) return '已解锁';
+    const d = Math.floor(sec/86400), h = Math.floor((sec%86400)/3600);
+    return d>0 ? `${d}d${h}h` : `${h}h${Math.floor((sec%3600)/60)}m`;
+}
+function principalOf(r) { return r.amount || 0; }
+function profitOf(r) { return r.profit || 0; }
+function totalOf(r) {
+    if (!r) return 0;
+    if (r.amountWithProfit != null) return r.amountWithProfit;
+    return (r.amount || 0) + (r.profit || 0);
+}
+
+// ================================================================
+// 卡片折叠/展开
+// ================================================================
+function toggleCard(headerElement) {
+    const card = headerElement.closest('.collapsible-card');
+    if (!card) return;
+    card.classList.toggle('collapsed');
+    if (!card.classList.contains('collapsed')) {
+        setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 420);
+    }
+}
+
+// ================================================================
+// 1. 登录流程（带钱包签名）
+// ================================================================
+async function connectWallet() {
+    if (!window.ethereum) {
+        alert('请安装 MetaMask 或 TP 钱包');
+        return;
+    }
+    try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!accounts || accounts.length === 0) {
+            alert('未获取到账户');
+            return;
+        }
+        userAddress = accounts[0].toLowerCase();
+        $('walletDisplay').innerText = shorten(userAddress);
+        $('walletDisplay').style.color = '#22c55e';
+    } catch (e) {
+        alert('连接失败: ' + (e.message || e));
+    }
+}
+
+async function verifyAccess() {
+    const btn = $('verifyBtn');
+    const err = $('loginError');
+
+    if (!userAddress) {
+        err.innerText = '请先连接钱包';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = '请在钱包中签名...';
+    err.innerText = '';
+
+    try {
+        // 1. 前端生成 nonce + message
+        const nonce = 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+        const message = `DEV 数据展示端登录\n\n地址: ${userAddress}\nNonce: ${nonce}\n签发时间: ${new Date().toISOString()}`;
+
+        // 2. 请求钱包签名
+        let signature;
+        try {
+            signature = await window.ethereum.request({
+                method: 'personal_sign',
+                params: [message, userAddress]
+            });
+        } catch (e) {
+            if (e && e.code === 4001) {
+                err.innerText = '你取消了签名';
+            } else {
+                err.innerText = '签名失败: ' + ((e && e.message) || e);
+            }
+            return;
+        }
+
+        // 3. 前端自验（确认签名没签错，非安全校验）
+        let recovered;
+        try {
+            recovered = ethers.verifyMessage(message, signature).toLowerCase();
+        } catch (e) {
+            err.innerText = '签名解析失败，请重试';
+            return;
+        }
+        if (recovered !== userAddress) {
+            err.innerText = '签名地址不匹配，请重试';
+            return;
+        }
+
+        // 4. 提交到后端（后端只取 address + password，多余字段忽略）
+        btn.innerText = '校验中...';
+        const res = await fetch(`${CONFIG.API_BASE}/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                address: userAddress,
+                password: accessPassword,
+                signature,
+                message
+            })
+        });
+        const result = await res.json();
+
+        if (result.success) {
+            accessInfo = result;
+            sessionStorage.setItem('dev_access_password', accessPassword);
+            sessionStorage.setItem('dev_access_address', userAddress);
+            sessionStorage.setItem('dev_access_info', JSON.stringify(result));
+            sessionStorage.setItem('dev_signed_at', String(Date.now()));
+            await enterApp();
+        } else {
+            if (result.code === 'INVALID_PASSWORD') {
+                err.innerText = '密码错误';
+            } else if (result.code === 'NOT_IN_WHITELIST' || result.code === 'EXPIRED') {
+                if (result.payInfo) payInfo = result.payInfo;
+                $('payReason').innerText = result.code === 'EXPIRED'
+                    ? `你的访问已于 ${new Date(result.expireAt * 1000).toLocaleString('zh-CN')} 过期`
+                    : '你的地址不在白名单';
+                $('payMyAddr').innerText = userAddress;
+                $('payWallet').innerHTML = payInfo.receiveWallet + ' <button class="pay-copy" onclick="copyPayWallet()">复制</button>';
+                $('payTG').innerText = payInfo.contact.TG || '--';
+                $('payQQ').innerText = payInfo.contact.QQ || '3751235417';
+                $('stepLogin').style.display = 'none';
+                $('stepPay').style.display = 'block';
+            } else {
+                err.innerText = result.error || '访问被拒绝';
+            }
+        }
+    } catch (e) {
+        err.innerText = '请求失败: ' + ((e && e.message) || e);
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '进入';
+    }
+}
+
+function backToLogin() {
+    $('stepLogin').style.display = 'block';
+    $('stepPay').style.display = 'none';
+    $('loginError').innerText = '';
+}
+
+function copyPayWallet() {
+    navigator.clipboard.writeText(payInfo.receiveWallet);
+    alert('✅ 收款地址已复制');
+}
+
+async function enterApp() {
+    $('loginOverlay').style.display = 'none';
+    $('mainApp').style.display = 'block';
+
+    $('headerWallet').innerText = shorten(accessInfo.address);
+    $('headerExpire').innerText = accessInfo.expireAtText || '永久';
+
+    await loadCloudData();
+}
+
+function logout() {
+    if (!confirm('确认退出？')) return;
+    sessionStorage.removeItem('dev_access_password');
+    sessionStorage.removeItem('dev_access_address');
+    sessionStorage.removeItem('dev_access_info');
+    sessionStorage.removeItem('dev_signed_at');
+    location.reload();
+}
+
+// checkSession：只读本地 session，不再请求 /api/auth（避免无签名被拒）
+async function checkSession() {
+    const addr = sessionStorage.getItem('dev_access_address');
+    const info = sessionStorage.getItem('dev_access_info');
+    const signedAt = Number(sessionStorage.getItem('dev_signed_at') || 0);
+
+    if (!addr || !info) return false;
+
+    // 12 小时后要求重新签名
+    if (!signedAt || Date.now() - signedAt > 12 * 3600 * 1000) {
+        sessionStorage.removeItem('dev_access_password');
+        sessionStorage.removeItem('dev_access_address');
+        sessionStorage.removeItem('dev_access_info');
+        sessionStorage.removeItem('dev_signed_at');
+        return false;
+    }
+
+    userAddress = addr;
+    accessInfo = JSON.parse(info);
+
+    $('loginOverlay').style.display = 'none';
+    $('mainApp').style.display = 'block';
+    $('headerWallet').innerText = shorten(accessInfo.address);
+    $('headerExpire').innerText = accessInfo.expireAtText || '永久';
+    await loadCloudData();
+    return true;
+}
+
+// ================================================================
+// 2. 加载云端数据
+// ================================================================
+async function loadCloudData() {
+    try {
+        const res = await fetch(`${CONFIG.API_BASE}/?projectId=${CONFIG.PROJECT_ID}`, {
+            headers: {
+                'X-Access-Password': accessPassword,
+                'X-Access-Address': userAddress
+            }
+        });
+        const result = await res.json();
+
+        if (!result.success || !result.data) {
+            alert('ℹ️ 暂无数据');
+            return;
+        }
+
+        const cloudData = result.data;
+        const fixRec = r => {
+            r.address = (r.address || '').toLowerCase();
+            if (r.amountWithProfit == null) r.amountWithProfit = (r.amount || 0) + (r.profit || 0);
+            return r;
+        };
+
+        queryResults = (cloudData.records || []).map(fixRec);
+        allStakeRecords = (cloudData.allRecords || []).map(fixRec);
+
+        if (cloudData.stats) {
+            stats = Object.assign(stats, cloudData.stats);
+        }
+
+        calcStatsFromRecords();
+        applyFilters();
+        updateStats();
+        updateDailyStats();
+        updateAllCharts();
+        updateLeaderboard();
+    } catch (e) {
+        console.error('加载数据失败:', e);
+        alert('❌ 加载数据失败: ' + (e.message || e));
+    }
+}
+
+// ================================================================
+// 3. LP池刷新
+// ================================================================
+async function refreshLPPool() {
+    await loadCloudData();
+    alert('✅ LP池余额已刷新: ' + (stats.lpBalance || 0).toFixed(2) + ' UUSD');
+}
+
+// ================================================================
+// 4. 统计与图表
+// ================================================================
+function calcStatsFromRecords() {
+    const now = Math.floor(Date.now() / 1000);
+    stats.totalStaked = 0; stats.activeStaked = 0;
+    stats.staked15d = 0; stats.staked30d = 0;
+    stats.unlock2d = 0; stats.unlock7d = 0; stats.unlock15d = 0;
+
+    allStakeRecords.forEach(r => {
+        stats.totalStaked += principalOf(r);
+    });
+
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        const p = principalOf(r);
+        stats.activeStaked += p;
+        if (r.product === 0) stats.staked15d += p;
+        else if (r.product === 1) stats.staked30d += p;
+
+        const amt = totalOf(r);
+        const remain = r.unlockTime - now;
+        if (remain <= 2*86400)  stats.unlock2d  += amt;
+        if (remain <= 7*86400)  stats.unlock7d  += amt;
+        if (remain <= 15*86400) stats.unlock15d += amt;
+    });
+}
+
+function updateStats() {
+    $('totalStaked').innerText = stats.totalStaked.toFixed(2);
+    $('activeStaked').innerText = stats.activeStaked.toFixed(2);
+    $('staked15d').innerText = stats.staked15d.toFixed(2);
+    $('staked30d').innerText = stats.staked30d.toFixed(2);
+    $('unlock2d').innerText = stats.unlock2d.toFixed(2);
+    $('unlock7d').innerText = stats.unlock7d.toFixed(2);
+    $('unlock15d').innerText = stats.unlock15d.toFixed(2);
+    $('lpBalance').innerText = (stats.lpBalance || 0).toFixed(2);
+    $('resultCount').innerText = queryResults.length;
+
+    const lp = stats.lpBalance || 0;
+    const active = stats.activeStaked || 0;
+
+    $('activePct').innerText = '占LP ' + (lp > 0 ? (active / lp * 100) : 0).toFixed(2) + '%';
+    $('p15Pct').innerText = '占比 ' + (active > 0 ? (stats.staked15d / active * 100) : 0).toFixed(2) + '%';
+    $('p30Pct').innerText = '占比 ' + (active > 0 ? (stats.staked30d / active * 100) : 0).toFixed(2) + '%';
+    $('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
+    $('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
+    $('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
+}
+
+// ===== 每日地址趋势 =====
+function updateAddressTrendChart() {
+    const ctx = $('addressTrendChart').getContext('2d');
+    if (addressTrendChart) addressTrendChart.destroy();
+
+    const addrDaily = new Map(), addrFirst = new Map();
+    allStakeRecords.forEach(r => {
+        if (r.stakeTime <= 0) return;
+        const k = r.address.toLowerCase();
+        const ds = getDateStr(r.stakeTime);
+        if (!addrDaily.has(k)) addrDaily.set(k, new Map());
+        const dm = addrDaily.get(k);
+        if (!dm.has(ds)) dm.set(ds, { active: false });
+        if (r.status === 1) dm.get(ds).active = true;
+        if (!addrFirst.has(k)) addrFirst.set(k, ds);
+    });
+
+    const allDates = new Set();
+    allStakeRecords.forEach(r => { if (r.stakeTime > 0) allDates.add(getDateStr(r.stakeTime)); });
+    const sortedDates = Array.from(allDates).sort();
+
+    const dailyActive = new Map(), dailyNew = new Map(), dailyExit = new Map();
+    let prev = new Set();
+
+    sortedDates.forEach((ds, idx) => {
+        const act = new Set();
+        addrDaily.forEach((dm, k) => { if (dm.has(ds) && dm.get(ds).active) act.add(k); });
+        const nw = new Set();
+        addrFirst.forEach((d, k) => { if (d === ds) nw.add(k); });
+        const ex = new Set();
+        if (idx > 0) prev.forEach(k => { if (!act.has(k)) ex.add(k); });
+        dailyActive.set(ds, act); dailyNew.set(ds, nw); dailyExit.set(ds, ex);
+        prev = new Set(act);
+    });
+
+    const curActive = new Set();
+    allStakeRecords.forEach(r => { if (r.status === 1) curActive.add(r.address.toLowerCase()); });
+    $('totalActiveAddresses').innerHTML = `🟢 当前活跃: ${curActive.size}`;
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - addressTrendRange);
+    cutoff.setHours(0,0,0,0);
+
+    const labels = [], aC = [], nC = [], eC = [];
+    const start = new Date(cutoff), end = new Date();
+    end.setHours(23,59,59,999);
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+        const ds = formatDate(d.getTime()/1000);
+        labels.push(`${d.getMonth()+1}/${d.getDate()}`);
+        aC.push((dailyActive.get(ds) || new Set()).size);
+        nC.push((dailyNew.get(ds) || new Set()).size);
+        eC.push((dailyExit.get(ds) || new Set()).size);
+    }
+
+    if (!labels.length) return;
+
+    addressTrendChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [
+            { label: '活跃地址', data: aC, backgroundColor: 'rgba(59,130,246,0.5)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3, order: 2 },
+            { label: '新增地址', data: nC, type: 'line', borderColor: '#22c55e', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1 }
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb', stepSize: 1 } },
+                x: { grid: { display: false }, ticks: { color: '#8899bb', maxRotation: 45, font: { size: 9 } } }
+            },
+            plugins: { legend: { labels: { color: '#e8edf5', font: { size: 10 } } } }
+        }
+    });
+}
+
+function setAddressTrendRange(days, btn) {
+    addressTrendRange = days;
+    document.querySelectorAll('.address-range-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    updateAddressTrendChart();
+}
+
+// ===== 每日趋势 =====
+function updateTrendChart() {
+    const ctx = $('trendChart').getContext('2d');
+    if (trendChart) trendChart.destroy();
+
+    const dN = new Map(), dA = new Map(), dR = new Map(), dRd = new Map();
+    allStakeRecords.forEach(r => {
+        if (r.stakeTime <= 0) return;
+        const ds = getDateStr(r.stakeTime);
+        const p = principalOf(r);
+        dN.set(ds, (dN.get(ds)||0) + p);
+        if (r.status === 1 && r.unlockTime > 0) dA.set(ds, (dA.get(ds)||0) + p);
+        if (r.status === 3) dR.set(ds, (dR.get(ds)||0) + p);
+        if (r.status === 2) dRd.set(ds, (dRd.get(ds)||0) + p);
+    });
+    const dates = Array.from(dN.keys()).sort().slice(-trendRange);
+    if (!dates.length) return;
+
+    trendChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: dates, datasets: [
+            { label: '新增质押', data: dates.map(d => dN.get(d)||0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
+            { label: '仍在质押', data: dates.map(d => dA.get(d)||0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
+            { label: '复投', data: dates.map(d => dR.get(d)||0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
+            { label: '赎回', data: dates.map(d => dRd.get(d)||0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                x: { ticks: { color: '#8899bb', maxRotation: 30 } }
+            },
+            plugins: { legend: { labels: { color: '#e8edf5', font: { size: 10 } } } }
+        }
+    });
+}
+
+// ===== 到期分布 =====
+function updateUnlockChart() {
+    const ctx = $('unlockChart').getContext('2d');
+    if (unlockChart) unlockChart.destroy();
+    const now = Math.floor(Date.now()/1000);
+    const buckets = [
+        { label: '已到期', test: r => r <= 0 },
+        { label: '0-3天', test: r => r>0 && r<=259200 },
+        { label: '3-6天', test: r => r>259200 && r<=518400 },
+        { label: '6-9天', test: r => r>518400 && r<=777600 },
+        { label: '9-12天', test: r => r>777600 && r<=1036800 },
+        { label: '12-15天', test: r => r>1036800 && r<=1296000 },
+        { label: '15-20天', test: r => r>1296000 && r<=1728000 },
+        { label: '20-25天', test: r => r>1728000 && r<=2160000 },
+        { label: '25-30天', test: r => r>2160000 && r<=2592000 }
+    ];
+    const labels = buckets.map(b => b.label);
+    const pArr = new Array(buckets.length).fill(0);
+    const yArr = new Array(buckets.length).fill(0);
+    queryResults.forEach(r => {
+        if (r.unlockTime <= 0) return;
+        const remain = r.unlockTime - now;
+        const idx = buckets.findIndex(b => b.test(remain));
+        if (idx >= 0) {
+            pArr[idx] += principalOf(r);
+            yArr[idx] += profitOf(r);
+        }
+    });
+
+    unlockChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [
+            { label: '本金', data: pArr, backgroundColor: '#3b82f6', stack: 's' },
+            { label: '收益', data: yArr, backgroundColor: '#ef4444', stack: 's' }
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { beginAtZero: true, stacked: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                x: { stacked: true, ticks: { color: '#8899bb', font: { size: 9 } } }
+            },
+            plugins: {
+                legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                        footer: items => items.length ? '合计: ' + items.reduce((s,i)=>s+i.raw,0).toFixed(2) + ' UUSD' : ''
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ===== 未来每日到期 =====
+function updateExpiryChart() {
+    const ctx = $('expiryChart').getContext('2d');
+    if (expiryChart) expiryChart.destroy();
+
+    const nowTs = Math.floor(Date.now() / 1000);
+    const todayDs = getDateStr(nowTs);
+
+    const p15 = new Map(), y15 = new Map(), p30 = new Map(), y30 = new Map();
+    queryResults.forEach(r => {
+        if (r.status !== 1 || r.unlockTime <= 0) return;
+        const ds = getDateStr(r.unlockTime);
+        if (r.product === 0) {
+            p15.set(ds, (p15.get(ds)||0) + principalOf(r));
+            y15.set(ds, (y15.get(ds)||0) + profitOf(r));
+        } else {
+            p30.set(ds, (p30.get(ds)||0) + principalOf(r));
+            y30.set(ds, (y30.get(ds)||0) + profitOf(r));
+        }
+    });
+
+    const labels = [], p15A = [], y15A = [], p30A = [], y30A = [], totA = [];
+    const [yy, mm, dd] = todayDs.split('-').map(Number);
+    const baseUtc = Date.UTC(yy, mm - 1, dd);
+
+    for (let i = 0; i < 30; i++) {
+        const utcMs = baseUtc + i * 86400 * 1000;
+        const dUtc = new Date(utcMs);
+        const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
+        const bj = new Date(utcMs + 8 * 3600 * 1000);
+        labels.push(`${bj.getUTCMonth()+1}/${bj.getUTCDate()}`);
+
+        const a = p15.get(ds)||0, b = y15.get(ds)||0, c = p30.get(ds)||0, e = y30.get(ds)||0;
+        p15A.push(a); y15A.push(b); p30A.push(c); y30A.push(e);
+        totA.push(a+b+c+e);
+    }
+
+    let html = '', cum = 0;
+    for (let i = 0; i < 30; i++) {
+        cum += totA[i];
+        html += `<tr>
+            <td>${labels[i]}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totA[i].toFixed(2)}</td>
+            <td class="amount-cell" style="color:#60a5fa;">${p15A[i].toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${y15A[i].toFixed(2)}</td>
+            <td class="amount-cell" style="color:#a78bfa;">${p30A[i].toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${y30A[i].toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${cum.toFixed(2)}</td>
+        </tr>`;
+    }
+    $('expiryTableBody').innerHTML = html;
+
+    const tP15 = p15A.reduce((a,b)=>a+b,0), tY15 = y15A.reduce((a,b)=>a+b,0);
+    const tP30 = p30A.reduce((a,b)=>a+b,0), tY30 = y30A.reduce((a,b)=>a+b,0);
+    const tAll = totA.reduce((a,b)=>a+b,0);
+    $('expiryTableFooter').innerHTML = `<tr>
+        <td><strong>合计</strong></td>
+        <td><strong style="color:#fbbf24;">${tAll.toFixed(2)}</strong></td>
+        <td><strong style="color:#60a5fa;">${tP15.toFixed(2)}</strong></td>
+        <td><strong style="color:#ef4444;">${tY15.toFixed(2)}</strong></td>
+        <td><strong style="color:#a78bfa;">${tP30.toFixed(2)}</strong></td>
+        <td><strong style="color:#ef4444;">${tY30.toFixed(2)}</strong></td>
+        <td><strong style="color:#fbbf24;">${tAll.toFixed(2)}</strong></td>
+    </tr>`;
+
+    const sl = labels.slice(0, expiryRange);
+    expiryChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: sl, datasets: [
+            { label: '15天本金', data: p15A.slice(0, expiryRange), backgroundColor: '#3b82f6', stack: 's15' },
+            { label: '15天收益', data: y15A.slice(0, expiryRange), backgroundColor: '#ef4444', stack: 's15' },
+            { label: '30天本金', data: p30A.slice(0, expiryRange), backgroundColor: '#8b5cf6', stack: 's30' },
+            { label: '30天收益', data: y30A.slice(0, expiryRange), backgroundColor: '#f87171', stack: 's30' }
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: { beginAtZero: true, stacked: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                x: { stacked: true, ticks: { color: '#8899bb', maxRotation: 30 } }
+            },
+            plugins: {
+                legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                        footer: items => items.length ? '当日合计: ' + items.reduce((s,i)=>s+i.raw,0).toFixed(2) + ' UUSD' : ''
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ===== 排行榜 =====
+function updateLeaderboard() {
+    const tbody = $('leaderboardBody');
+    if (!queryResults.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty-state">暂无数据</td></tr>'; return; }
+    const map = new Map();
+    queryResults.forEach(r => {
+        const k = r.address.toLowerCase();
+        const e = map.get(k) || { total: 0, count: 0 };
+        e.total += principalOf(r); e.count++;
+        map.set(k, e);
+    });
+    const sorted = Array.from(map.entries()).map(([a, d]) => ({ address: a, total: d.total, count: d.count }))
+        .sort((a, b) => b.total - a.total).slice(0, 500);
+
+    let html = '';
+    sorted.forEach((it, i) => {
+        const rank = i + 1;
+        let rankClass = 'rank-badge';
+        if (rank === 1) rankClass += ' rank-1';
+        else if (rank === 2) rankClass += ' rank-2';
+        else if (rank === 3) rankClass += ' rank-3';
+        html += `<tr>
+            <td><span class="${rankClass}">${rank}</span></td>
+            <td class="address-cell" onclick="copyAddress('${it.address}')" title="${it.address}">${shorten(it.address)}</td>
+            <td class="amount-cell">${it.total.toFixed(2)}</td>
+            <td>${it.count}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+function copyAddress(addr) { navigator.clipboard.writeText(addr); alert('✅ 地址已复制: ' + addr); }
+
+// ===== 每日统计 =====
+function updateDailyStats() {
+    const map = new Map();
+    allStakeRecords.forEach(r => {
+        if (r.stakeTime <= 0) return;
+        const ds = getDateStr(r.stakeTime);
+        if (!map.has(ds)) map.set(ds, { stake:0, active:0, p15:0, p30:0, reinvest:0, redeem:0 });
+        const d = map.get(ds);
+        const p = principalOf(r);
+        d.stake += p;
+        if (r.status === 1 && r.unlockTime > 0) d.active += p;
+        if (r.product === 0) d.p15 += p;
+        if (r.product === 1) d.p30 += p;
+        if (r.status === 3) d.reinvest += p;
+        if (r.status === 2) d.redeem += p;
+    });
+    const sorted = Array.from(map.keys()).sort().reverse().slice(0, 30);
+    const tbody = $('dailyStatsBody');
+    if (!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
+    tbody.innerHTML = sorted.map(d => {
+        const v = map.get(d);
+        return `<tr>
+            <td>${d}</td>
+            <td class="amount-cell">${v.stake.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#22c55e;">${v.active.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#60a5fa;">${v.p15.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#a78bfa;">${v.p30.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#8b5cf6;">${v.reinvest.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#f59e0b;">${v.redeem.toFixed(2)}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ===== 记录表 =====
+function applyFilters() {
+    const type = $('filterType').value;
+    const date = $('filterDate').value;
+    const search = $('searchAddress').value.toLowerCase().trim();
+
+    let dateStart = null, dateEnd = null;
+    if (date) {
+        const d = new Date(date + 'T00:00:00');
+        dateStart = d.getTime() / 1000;
+        dateEnd = dateStart + 86400;
+    }
+
+    filteredResults = queryResults.filter(r => {
+        if (type === 'product0' && r.product !== 0) return false;
+        if (type === 'product1' && r.product !== 1) return false;
+        if (type === 'stake' && r.status !== 1) return false;
+        if (type === 'reinvest' && r.status !== 3) return false;
+        if (type === 'redeem' && r.status !== 2) return false;
+        if (dateStart && (r.stakeTime < dateStart || r.stakeTime >= dateEnd)) return false;
+        if (search && !r.address.toLowerCase().includes(search)) return false;
+        return true;
+    });
+
+    renderTable();
+    $('filterStats').innerText = `显示 ${filteredResults.length}/${queryResults.length}`;
+}
+
+function renderTable() {
+    const tbody = $('resultTableBody');
+    if (!filteredResults.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty-state">无匹配记录</td></tr>'; return; }
+    const now = Math.floor(Date.now()/1000);
+
+    const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
+
+    tbody.innerHTML = sorted.map((r, i) => {
+        const s = r.unlockTime <= now ? '可赎回' : '锁仓';
+        const cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
+        const pCls = r.product === 0 ? 'p15' : '';
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${pCls}">${r.productText || '--'}</span></td>
+            <td>${formatTime(r.stakeTime)}</td>
+            <td>${formatTime(r.unlockTime)}</td>
+            <td class="${cls}">${timeRemain(r.unlockTime - now)}</td>
+            <td class="${cls}">${s}</td>
+        </tr>`;
+    }).join('');
+}
+
+function clearFilters() {
+    $('filterType').value = 'all';
+    $('filterDate').value = '';
+    $('searchAddress').value = '';
+    applyFilters();
+}
+
+function switchTab(tab) {
+    ['charts','daily','records'].forEach(t => {
+        $('tab-' + t).classList.toggle('active', t === tab);
+        $('panel-' + t).classList.toggle('active', t === tab);
+    });
+    if (tab === 'charts') setTimeout(updateAllCharts, 300);
+}
+
+function setTrendRange(d, btn) {
+    trendRange = d;
+    const card = btn?.closest('.chart-card');
+    if (card) {
+        card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+    updateTrendChart();
+}
+
+function setExpiryRange(d, btn) {
+    expiryRange = d;
+    const card = btn?.closest('.chart-card');
+    if (card) {
+        card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+    updateExpiryChart();
+}
+
+function updateAllCharts() {
+    updateTrendChart();
+    updateUnlockChart();
+    updateExpiryChart();
+    updateAddressTrendChart();
+}
+
+// ================================================================
+// 启动
+// ================================================================
+window.connectWallet = connectWallet;
+window.verifyAccess = verifyAccess;
+window.backToLogin = backToLogin;
+window.copyPayWallet = copyPayWallet;
+window.logout = logout;
+window.switchTab = switchTab;
+window.setTrendRange = setTrendRange;
+window.setExpiryRange = setExpiryRange;
+window.setAddressTrendRange = setAddressTrendRange;
+window.applyFilters = applyFilters;
+window.toggleCard = toggleCard;
+window.refreshLPPool = refreshLPPool;
+window.clearFilters = clearFilters;
+window.copyAddress = copyAddress;
+
+window.addEventListener('load', async () => {
+    const ok = await checkSession();
+    if (!ok) {
+        $('loginOverlay').style.display = 'flex';
+        $('mainApp').style.display = 'none';
+    }
+});
+</script>
+</body>
+</html>
