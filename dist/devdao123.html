@@ -1493,20 +1493,21 @@
     }
 
     // ================================================================
-    // 未来每日到期柱状图（堆叠：本金 + 收益）
+    // 未来每日到期柱状图（堆叠：本金 + 收益）— 8 点切分
     // ================================================================
     function updateExpiryChart() {
         const ctx = document.getElementById('expiryChart').getContext('2d');
         if(expiryChart) expiryChart.destroy();
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        // 按 8 点切分拿到"当前统计日"
+        const nowTs = Math.floor(Date.now() / 1000);
+        const todayDs = getDateStr(nowTs);
 
         const dailyP15 = new Map(), dailyY15 = new Map();
         const dailyP30 = new Map(), dailyY30 = new Map();
         queryResults.forEach(r => {
             if(r.status !== 1 || r.unlockTime <= 0) return;
-            const ds = formatDate(r.unlockTime);
+            const ds = getDateStr(r.unlockTime);   // ← 8 点切分
             if (r.product === 0) {
                 dailyP15.set(ds, (dailyP15.get(ds) || 0) + principalOf(r));
                 dailyY15.set(ds, (dailyY15.get(ds) || 0) + profitOf(r));
@@ -1517,11 +1518,15 @@
         });
 
         const labels = [], p15Arr = [], y15Arr = [], p30Arr = [], y30Arr = [], totalArr = [];
+        const [yy, mm, dd] = todayDs.split('-').map(Number);
+        const baseUtc = Date.UTC(yy, mm - 1, dd);
+
         for(let i = 0; i < 30; i++) {
-            const date = new Date(today);
-            date.setDate(today.getDate() + i);
-            const ds = formatDate(date.getTime()/1000);
-            const display = `${date.getMonth()+1}/${date.getDate()}`;
+            const utcMs = baseUtc + i * 86400 * 1000;
+            const dUtc = new Date(utcMs);
+            const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
+            const bj = new Date(utcMs + 8 * 3600 * 1000);
+            const display = `${bj.getUTCMonth()+1}/${bj.getUTCDate()}`;
             labels.push(display);
 
             const p15 = dailyP15.get(ds) || 0;
@@ -1614,14 +1619,15 @@
 
     function exportExpiryTable() {
         if(!queryResults.length) { alert('没有数据可导出'); return; }
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+
+        const nowTs = Math.floor(Date.now() / 1000);
+        const todayDs = getDateStr(nowTs);
 
         const dailyP15 = new Map(), dailyY15 = new Map();
         const dailyP30 = new Map(), dailyY30 = new Map();
         queryResults.forEach(r => {
             if(r.status !== 1 || r.unlockTime <= 0) return;
-            const ds = formatDate(r.unlockTime);
+            const ds = getDateStr(r.unlockTime);   // ← 8 点切分
             if (r.product === 0) {
                 dailyP15.set(ds, (dailyP15.get(ds) || 0) + principalOf(r));
                 dailyY15.set(ds, (dailyY15.get(ds) || 0) + profitOf(r));
@@ -1633,11 +1639,15 @@
 
         const rows = [];
         let cumSum = 0;
+        const [yy, mm, dd] = todayDs.split('-').map(Number);
+        const baseUtc = Date.UTC(yy, mm - 1, dd);
+
         for(let i = 0; i < 30; i++) {
-            const date = new Date(today);
-            date.setDate(today.getDate() + i);
-            const ds = formatDate(date.getTime()/1000);
-            const display = `${date.getMonth()+1}/${date.getDate()}`;
+            const utcMs = baseUtc + i * 86400 * 1000;
+            const dUtc = new Date(utcMs);
+            const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
+            const bj = new Date(utcMs + 8 * 3600 * 1000);
+            const display = `${bj.getUTCMonth()+1}/${bj.getUTCDate()}`;
 
             const p15 = dailyP15.get(ds) || 0;
             const y15 = dailyY15.get(ds) || 0;
@@ -1645,14 +1655,7 @@
             const y30 = dailyY30.get(ds) || 0;
             const total = p15 + y15 + p30 + y30;
             cumSum += total;
-
-            rows.push([
-                display,
-                total.toFixed(2),
-                p15.toFixed(2), y15.toFixed(2),
-                p30.toFixed(2), y30.toFixed(2),
-                cumSum.toFixed(2)
-            ]);
+            rows.push([display, total.toFixed(2), p15.toFixed(2), y15.toFixed(2), p30.toFixed(2), y30.toFixed(2), cumSum.toFixed(2)]);
         }
 
         const headers = ['日期', '合计到期', '15天到期本金', '15天到期收益', '30天到期本金', '30天到期收益', '累计到期'];
@@ -1871,7 +1874,7 @@
     function setTrendRange(d, btn) {
         trendRange = d;
         // 只针对每日趋势卡片里的按钮切换 active
-        const card = btn.closest('.chart-card');
+        const card = btn?.closest('.chart-card');
         if (card) {
             card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1880,7 +1883,7 @@
     }
     function setExpiryRange(d, btn) {
         expiryRange = d;
-        const card = btn.closest('.chart-card');
+        const card = btn?.closest('.chart-card');
         if (card) {
             card.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1971,6 +1974,7 @@
         document.getElementById('addressList').addEventListener('change', updateAddressCount);
     };
 
+    // 暴露全局函数
     window.fullQuery = fullQuery; window.incrementalQuery = incrementalQuery; window.resetQuery = resetQuery;
     window.refreshLPPool = refreshLPPool; window.applyFilters = applyFilters; window.clearFilters = clearFilters;
     window.copyAddress = copyAddress; window.exportCSV = exportCSV; window.exportDailyStats = exportDailyStats;
