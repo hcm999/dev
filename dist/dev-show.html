@@ -216,9 +216,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
     <!-- 第二排：本金+收益 -->
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期(本金+收益)</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期(本金+收益)</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期(本金+收益)</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
             <div class="stat-title">💰 LP池余额 <span class="refresh-icon">🔄</span></div>
             <div class="stat-value" id="lpBalance">0.00</div>
@@ -615,6 +615,11 @@ async function enterApp() {
     $('headerWallet').innerText = shorten(accessInfo.address);
     $('headerExpire').innerText = accessInfo.expireAtText || '永久';
 
+    // ⭐ 默认筛选当日，避免首次加载全量渲染卡死
+    const today = new Date();
+    $('filterDate').value =
+        `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
     await loadCloudData();
 }
 
@@ -651,6 +656,12 @@ async function checkSession() {
     $('mainApp').style.display = 'block';
     $('headerWallet').innerText = shorten(accessInfo.address);
     $('headerExpire').innerText = accessInfo.expireAtText || '永久';
+
+    // ⭐ 恢复会话时同样默认筛选当日
+    const today = new Date();
+    $('filterDate').value =
+        `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
     await loadCloudData();
     return true;
 }
@@ -1116,7 +1127,11 @@ function applyFilters() {
     });
 
     renderTable();
-    $('filterStats').innerText = `显示 ${filteredResults.length}/${queryResults.length}`;
+    const MAX_RENDER = 1000;
+    const shown = Math.min(filteredResults.length, MAX_RENDER);
+    $('filterStats').innerText = filteredResults.length > MAX_RENDER
+        ? `显示 ${shown}/${filteredResults.length}（共 ${queryResults.length}，已截断）`
+        : `显示 ${filteredResults.length}/${queryResults.length}`;
 }
 
 function renderTable() {
@@ -1126,7 +1141,11 @@ function renderTable() {
 
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
-    tbody.innerHTML = sorted.map((r, i) => {
+    // ⭐ 渲染上限：防止一次性渲染上万条导致卡死
+    const MAX_RENDER = 1000;
+    const toRender = sorted.slice(0, MAX_RENDER);
+
+    tbody.innerHTML = toRender.map((r, i) => {
         const s = r.unlockTime <= now ? '可赎回' : '锁仓';
         const cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
         const pCls = r.product === 0 ? 'p15' : '';
@@ -1143,6 +1162,13 @@ function renderTable() {
             <td class="${cls}">${s}</td>
         </tr>`;
     }).join('');
+
+    // ⭐ 超出上限时追加提示行
+    if (sorted.length > MAX_RENDER) {
+        tbody.innerHTML += `<tr><td colspan="10" class="empty-state" style="color:#fbbf24;">
+            ⚠️ 仅显示前 ${MAX_RENDER} 条，共 ${sorted.length} 条，请缩小筛选范围（如选择日期或输入地址）
+        </td></tr>`;
+    }
 }
 
 function clearFilters() {
