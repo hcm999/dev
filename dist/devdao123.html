@@ -214,6 +214,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
+        <h1>🔷 DEV 质押数据管理端 <span class="query-mode">15天 / 30天 · UUSD</span></h1>
     <div class="stats-grid">
         <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">UUSD</div></div>
         <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="activePct">占LP --</span></div></div>
@@ -221,9 +222,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
     </div>
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期(本金+收益)</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期(本金+收益)</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期(本金+收益)</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
         <div class="stat-title">💰 LP池余额 <span style="font-size:0.7rem;color:#60a5fa;">🔄</span></div>
         <div class="stat-value" id="lpBalance">0.00</div>
@@ -446,6 +447,7 @@ let provider, stakingContract, usdtContract, pairContract;
 let uusdAddress = null, devAddress = null, pairAddress = CONFIG.PAIR;
 let uusdDecimals = 18;
 let isQuerying = false, failedAddresses = [];
+let lastScannedOrderId = 0; // 记录上一次全量扫描到了哪个订单
 let queryResults = [], allStakeRecords = [];
 let filteredResults = [];
 let dailyStartHour = 8;
@@ -724,10 +726,11 @@ async function scanAllOrders(onProgress) {
     const CONCURRENCY = CONFIG.SCAN_CONCURRENCY || 4;
     let round = 1;
 
-    // 🔁 外层循环：只要有遗漏的批次，就重试，最多 5 轮
-    while (pendingChunks.length > 0 && round <= 5) {
+    // 🔁 外层循环：只要有遗漏的批次，就重试，最多 10 轮
+    while (pendingChunks.length > 0 && round <= 10) {
         if (round > 1) {
             addLog(`⚠️ 发现遗漏，开始第 ${round} 轮补单 (剩余 ${pendingChunks.length} 批)...`, 'info');
+            await sleep(1000); // ⭐ 增加 1 秒冷却，避开节点限流高峰
         }
 
         const failedChunks = []; // 本轮失败的批次
@@ -788,6 +791,11 @@ async function scanAllOrders(onProgress) {
         addLog(`✅ 全量扫描完成：${finalOrders.length} 单，${byUser.size} 个地址 (数据已完全对齐)`, 'ok');
     } else {
         addLog(`⚠️ 扫描完成，但仍有缺失：${finalOrders.length}/${total} 单`, 'err');
+    }
+    
+        // ⭐ 记录扫描到的最新订单号
+    if (finalOrders.length > 0) {
+        lastScannedOrderId = Math.max(...finalOrders.map(o => o.id));
     }
     
     return { records: finalOrders, byUser };
@@ -1053,71 +1061,92 @@ async function fullQuery() {
 // ================================================================
 async function incrementalQuery() {
     if(isQuerying || !stakingContract) return;
-    const text = document.getElementById('addressList').value;
-    const { addresses, removed } = dedupeAddresses(text);
-    if(!addresses.length) { alert('请填入有效的钱包地址'); return; }
-    if (removed > 0) addLog(`⚠️ 检测到 ${removed} 个重复地址`, 'info');
+    
+    // 如果没有全量查询过（即没记录 lastScannedOrderId），就提示或走全量
+    if (!lastScannedOrderId || lastScannedOrderId === 0) {
+        alert('⚠️ 请先执行一次「全量查询」以建立基准，或者当前未加载任何数据。');
+        return;
+    }
 
     isQuerying = true;
     document.getElementById('progressContainer').style.display = 'block';
-    addLog('🔄 开始增量更新...', 'info');
+    addLog(`🔄 开始按订单号增量更新 (从 #${lastScannedOrderId + 1} 开始)...`, 'info');
 
-    const now = Math.floor(Date.now() / 1000);
-    const qSeen = new Set(), aSeen = new Set();
-    queryResults.forEach(r => qSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
-    allStakeRecords.forEach(r => aSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
+    try {
+        // 获取链上当前的最新订单号
+        const nextId = Number(await stakingContract.nextOrderId());
+        const startId = lastScannedOrderId + 1;
+        const total = nextId - startId;
 
-    let newCount = 0, processed = 0;
+        if (total <= 0) {
+            addLog('✅ 没有新订单产生，无需更新。', 'ok');
+            alert('✅ 当前已是最新，没有新订单。');
+            isQuerying = false;
+            document.getElementById('progressContainer').style.display = 'none';
+            return;
+        }
 
-    for(let i = 0; i < addresses.length; i += CONFIG.BATCH_SIZE) {
-        const batch = addresses.slice(i, Math.min(i + CONFIG.BATCH_SIZE, addresses.length));
-        const promises = batch.map(addr => queryAddress(addr, now));
-        const results = await Promise.all(promises);
+        addLog(`🔍 发现新订单 ${total} 单 (#${startId} ~ #${nextId - 1})`, 'info');
+        document.getElementById('progressText').innerHTML = `增量扫描新订单 0/${total}...`;
 
-        results.forEach(r => {
-            if(r.success) {
-                r.orders.forEach(o => {
-                    const key = (o.address || '').toLowerCase() + '_' + o.orderId;
-                    if (o.isActive && o.unlockTime > 0 && !qSeen.has(key)) {
-                        qSeen.add(key);
-                        o.isNew = true;
-                        newCount++;
-                        queryResults.push(o);
-                    }
-                    if (!aSeen.has(key)) {
-                        aSeen.add(key);
-                        allStakeRecords.push(o);
-                    }
-                });
+        // 构造要查的订单 ID
+        const ids = [];
+        for (let i = startId; i < nextId; i++) ids.push(i);
+
+        // 复用批量查询逻辑
+        const newOrders = await batchGetOrders(ids);
+        let newActiveCount = 0;
+
+        const qSeen = new Set();
+        const aSeen = new Set();
+        queryResults.forEach(r => qSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
+        allStakeRecords.forEach(r => aSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
+
+        // 将新订单合并到现有数据
+        for (const o of newOrders) {
+            const rec = orderToRecord(o);
+            const key = rec.address + '_' + rec.orderId;
+
+            if (rec.isActive && rec.unlockTime > 0 && !qSeen.has(key)) {
+                qSeen.add(key);
+                queryResults.push(rec);
+                newActiveCount++;
             }
-        });
+            if (!aSeen.has(key)) {
+                aSeen.add(key);
+                allStakeRecords.push(rec);
+            }
+        }
 
-        processed += batch.length;
-        const progress = Math.min(100, Math.round(processed / addresses.length * 100));
-        document.getElementById('progressFill').style.width = progress + '%';
-        document.getElementById('progressText').innerHTML = `增量: +${newCount} 新 (${processed}/${addresses.length})`;
-        if(i + CONFIG.BATCH_SIZE < addresses.length) await sleep(50);
+        // 更新扫描记录
+        if (newOrders.length > 0) {
+            lastScannedOrderId = Math.max(...newOrders.map(o => o.id));
+        }
+
+        // 刷新 UI
+        calcStatsFromRecords();
+        document.getElementById('diagRecordCount').innerText = queryResults.length;
+        updateStats();
+        saveToStorage();
+        applyFilters();
+        updateDailyStats();
+        updateAllCharts();
+        updateLeaderboard();
+        await fetchLPBalance(); // 顺便刷一下 LP 池
+
+        addLog(`✅ 增量完成，新增了 ${newOrders.length} 单，其中活跃 ${newActiveCount} 单`, 'ok');
+        document.getElementById('progressText').innerHTML = `✅ 增量完成！新增 ${newOrders.length} 单`;
+        document.getElementById('progressText').style.color = '#22c55e';
+
+    } catch(e) {
+        addLog(`❌ 增量失败: ${e.message}`, 'err');
+    } finally {
+        setTimeout(() => {
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('progressText').style.color = '#3b82f6';
+            isQuerying = false;
+        }, 2000);
     }
-
-    calcStatsFromRecords();
-    document.getElementById('diagRecordCount').innerText = queryResults.length;
-    updateStats();
-    saveToStorage();
-    applyFilters();
-    updateDailyStats();
-    updateAllCharts();
-    updateLeaderboard();
-
-    addLog(`✅ 增量完成，新增 ${newCount} 条`, 'ok');
-    document.getElementById('progressFill').style.width = '100%';
-    document.getElementById('progressText').innerHTML = `✅ 完成！新增 ${newCount} 条`;
-    document.getElementById('progressText').style.color = '#22c55e';
-
-    setTimeout(() => {
-        document.getElementById('progressContainer').style.display = 'none';
-        document.getElementById('progressText').style.color = '#3b82f6';
-        isQuerying = false;
-    }, 2000);
 }
 
 // ================================================================
@@ -1415,6 +1444,16 @@ async function loadCloudData() {
         };
         queryResults = records.map(fixRec);
         allStakeRecords = allRecords.map(fixRec);
+
+        // ⭐ 核心修改：加载云端后，自动从数据中推算上次扫描到的最大订单号
+        if (allStakeRecords.length > 0) {
+            const maxId = Math.max(...allStakeRecords.map(r => r.orderId || 0));
+            if (maxId > 0) {
+                lastScannedOrderId = maxId;
+                addLog(`📌 已同步基准订单号至 #${lastScannedOrderId}`, 'info');
+            }
+        }
+        // ⭐ 修改结束
         calcStatsFromRecords();
         applyFilters(); updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard(); saveToStorage();
         addLog(`✅ 云端数据已加载：活跃 ${queryResults.length} 条 / 历史 ${allStakeRecords.length} 条`, 'ok');
@@ -2080,7 +2119,8 @@ function copyAddress(addr) { navigator.clipboard.writeText(addr); alert('✅ 地
 function saveToStorage() {
     try {
         localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify({
-            queryResults, allStakeRecords, stats, dailyStartHour, timestamp: Date.now()
+            queryResults, allStakeRecords, stats, dailyStartHour, timestamp: Date.now(),
+            lastScannedOrderId // ⭐ 增加这行
         }));
     } catch(e) {}
 }
@@ -2090,6 +2130,12 @@ function loadFromStorage() {
         const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
         if(!raw) return false;
         const data = JSON.parse(raw);
+
+        // ⭐ 加在这里：恢复上次扫描到的订单号
+        if(data.lastScannedOrderId !== undefined) {
+            lastScannedOrderId = data.lastScannedOrderId;
+        }
+
         if(data.queryResults) {
             queryResults = data.queryResults.map(r => {
                 if (r.amountWithProfit == null) r.amountWithProfit = (r.amount || 0) + (r.profit || 0);
