@@ -130,7 +130,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <!-- 步骤 1：连钱包 -->
         <div id="stepLogin">
             <div class="login-title">🔐 DEV 数据展示端</div>
-            <div class="login-sub">请连接钱包验证白名单</div>
+            <div class="login-sub">请连接钱包并签名验证白名单</div>
 
             <div style="background:#0a0e1a;border:1px solid #2a3a5a;border-radius:10px;padding:12px;margin-bottom:14px;">
                 <div style="color:#8899bb;font-size:0.7rem;margin-bottom:4px;">当前钱包</div>
@@ -141,7 +141,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
             <button class="login-btn" id="verifyBtn" onclick="verifyAccess()">进入</button>
             <div class="login-error" id="loginError"></div>
-            <div class="login-hint">💡 使用 MetaMask / TP 钱包连接<br>只有白名单地址才能访问</div>
+            <div class="login-hint">💡 使用 MetaMask / TP 钱包连接<br>连接后需签名验证，只有白名单地址才能访问</div>
         </div>
 
         <!-- 步骤 2：付费引导 -->
@@ -216,9 +216,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
     <!-- 第二排：本金+收益 -->
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期(本金+收益)</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期(本金+收益)</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期(本金+收益)</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
             <div class="stat-title">💰 LP池余额 <span class="refresh-icon">🔄</span></div>
             <div class="stat-value" id="lpBalance">0.00</div>
@@ -451,7 +451,6 @@ function formatTime(ts) {
     return `${d.getUTCMonth()+1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 function getDateStr(ts) {
-    // 统计日切分：北京时间 8 点 = UTC 0 点，故直接用 UTC 日期
     const d = new Date(ts * 1000);
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
@@ -483,7 +482,7 @@ function toggleCard(headerElement) {
 }
 
 // ================================================================
-// 1. 登录流程
+// 1. 登录流程（带钱包签名）
 // ================================================================
 async function connectWallet() {
     if (!window.ethereum) {
@@ -500,7 +499,7 @@ async function connectWallet() {
         $('walletDisplay').innerText = shorten(userAddress);
         $('walletDisplay').style.color = '#22c55e';
     } catch (e) {
-        alert('连接失败: ' + e.message);
+        alert('连接失败: ' + (e.message || e));
     }
 }
 
@@ -514,14 +513,54 @@ async function verifyAccess() {
     }
 
     btn.disabled = true;
-    btn.innerText = '校验中...';
+    btn.innerText = '请在钱包中签名...';
     err.innerText = '';
 
     try {
+        // 1. 前端生成 nonce + message
+        const nonce = 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+        const message = `DEV 数据展示端登录\n\n地址: ${userAddress}\nNonce: ${nonce}\n签发时间: ${new Date().toISOString()}`;
+
+        // 2. 请求钱包签名
+        let signature;
+        try {
+            signature = await window.ethereum.request({
+                method: 'personal_sign',
+                params: [message, userAddress]
+            });
+        } catch (e) {
+            if (e && e.code === 4001) {
+                err.innerText = '你取消了签名';
+            } else {
+                err.innerText = '签名失败: ' + ((e && e.message) || e);
+            }
+            return;
+        }
+
+        // 3. 前端自验（确认签名没签错，非安全校验）
+        let recovered;
+        try {
+            recovered = ethers.verifyMessage(message, signature).toLowerCase();
+        } catch (e) {
+            err.innerText = '签名解析失败，请重试';
+            return;
+        }
+        if (recovered !== userAddress) {
+            err.innerText = '签名地址不匹配，请重试';
+            return;
+        }
+
+        // 4. 提交到后端（后端只取 address + password，多余字段忽略）
+        btn.innerText = '校验中...';
         const res = await fetch(`${CONFIG.API_BASE}/auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: userAddress, password: accessPassword })
+            body: JSON.stringify({
+                address: userAddress,
+                password: accessPassword,
+                signature,
+                message
+            })
         });
         const result = await res.json();
 
@@ -530,6 +569,7 @@ async function verifyAccess() {
             sessionStorage.setItem('dev_access_password', accessPassword);
             sessionStorage.setItem('dev_access_address', userAddress);
             sessionStorage.setItem('dev_access_info', JSON.stringify(result));
+            sessionStorage.setItem('dev_signed_at', String(Date.now()));
             await enterApp();
         } else {
             if (result.code === 'INVALID_PASSWORD') {
@@ -550,7 +590,7 @@ async function verifyAccess() {
             }
         }
     } catch (e) {
-        err.innerText = '请求失败: ' + e.message;
+        err.innerText = '请求失败: ' + ((e && e.message) || e);
     } finally {
         btn.disabled = false;
         btn.innerText = '进入';
@@ -583,39 +623,36 @@ function logout() {
     sessionStorage.removeItem('dev_access_password');
     sessionStorage.removeItem('dev_access_address');
     sessionStorage.removeItem('dev_access_info');
+    sessionStorage.removeItem('dev_signed_at');
     location.reload();
 }
 
+// checkSession：只读本地 session，不再请求 /api/auth（避免无签名被拒）
 async function checkSession() {
-    const pwd = sessionStorage.getItem('dev_access_password');
     const addr = sessionStorage.getItem('dev_access_address');
     const info = sessionStorage.getItem('dev_access_info');
+    const signedAt = Number(sessionStorage.getItem('dev_signed_at') || 0);
 
-    if (!pwd || !addr || !info) return false;
+    if (!addr || !info) return false;
+
+    // 12 小时后要求重新签名
+    if (!signedAt || Date.now() - signedAt > 12 * 3600 * 1000) {
+        sessionStorage.removeItem('dev_access_password');
+        sessionStorage.removeItem('dev_access_address');
+        sessionStorage.removeItem('dev_access_info');
+        sessionStorage.removeItem('dev_signed_at');
+        return false;
+    }
 
     userAddress = addr;
-    accessPassword = pwd;
     accessInfo = JSON.parse(info);
 
-    try {
-        const res = await fetch(`${CONFIG.API_BASE}/auth`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: addr, password: pwd })
-        });
-        const result = await res.json();
-        if (result.success) {
-            accessInfo = result;
-            sessionStorage.setItem('dev_access_info', JSON.stringify(result));
-            $('loginOverlay').style.display = 'none';
-            $('mainApp').style.display = 'block';
-            $('headerWallet').innerText = shorten(result.address);
-            $('headerExpire').innerText = result.expireAtText || '永久';
-            await loadCloudData();
-            return true;
-        }
-    } catch (e) {}
-    return false;
+    $('loginOverlay').style.display = 'none';
+    $('mainApp').style.display = 'block';
+    $('headerWallet').innerText = shorten(accessInfo.address);
+    $('headerExpire').innerText = accessInfo.expireAtText || '永久';
+    await loadCloudData();
+    return true;
 }
 
 // ================================================================
@@ -658,12 +695,12 @@ async function loadCloudData() {
         updateLeaderboard();
     } catch (e) {
         console.error('加载数据失败:', e);
-        alert('❌ 加载数据失败: ' + e.message);
+        alert('❌ 加载数据失败: ' + (e.message || e));
     }
 }
 
 // ================================================================
-// 3. LP池刷新（展示端无链上 provider，重拉云端）
+// 3. LP池刷新
 // ================================================================
 async function refreshLPPool() {
     await loadCloudData();
@@ -894,7 +931,7 @@ function updateUnlockChart() {
     });
 }
 
-// ===== 未来每日到期（8 点切分） =====
+// ===== 未来每日到期 =====
 function updateExpiryChart() {
     const ctx = $('expiryChart').getContext('2d');
     if (expiryChart) expiryChart.destroy();
