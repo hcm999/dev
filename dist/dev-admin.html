@@ -256,6 +256,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
+        <h1>🔷 DEV 质押数据管理端 <span class="query-mode">15天 / 30天 · UUSD</span></h1>
     <div class="stats-grid">
         <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">UUSD</div></div>
         <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="activePct">占LP --</span></div></div>
@@ -767,10 +768,11 @@ async function scanAllOrders(onProgress) {
     const CONCURRENCY = CONFIG.SCAN_CONCURRENCY || 4;
     let round = 1;
 
-    // 🔁 外层循环：只要有遗漏的批次，就重试，最多 5 轮
-    while (pendingChunks.length > 0 && round <= 5) {
+    // 🔁 外层循环：只要有遗漏的批次，就重试，最多 10 轮
+    while (pendingChunks.length > 0 && round <= 10) {
         if (round > 1) {
             addLog(`⚠️ 发现遗漏，开始第 ${round} 轮补单 (剩余 ${pendingChunks.length} 批)...`, 'info');
+            await sleep(1000); // ⭐ 增加 1 秒冷却，避开节点限流高峰
         }
 
         const failedChunks = []; // 本轮失败的批次
