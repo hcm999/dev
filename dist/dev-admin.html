@@ -1099,12 +1099,11 @@ async function fullQuery() {
 }
 
 // ================================================================
-// 增量更新（原逻辑，保留）
+// 增量更新（原逻辑保留,增加到期订单状态核对）
 // ================================================================
 async function incrementalQuery() {
     if(isQuerying || !stakingContract) return;
     
-    // 如果没有全量查询过（即没记录 lastScannedOrderId），就提示或走全量
     if (!lastScannedOrderId || lastScannedOrderId === 0) {
         alert('⚠️ 请先执行一次「全量查询」以建立基准，或者当前未加载任何数据。');
         return;
@@ -1112,57 +1111,104 @@ async function incrementalQuery() {
 
     isQuerying = true;
     document.getElementById('progressContainer').style.display = 'block';
-    addLog(`🔄 开始按订单号增量更新 (从 #${lastScannedOrderId + 1} 开始)...`, 'info');
+    addLog(`🔄 开始极速增量更新 (到期核对 + 拉取新单)...`, 'info');
 
     try {
+        const now = Math.floor(Date.now() / 1000);
+
+        // ⭐ 核心优化：只挑出【质押中】且【已经到期】的订单去链上核对
+        const expiredActiveIds = queryResults
+            .filter(r => r.isActive && r.unlockTime <= now)
+            .map(r => r.orderId);
+
         // 获取链上当前的最新订单号
         const nextId = Number(await stakingContract.nextOrderId());
         const startId = lastScannedOrderId + 1;
-        const total = nextId - startId;
+        const newTotal = nextId - startId;
 
-        if (total <= 0) {
-            addLog('✅ 没有新订单产生，无需更新。', 'ok');
-            alert('✅ 当前已是最新，没有新订单。');
+        if (expiredActiveIds.length === 0 && newTotal <= 0) {
+            addLog('✅ 没有到期的旧单，也没有新单，无需更新。', 'ok');
+            alert('✅ 当前已是最新，没有新订单或到期订单。');
             isQuerying = false;
             document.getElementById('progressContainer').style.display = 'none';
             return;
         }
 
-        addLog(`🔍 发现新订单 ${total} 单 (#${startId} ~ #${nextId - 1})`, 'info');
-        document.getElementById('progressText').innerHTML = `增量扫描新订单 0/${total}...`;
+        // 构造要更新的订单列表（已到期的活跃单 + 全新订单）
+        const idsToUpdate = [...expiredActiveIds];
+        if (newTotal > 0) {
+            addLog(`🔍 发现新订单 ${newTotal} 单 (#${startId} ~ #${nextId - 1})`, 'info');
+            for (let i = startId; i < nextId; i++) idsToUpdate.push(i);
+        }
+        if (expiredActiveIds.length > 0) {
+            addLog(`🔍 发现 ${expiredActiveIds.length} 个已到期的旧单，核对状态...`, 'info');
+        }
 
-        // 构造要查的订单 ID
-        const ids = [];
-        for (let i = startId; i < nextId; i++) ids.push(i);
+        document.getElementById('progressText').innerHTML = `正在同步 ${idsToUpdate.length} 个订单状态...`;
 
-        // 复用批量查询逻辑
-        const newOrders = await batchGetOrders(ids);
+        // 批量拉取最新数据
+        const updatedOrders = await batchGetOrders(idsToUpdate);
+        
+        // 构建字典方便覆盖旧数据
+        const updateMap = new Map();
+        updatedOrders.forEach(o => updateMap.set(o.id, o));
+
+        // 更新活跃列表 queryResults
         let newActiveCount = 0;
-
-        const qSeen = new Set();
-        const aSeen = new Set();
-        queryResults.forEach(r => qSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
-        allStakeRecords.forEach(r => aSeen.add((r.address||'').toLowerCase() + '_' + r.orderId));
-
-        // 将新订单合并到现有数据
-        for (const o of newOrders) {
-            const rec = orderToRecord(o);
-            const key = rec.address + '_' + rec.orderId;
-
-            if (rec.isActive && rec.unlockTime > 0 && !qSeen.has(key)) {
-                qSeen.add(key);
-                queryResults.push(rec);
-                newActiveCount++;
-            }
-            if (!aSeen.has(key)) {
-                aSeen.add(key);
-                allStakeRecords.push(rec);
+        const newQueryResults = [];
+        
+        // 1. 先处理旧订单：如果已经赎回/复投，就从活跃列表剔除
+        for (const r of queryResults) {
+            const latest = updateMap.get(r.orderId);
+            if (latest) {
+                if (latest.status === 1) {
+                    newQueryResults.push(orderToRecord(latest)); // 依然活跃
+                }
+                // 如果不是 1，说明已赎回/复投，直接丢弃
+            } else {
+                newQueryResults.push(r); // 没查到的保留
             }
         }
 
+        // 2. 再处理新订单：如果是活跃的，追加进去
+        if (newTotal > 0) {
+            for (let i = startId; i < nextId; i++) {
+                const latest = updateMap.get(i);
+                if (latest && latest.status === 1) {
+                    newQueryResults.push(orderToRecord(latest));
+                    newActiveCount++;
+                }
+            }
+        }
+        queryResults = newQueryResults;
+
+        // 更新历史列表 allStakeRecords
+        const newAllStakeRecords = [];
+        const aSeen = new Set();
+        for (const r of allStakeRecords) {
+            const latest = updateMap.get(r.orderId);
+            if (latest) {
+                newAllStakeRecords.push(orderToRecord(latest)); // 覆盖最新状态
+                aSeen.add(latest.id);
+            } else {
+                newAllStakeRecords.push(r);
+                aSeen.add(r.orderId);
+            }
+        }
+        // 补充纯新订单到历史中
+        if (newTotal > 0) {
+            for (let i = startId; i < nextId; i++) {
+                const latest = updateMap.get(i);
+                if (latest && !aSeen.has(i)) {
+                    newAllStakeRecords.push(orderToRecord(latest));
+                }
+            }
+        }
+        allStakeRecords = newAllStakeRecords;
+
         // 更新扫描记录
-        if (newOrders.length > 0) {
-            lastScannedOrderId = Math.max(...newOrders.map(o => o.id));
+        if (newTotal > 0) {
+            lastScannedOrderId = nextId - 1;
         }
 
         // 刷新 UI
@@ -1174,10 +1220,10 @@ async function incrementalQuery() {
         updateDailyStats();
         updateAllCharts();
         updateLeaderboard();
-        await fetchLPBalance(); // 顺便刷一下 LP 池
+        await fetchLPBalance();
 
-        addLog(`✅ 增量完成，新增了 ${newOrders.length} 单，其中活跃 ${newActiveCount} 单`, 'ok');
-        document.getElementById('progressText').innerHTML = `✅ 增量完成！新增 ${newOrders.length} 单`;
+        addLog(`✅ 增量完成：核对 ${expiredActiveIds.length} 个到期旧单，新增 ${newActiveCount} 个活跃新单`, 'ok');
+        document.getElementById('progressText').innerHTML = `✅ 更新完成！活跃 ${queryResults.length} 单`;
         document.getElementById('progressText').style.color = '#22c55e';
 
     } catch(e) {
@@ -1190,7 +1236,7 @@ async function incrementalQuery() {
         }, 2000);
     }
 }
-
+    
 // ================================================================
 // 统计
 // ================================================================
