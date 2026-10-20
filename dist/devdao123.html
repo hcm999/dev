@@ -462,6 +462,10 @@ let stats = {
 };
 let trendChart, unlockChart, expiryChart, addressTrendChart;
 
+// --- 👇 新增这两行，用于追踪上传进度 ---
+let uploadedMaxId = 0;            
+let uploadedActiveIds = new Set(); 
+
 function principalOf(r) { return r.amount || 0; }
 function profitOf(r) { return r.profit || 0; }
 function totalOf(r) {
@@ -875,6 +879,16 @@ async function init() {
     loadDailyStart();
     loadFromStorage();
 
+    // 👈 新增：恢复上次的上传进度
+    try {
+        const cursorRaw = localStorage.getItem('devUploadCursor_v1');
+        if (cursorRaw) {
+            const cursor = JSON.parse(cursorRaw);
+            uploadedMaxId = Number(cursor.uploadedMaxId || 0);
+            uploadedActiveIds = new Set(cursor.uploadedActiveIds || []);
+        }
+    } catch(e) {}
+
     applyFilters();
     updateStats();
     updateLeaderboard();
@@ -1057,7 +1071,7 @@ async function fullQuery() {
 }
 
 // ================================================================
-// 增量更新（原逻辑保留，增加同步质押中到期订单状态）
+// 增量更新（原逻辑保留，增加旧活跃订单核对）
 // ================================================================
 async function incrementalQuery() {
     if(isQuerying || !stakingContract) return;
@@ -1074,7 +1088,7 @@ async function incrementalQuery() {
     try {
         const now = Math.floor(Date.now() / 1000);
 
-        // ⭐ 核心优化：只挑出【质押中】且【已经到期】的订单去链上核对
+        // ⭐ 核心优化：只挑出【质押中】且【已经到期】的订单去链上核对是否已经赎回或复投
         const expiredActiveIds = queryResults
             .filter(r => r.isActive && r.unlockTime <= now)
             .map(r => r.orderId);
@@ -1491,6 +1505,17 @@ async function loadCloudData() {
         queryResults = records.map(fixRec);
         allStakeRecords = allRecords.map(fixRec);
 
+        // 👈 新增：从云端拉取数据后，自动推算已上传进度，防止重复上传
+        if (allStakeRecords.length > 0) {
+            const maxId = Math.max(...allStakeRecords.map(r => r.orderId || 0));
+            if (maxId > uploadedMaxId) uploadedMaxId = maxId;
+        }
+        uploadedActiveIds = new Set(queryResults.filter(r => r.status === 1).map(r => r.orderId));
+        localStorage.setItem('devUploadCursor_v1', JSON.stringify({
+            uploadedMaxId,
+            uploadedActiveIds: Array.from(uploadedActiveIds)
+        }));
+
         // ⭐ 核心修改：加载云端后，自动从数据中推算上次扫描到的最大订单号
         if (allStakeRecords.length > 0) {
             const maxId = Math.max(...allStakeRecords.map(r => r.orderId || 0));
@@ -1515,16 +1540,16 @@ async function loadCloudData() {
 
 async function getLatestBlockNumber() {
   try {
-    // ⭐ 优先使用页面上已经连好的节点，它通常是最快且最稳定的
+    // ⭐ 优先使用页面已经连好的节点（publicnode），它没被墙
     if (provider) {
         return await provider.getBlockNumber();
     }
-    // 如果 provider 不存在，再用备用的节点
+    // 备用
     const p = new ethers.JsonRpcProvider('https://bsc-rpc.publicnode.com');
     return await p.getBlockNumber();
   } catch (e) {
-    console.warn('获取最新区块号失败，使用默认兜底值:', e);
-    // 如果网络实在太差拿不到区块号，给个 0 也不会影响你前端数据的展示
+    console.warn('获取区块号失败，跳过此步骤', e);
+    // 拿不到就直接返回 0，绝对不影响你上传数据
     return 0; 
   }
 }
@@ -1535,12 +1560,9 @@ async function uploadToCloud() {
     }
     const btn = document.getElementById('uploadBtn');
     if (btn) { btn.disabled = true; btn.innerText = '上传中...'; }
-    try {
-        const totalRecords = queryResults.length;
-        const totalAllRecords = allStakeRecords.length;
-        const BATCH_SIZE = (totalRecords + totalAllRecords) > 5000 ? 1000 : 500;
 
-        const mapActive = r => ({
+    try {
+        const mapRec = r => ({
             address: r.address, amount: r.amount, profit: r.profit,
             amountWithProfit: r.amountWithProfit, stakeTime: r.stakeTime,
             unlockTime: r.unlockTime, product: r.product, productText: r.productText,
@@ -1548,89 +1570,80 @@ async function uploadToCloud() {
             isActive: r.isActive, previousOrderId: r.previousOrderId,
             reinvestedToOrderId: r.reinvestedToOrderId, redeemedAt: r.redeemedAt,
         });
-        const mapAll = mapActive;
+
+        // 计算增量：新订单
+        const newActive = queryResults.filter(r => (r.orderId || 0) > uploadedMaxId);
+        const newAll = allStakeRecords.filter(r => (r.orderId || 0) > uploadedMaxId);
+
+        // 计算增量：状态变化的订单
+        const changed = [];
+        const nowActiveIds = new Set();
+        for (const r of allStakeRecords) {
+            if (r.status === 1) nowActiveIds.add(r.orderId);
+            if (uploadedActiveIds.has(r.orderId) && r.status !== 1) {
+                changed.push(r); // 之前活跃，现在不是活跃了
+            }
+        }
+        
+        // 如果是首次上传（无游标），强制全量
+        if (uploadedMaxId === 0) {
+            newActive.length = 0; newActive.push(...queryResults);
+            newAll.length = 0; newAll.push(...allStakeRecords);
+        }
+
+        if (newActive.length === 0 && newAll.length === 0 && changed.length === 0) {
+            addLog('✅ 没有新订单或状态变化，无需上传', 'ok');
+            alert('✅ 当前云端已是最新，无需上传。');
+            return;
+        }
+
         const text = document.getElementById('addressList').value;
         const addresses = text.split('\n').map(l => l.trim()).filter(l => l.startsWith('0x') && l.length === 42);
 
-        addLog(`⬆️ 开始分批上传 ${totalRecords} 活跃 / ${totalAllRecords} 历史...`, 'info');
+        // 组装 payload，直接指定 action: 'incremental'
+        const payload = {
+            action: 'incremental',
+            projectId: CONFIG.PROJECT_ID,
+            newActive: newActive.map(mapRec),
+            newAll: newAll.map(mapRec),
+            changed: changed.map(mapRec),
+            stats,
+            addresses,
+            lastUploadedOrderId: Math.max(
+                uploadedMaxId,
+                ...newAll.map(r => r.orderId || 0),
+                ...changed.map(r => r.orderId || 0)
+            ),
+            timestamp: Date.now(),
+        };
 
-        const initRes = await fetch(`${CONFIG.API_BASE}/upload-batch`, {
+        const jsonStr = JSON.stringify(payload);
+        const sizeMB = new Blob([jsonStr]).size / 1024 / 1024;
+        addLog(`📦 增量：新增 ${newActive.length} 活跃 / ${newAll.length} 历史，状态变化 ${changed.length} 条，大小 ${sizeMB.toFixed(2)} MB`, 'info');
+
+        // 走 upload-batch 接口，但 action 是 incremental
+        const res = await fetch(`${CONFIG.API_BASE}/upload-batch`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'init', projectId: CONFIG.PROJECT_ID,
-                totalRecords, totalAllRecords, timestamp: Date.now()
-            })
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': CONFIG.ADMIN_TOKEN,
+            },
+            body: jsonStr,
         });
-        const initResult = await initRes.json();
-        if (!initResult.success) throw new Error('初始化失败: ' + initResult.error);
-        const uploadId = initResult.uploadId;
-        addLog(`📦 上传会话: ${uploadId}`, 'info');
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error || '上传失败');
 
-        const activeBatches = [];
-        for (let i = 0; i < queryResults.length; i += BATCH_SIZE) {
-            activeBatches.push(queryResults.slice(i, i + BATCH_SIZE));
-        }
-        for (let i = 0; i < activeBatches.length; i++) {
-            const res = await fetch(`${CONFIG.API_BASE}/upload-batch`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'batch', projectId: CONFIG.PROJECT_ID, uploadId,
-                    batchIndex: i, dataType: 'records', records: activeBatches[i].map(mapActive)
-                })
-            });
-            const r = await res.json();
-            if (!r.success) throw new Error(`批次 ${i} 失败: ${r.error}`);
-            const progress = Math.round(((i + 1) / activeBatches.length) * 100);
-            if (btn) btn.innerText = `活跃 ${progress}%`;
-            addLog(`📤 活跃批次 ${i+1}/${activeBatches.length}`, 'info');
-        }
+        // 成功后更新游标
+        uploadedMaxId = payload.lastUploadedOrderId;
+        uploadedActiveIds = nowActiveIds;
+        localStorage.setItem('devUploadCursor_v1', JSON.stringify({
+            uploadedMaxId,
+            uploadedActiveIds: Array.from(uploadedActiveIds)
+        }));
 
-        const allBatches = [];
-        for (let i = 0; i < allStakeRecords.length; i += BATCH_SIZE) {
-            allBatches.push(allStakeRecords.slice(i, i + BATCH_SIZE));
-        }
-        for (let i = 0; i < allBatches.length; i++) {
-            const res = await fetch(`${CONFIG.API_BASE}/upload-batch`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'batch', projectId: CONFIG.PROJECT_ID, uploadId,
-                    batchIndex: activeBatches.length + i, dataType: 'allRecords', records: allBatches[i].map(mapAll)
-                })
-            });
-            const r = await res.json();
-            if (!r.success) throw new Error(`历史批次 ${i} 失败: ${r.error}`);
-            if (btn) btn.innerText = `历史 ${Math.round(((i+1)/allBatches.length)*100)}%`;
-            addLog(`📤 历史批次 ${i+1}/${allBatches.length}`, 'info');
-        }
+        addLog(`✅ 增量上传成功！云端最新总活跃: ${result.totalActive}`, 'ok');
+        alert(`✅ 上传成功！\n新增活跃: ${newActive.length}\n新增历史: ${newAll.length}\n状态变化: ${changed.length}\n云端总活跃: ${result.totalActive}`);
 
-        // ⭐ 1. 提前获取区块号（因为函数里已经有兜底，这里绝对不会卡死报错）
-        const latestBlock = await getLatestBlockNumber();
-
-        // ⭐ 2. 把拿到的 latestBlock 传进去
-        const finalRes = await fetch(`${CONFIG.API_BASE}/upload-batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'finalize', 
-                projectId: CONFIG.PROJECT_ID, 
-                uploadId,
-                stats, 
-                addresses, 
-                finalTimestamp: Date.now(),
-                setCursor: true,
-                scannedTo: latestBlock // 👈 改成了刚才拿到的变量
-            })
-        });
-        const finalResult = await finalRes.json();
-        if (finalResult.success) {
-            addLog(`✅ 分批上传成功！${totalRecords} 活跃 / ${totalAllRecords} 历史`, 'ok');
-            alert(`✅ 上传成功！\n活跃记录: ${totalRecords}\n历史记录: ${totalAllRecords}`);
-        } else {
-            throw new Error(finalResult.error);
-        }
     } catch (error) {
         console.error('上传错误:', error);
         addLog('❌ 上传失败: ' + error.message, 'err');
