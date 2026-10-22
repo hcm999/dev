@@ -2449,22 +2449,48 @@ function renderTable() {
     if(!filteredResults.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty-state">无匹配记录</td></tr>'; return; }
     const now = Math.floor(Date.now() / 1000);
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
+    
     tbody.innerHTML = sorted.map((r, i) => {
-        const status = r.unlockTime <= now ? '可赎回' : '锁仓';
-        const cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
+        // 默认状态
+        let status = r.unlockTime <= now ? '可赎回' : '锁仓';
+        let cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
+        
+        // --- 颜色与标签配置 ---
+        // 1. 直接质押：天空蓝
+        let principalColor = '#38bdf8'; 
+        let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
+        
+        if (r.status === 3) {
+            // 2. 被复投的旧单：紫罗兰
+            principalColor = '#c084fc'; 
+            status = '已复投';
+            cls = 'status-unlocked'; 
+            tagHtml = '<span style="font-size:0.55rem;background:rgba(192,132,252,0.15);color:#c084fc;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #c084fc;">转</span>';
+        } else if (r.previousOrderId > 0) {
+            // 3. 复投产生的新单：亮绿
+            principalColor = '#34d399'; 
+            tagHtml = '<span style="font-size:0.55rem;background:rgba(52,211,153,0.15);color:#34d399;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #34d399;">复</span>';
+        }
+
         const remain = r.unlockTime - now;
         const productCls = r.product === 0 ? 'p15' : 'p30';
+        
+        // 被复投订单的状态列文字染色
+        const statusStyle = r.status === 3 ? 'style="color:#c084fc;"' : '';
+
         return `<tr>
             <td>${i+1}</td>
             <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:${principalColor}; font-weight:700;">
+                ${principalOf(r).toFixed(2)}${tagHtml}
+            </td>
             <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
             <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
             <td><span class="badge-duration ${productCls}">${r.productText || '--'}</span></td>
             <td>${formatTime(r.stakeTime)}</td>
             <td>${formatTime(r.unlockTime)}</td>
             <td class="${cls}">${timeRemain(remain)}</td>
-            <td class="${cls}">${status}</td>
+            <td class="${cls}" ${statusStyle}>${status}</td>
         </tr>`;
     }).join('');
 }
