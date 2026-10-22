@@ -369,7 +369,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
-                    <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                    <div>
+                        <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                        <div id="bubbleCoverageHint" style="font-size:0.68rem;color:#8899bb;margin-top:3px;">
+                            💡 含收益泡沫: -- · 覆盖率: --
+                        </div>
+                    </div>
                     <div style="font-size:0.7rem;">
                         <span style="color:#3b82f6;">■ 本金</span>
                         <span style="color:#ef4444;margin-left:8px;">■ 收益</span>
@@ -760,7 +765,7 @@ function addLog(msg, type = 'info') {
 function formatEther(wei, dec = 18) {
     try { return parseFloat(ethers.formatUnits(wei, dec)).toFixed(2); } catch { return "0.00"; }
 }
-function shorten(addr) { return addr ? addr.slice(0,6)+'…'+addr.slice(-4) : ''; }
+function shorten(addr) { return addr ? addr.slice(0,2)+'…'+addr.slice(-6) : ''; }
 function formatTime(ts) {
     if(!ts) return '--';
     const d = new Date(ts * 1000 + 8 * 3600 * 1000);
@@ -1522,6 +1527,26 @@ function updateStats() {
 
     const coverage = active > 0 ? lp / active * 100 : 0;
     document.getElementById('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // ===== 含收益口径（真实兑付压力：本金 + 待付收益） =====
+    let activeWithProfit = 0;
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        activeWithProfit += totalOf(r);   // totalOf 已兼容 amountWithProfit
+    });
+    const bubbleWithProfit   = lp > 0 ? activeWithProfit / lp : 0;
+    const coverageWithProfit = activeWithProfit > 0 ? lp / activeWithProfit * 100 : 0;
+
+    const hintEl = document.getElementById('bubbleCoverageHint');
+    if (hintEl) {
+        const danger = bubbleWithProfit >= 1;   // 泡沫≥1 说明LP不够兑付全部
+        const c1 = danger ? '#f87171' : '#22c55e';
+        const c2 = danger ? '#f87171' : '#22c55e';
+        hintEl.innerHTML =
+            `💡 含收益泡沫: <b style="color:${c1}">${bubbleWithProfit.toFixed(2)}</b>` +
+            ` · 覆盖率: <b style="color:${c2}">${coverageWithProfit.toFixed(2)}%</b>` +
+            `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
+    }
 }
 
 function updateAddressCount() {
@@ -1949,7 +1974,7 @@ async function loadWhitelist() {
             const typeText = { single: '单次', monthly: '月卡', permanent: '永久', manual: '手动' }[item.type] || item.type || '-';
             return `<tr>
                 <td>${i+1}</td>
-                <td style="font-family:monospace;font-size:0.7rem;cursor:pointer;" onclick="copyAddress('${item.address}')" title="${item.address}">${item.address.slice(0,6)}...${item.address.slice(-4)}</td>
+                <td style="font-family:monospace;font-size:0.7rem;cursor:pointer;" onclick="copyAddress('${item.address}')" title="${item.address}">${item.address.slice(0,2)}...${item.address.slice(-6)}</td>
                 <td>${typeText}</td>
                 <td style="font-size:0.7rem;">${expireText}</td>
                 <td style="color:${remainColor};font-weight:600;">${remainText}</td>
