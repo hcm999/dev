@@ -244,12 +244,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="stat-sub">本金 · 来自复投</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">🫧 泡沫</div>
+            <div class="stat-title">🫧 本金泡沫</div>
             <div class="stat-value" id="bubbleValue">0.00</div>
             <div class="stat-sub">活跃质押 / LP</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">📊 覆盖率</div>
+            <div class="stat-title">📊 本金覆盖率</div>
             <div class="stat-value" id="coverageRate">0.00%</div>
             <div class="stat-sub">LP / 活跃质押</div>
         </div>
@@ -306,7 +306,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
-                    <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                    <div>
+                        <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                        <div id="bubbleCoverageHint" style="font-size:0.68rem;color:#8899bb;margin-top:3px;">
+                            💡 含收益泡沫: -- · 覆盖率: --
+                        </div>
+                    </div>
                     <div style="font-size:0.7rem;">
                         <span style="color:#3b82f6;">■ 本金</span>
                         <span style="color:#ef4444;margin-left:8px;">■ 收益</span>
@@ -615,7 +620,7 @@ let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 // 工具
 // ================================================================
 const $ = id => document.getElementById(id);
-function shorten(a) { return a ? a.slice(0,6)+'…'+a.slice(-4) : ''; }
+function shorten(a) { return a ? a.slice(0,2)+'…'+a.slice(-6) : ''; }
 function formatDate(ts) {
     if (!ts) return '--';
     const d = new Date(ts * 1000 + 8 * 3600 * 1000);
@@ -944,6 +949,25 @@ function updateStats() {
 
     const coverage = active > 0 ? lp / active * 100 : 0;
     $('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // ===== 含收益口径（真实兑付压力：本金 + 待付收益） =====
+    let activeWithProfit = 0;
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        activeWithProfit += totalOf(r);
+    });
+    const bubbleWithProfit   = lp > 0 ? activeWithProfit / lp : 0;
+    const coverageWithProfit = activeWithProfit > 0 ? lp / activeWithProfit * 100 : 0;
+
+    const hintEl = document.getElementById('bubbleCoverageHint');
+    if (hintEl) {
+        const danger = bubbleWithProfit >= 1;
+        const c = danger ? '#f87171' : '#22c55e';
+        hintEl.innerHTML =
+            `💡 含收益泡沫: <b style="color:${c}">${bubbleWithProfit.toFixed(2)}</b>` +
+            ` · 覆盖率: <b style="color:${c}">${coverageWithProfit.toFixed(2)}%</b>` +
+            `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
+    }
 }
 
 // ===== 每日地址趋势 =====
