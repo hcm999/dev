@@ -21,17 +21,14 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .stat-title { color:#8899bb; font-size:0.65rem; text-transform:uppercase; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .stat-value { color:#3b82f6; font-size:0.8rem; font-weight:700; line-height:1.2; word-break:break-word; }
 @media (min-width:768px) { .stat-value { font-size:1.6rem; } }
-/* ===== 统计卡片百分比 ===== */
 .stat-sub { color:#22c55e; font-size:0.6rem; display:flex; justify-content:space-between; align-items:center; }
 .stat-pct { color:#fbbf24; font-size:0.6rem; margin-left:auto; }
 
-/* ===== 排行榜序号 ===== */
 .rank-badge { display:inline-block; width:24px; height:24px; line-height:24px; border-radius:50%; background:#1a2332; color:#8899bb; font-weight:600; font-size:0.7rem; text-align:center; }
 .rank-1 { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#0a0e1a; }
 .rank-2 { background:linear-gradient(135deg,#9ca3af,#6b7280); color:#0a0e1a; }
 .rank-3 { background:linear-gradient(135deg,#f59e0b,#b45309); color:#0a0e1a; }
 
-/* ===== 可折叠卡片 ===== */
 .collapsible-card .card-header {
     cursor: pointer;
     user-select: none;
@@ -63,10 +60,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     margin-top: 0;
 }
 
-/* ===== LP池刷新按钮 ===== */
 .refresh-icon { font-size:0.7rem; color:#60a5fa; cursor:pointer; }
-
-/* ===== 日期筛选 ===== */
 .filter-select { background:#1a2332; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 12px; border-radius:20px; font-size:0.75rem; cursor:pointer; }
 .table-container { background:linear-gradient(145deg,#111827,#0a0e1a); border-radius:16px; padding:12px; border:1px solid #2a3a5a; margin-top:16px; }
 .table-responsive { overflow-x:auto; max-height:600px; overflow-y:auto; }
@@ -89,6 +83,18 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .range-btn { background:#1a2332; border:1px solid #2a3a5a; color:#8899bb; padding:2px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; }
 .range-btn.active { background:#3b82f6; border-color:#60a5fa; color:white; }
 .empty-state { text-align:center; padding:40px 0; color:#4a5a7a; font-size:14px; }
+
+/* 新增：每日进出卡片样式 */
+.cashflow-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+@media (max-width:768px) { .cashflow-grid { grid-template-columns:repeat(2,1fr); } }
+.cashflow-card { background:linear-gradient(145deg,#111827,#0a0e1a); border:1px solid #2a3a5a; border-radius:16px; padding:14px; }
+.cashflow-title { color:#8899bb; font-size:0.75rem; margin-bottom:6px; }
+.cashflow-value { font-size:1.4rem; font-weight:700; }
+.cashflow-sub { color:#8899bb; font-size:0.7rem; margin-top:4px; }
+.cashflow-in { color:#10b981; }
+.cashflow-out { color:#f97316; }
+.cashflow-net { color:#3b82f6; }
+.cashflow-reinvest { color:#8b5cf6; }
 
 /* ===== 登录遮罩 ===== */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.95); backdrop-filter:blur(10px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -127,7 +133,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 <!-- ============ 登录/付费遮罩 ============ -->
 <div class="overlay" id="loginOverlay">
     <div class="login-dialog" id="loginDialog">
-        <!-- 步骤 1：连钱包 -->
         <div id="stepLogin">
             <div class="login-title">🔐 DEV 数据展示端</div>
             <div class="login-sub">请连接钱包并签名验证白名单</div>
@@ -138,20 +143,17 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
 
             <button class="login-btn login-btn-secondary" id="connectBtn" onclick="connectWallet()">🦊 连接钱包</button>
-
             <button class="login-btn" id="verifyBtn" onclick="verifyAccess()">进入</button>
             <div class="login-error" id="loginError"></div>
             <div class="login-hint">💡 使用 MetaMask / TP 钱包连接<br>连接后需签名验证，只有白名单地址才能访问</div>
         </div>
 
-        <!-- 步骤 2：付费引导 -->
         <div id="stepPay" style="display:none;">
             <div class="login-title">💎 需要付费访问</div>
             <div class="login-sub" id="payReason">你的地址不在白名单</div>
 
             <div class="pay-panel" style="margin-top:0;">
                 <div class="pay-title">💰 套餐选择</div>
-
                 <div class="plan-cards">
                     <div class="plan-card">
                         <div class="plan-name">单次查看</div>
@@ -206,7 +208,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <button class="range-btn" onclick="logout()">退出</button>
     </div>
 
-    <!-- 第一排：本金 -->
     <div class="stats-grid">
         <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">UUSD</div></div>
         <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="activePct">占LP --</span></div></div>
@@ -214,7 +215,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
     </div>
 
-    <!-- 第二排：本金+收益 -->
     <div class="stats-grid">
         <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
         <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">UUSD<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
@@ -226,15 +226,43 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
+    <!-- ===== 新增的4个统计卡片 ===== -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-title">💵 直接质押</div>
+            <div class="stat-value" id="directStaked">0.00</div>
+            <div class="stat-sub">本金 · 非复投</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">🔁 复投质押</div>
+            <div class="stat-value" id="reinvestedStaked">0.00</div>
+            <div class="stat-sub">本金 · 来自复投</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">🫧 泡沫</div>
+            <div class="stat-value" id="bubbleValue">0.00</div>
+            <div class="stat-sub">活跃质押 / LP</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">📊 覆盖率</div>
+            <div class="stat-value" id="coverageRate">0.00%</div>
+            <div class="stat-sub">LP / 活跃质押</div>
+        </div>
+    </div>
+
     <div class="data-tabs">
         <span class="data-tab active" onclick="switchTab('charts')" id="tab-charts">📊 图表</span>
         <span class="data-tab" onclick="switchTab('daily')" id="tab-daily">📅 每日统计</span>
         <span class="data-tab" onclick="switchTab('records')" id="tab-records">📋 质押记录</span>
+        <!-- ===== 新增 Tab ===== -->
+        <span class="data-tab" onclick="switchTab('cashflow')" id="tab-cashflow">💰 每天进出多少钱</span>
+        <span class="data-tab" onclick="switchTab('redeem')" id="tab-redeem">💸 赎回记录</span>
+        <span class="data-tab" onclick="switchTab('reinvest')" id="tab-reinvest">🔁 复投记录</span>
+        <span class="data-tab" onclick="switchTab('expired')" id="tab-expired">⚠️ 到期未赎回</span>
     </div>
 
     <!-- 图表面板 -->
     <div id="panel-charts" class="data-panel active">
-        <!-- 卡片1：每日地址趋势 -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -253,7 +281,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
         </div>
 
-        <!-- 卡片2：每日趋势 -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -271,7 +298,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
         </div>
 
-        <!-- 卡片3：到期分布 -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -288,7 +314,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
         </div>
 
-        <!-- 卡片4：未来每日到期 -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -306,7 +331,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
         </div>
 
-        <!-- 卡片5：未来30天每日到期记录（表格） -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -335,7 +359,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
         </div>
 
-        <!-- 卡片6：排行榜 -->
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
@@ -392,6 +415,129 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive">
                 <table class="table"><thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>本金+收益</th><th>产品</th><th>质押时间</th><th>解锁时间</th><th>剩余</th><th>状态</th></tr></thead>
                 <tbody id="resultTableBody"><tr><td colspan="10" class="empty-state">请填入钱包地址后查询</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    </div>
+
+    <!-- ===== 每天进出多少钱 ===== -->
+    <div id="panel-cashflow" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <h5 style="color:#e8edf5;">💰 每天进出多少钱（按质押/赎回/复投日期）</h5>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="date" id="cashflowDate" class="filter-select" style="width:auto;" onchange="renderCashflow()" title="仅控制上方统计卡片">
+                    <select id="cashflowRange" class="filter-select" onchange="renderCashflow()" title="控制下方图表和表格">
+                        <option value="30">最近30天</option>
+                        <option value="90">最近90天</option>
+                        <option value="0">全部</option>
+                    </select>
+                </div>
+            </div>
+            <div class="cashflow-grid" id="cashflowCards">
+                <div class="cashflow-card">
+                    <div class="cashflow-title">实际入金</div>
+                    <div class="cashflow-value cashflow-in" id="cfIn">0.00</div>
+                    <div class="cashflow-sub" id="cfInSub">质押 0 笔</div>
+                </div>
+                <div class="cashflow-card">
+                    <div class="cashflow-title">实际出金</div>
+                    <div class="cashflow-value cashflow-out" id="cfOut">0.00</div>
+                    <div class="cashflow-sub" id="cfOutSub">赎回 0 笔 · 奖励 0</div>
+                </div>
+                <div class="cashflow-card">
+                    <div class="cashflow-title">资金净额</div>
+                    <div class="cashflow-value cashflow-net" id="cfNet">0.00</div>
+                    <div class="cashflow-sub">入金 - 出金</div>
+                </div>
+                <div class="cashflow-card">
+                    <div class="cashflow-title">本金复投</div>
+                    <div class="cashflow-value cashflow-reinvest" id="cfReinvest">0.00</div>
+                    <div class="cashflow-sub" id="cfReinvestSub">复投 0 笔</div>
+                </div>
+            </div>
+
+            <div class="chart-container" style="height:260px;margin-bottom:16px;">
+                <canvas id="cashflowChart"></canvas>
+            </div>
+
+            <div class="table-responsive" style="max-height:500px;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>实际入金</th>
+                            <th>订单赎回</th>
+                            <th>奖励领取</th>
+                            <th>实际出金</th>
+                            <th>资金净额</th>
+                            <th>本金复投</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cashflowTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 赎回记录 ===== -->
+    <div id="panel-redeem" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <h5 style="color:#e8edf5;">💸 赎回记录</h5>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="date" id="redeemDate" class="filter-select" style="width:auto;" onchange="renderRedeem()">
+                    <input type="text" id="redeemSearch" class="search-input" placeholder="搜索地址..." oninput="renderRedeem()">
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height:600px;">
+                <table class="table">
+                    <thead>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>赎回时间</th></tr>
+                    </thead>
+                    <tbody id="redeemTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 复投记录 ===== -->
+    <div id="panel-reinvest" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <h5 style="color:#e8edf5;">🔁 复投记录</h5>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="date" id="reinvestDate" class="filter-select" style="width:auto;" onchange="renderReinvest()">
+                    <input type="text" id="reinvestSearch" class="search-input" placeholder="搜索地址..." oninput="renderReinvest()">
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height:600px;">
+                <table class="table">
+                    <thead>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>新订单ID</th><th>复投时间</th></tr>
+                    </thead>
+                    <tbody id="reinvestTableBody"><tr><td colspan="8" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 到期未赎回 ===== -->
+    <div id="panel-expired" class="data-panel">
+        <div class="table-container">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <h5 style="color:#e8edf5;">⚠️ 到期未赎回（本金 + 收益）</h5>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="text" id="expiredSearch" class="search-input" placeholder="搜索地址..." oninput="renderExpired()">
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height:600px;">
+                <table class="table">
+                    <thead>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>到期时间</th><th>逾期</th></tr>
+                    </thead>
+                    <tbody id="expiredTableBody"><tr><td colspan="8" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -433,7 +579,7 @@ let stats = {
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
     lpBalance: 0
 };
-let trendChart, unlockChart, expiryChart, addressTrendChart;
+let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
 // ================================================================
 // 工具
@@ -451,8 +597,13 @@ function formatTime(ts) {
     return `${d.getUTCMonth()+1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 function getDateStr(ts) {
-    const d = new Date(ts * 1000);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    const beijingTime = ts * 1000 + 8 * 3600 * 1000;
+    const d = new Date(beijingTime);
+    const h = d.getUTCHours();
+    // 与管理端统一，默认 8点结算
+    const dailyStartHour = 8;
+    if (h < dailyStartHour) d.setUTCDate(d.getUTCDate() - 1);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 function timeRemain(sec) {
     if (sec <= 0) return '已解锁';
@@ -475,9 +626,7 @@ function toggleCard(headerElement) {
     if (!card) return;
     card.classList.toggle('collapsed');
     if (!card.classList.contains('collapsed')) {
-        setTimeout(() => {
-            window.dispatchEvent(new Event('resize'));
-        }, 420);
+        setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 420);
     }
 }
 
@@ -491,37 +640,26 @@ async function connectWallet() {
     }
     try {
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        if (!accounts || accounts.length === 0) {
-            alert('未获取到账户');
-            return;
-        }
+        if (!accounts || accounts.length === 0) { alert('未获取到账户'); return; }
         userAddress = accounts[0].toLowerCase();
         $('walletDisplay').innerText = shorten(userAddress);
         $('walletDisplay').style.color = '#22c55e';
-    } catch (e) {
-        alert('连接失败: ' + (e.message || e));
-    }
+    } catch (e) { alert('连接失败: ' + (e.message || e)); }
 }
 
 async function verifyAccess() {
     const btn = $('verifyBtn');
     const err = $('loginError');
-
-    if (!userAddress) {
-        err.innerText = '请先连接钱包';
-        return;
-    }
+    if (!userAddress) { err.innerText = '请先连接钱包'; return; }
 
     btn.disabled = true;
     btn.innerText = '请在钱包中签名...';
     err.innerText = '';
 
     try {
-        // 1. 前端生成 nonce + message
         const nonce = 'dev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
         const message = `DEV 数据展示端登录\n\n地址: ${userAddress}\nNonce: ${nonce}\n签发时间: ${new Date().toISOString()}`;
 
-        // 2. 请求钱包签名
         let signature;
         try {
             signature = await window.ethereum.request({
@@ -529,28 +667,18 @@ async function verifyAccess() {
                 params: [message, userAddress]
             });
         } catch (e) {
-            if (e && e.code === 4001) {
-                err.innerText = '你取消了签名';
-            } else {
-                err.innerText = '签名失败: ' + ((e && e.message) || e);
-            }
+            if (e && e.code === 4001) { err.innerText = '你取消了签名'; }
+            else { err.innerText = '签名失败: ' + ((e && e.message) || e); }
             return;
         }
 
-        // 3. 前端自验（确认签名没签错，非安全校验）
         let recovered;
         try {
             recovered = ethers.verifyMessage(message, signature).toLowerCase();
-        } catch (e) {
-            err.innerText = '签名解析失败，请重试';
-            return;
-        }
-        if (recovered !== userAddress) {
-            err.innerText = '签名地址不匹配，请重试';
-            return;
-        }
+        } catch (e) { err.innerText = '签名解析失败，请重试'; return; }
 
-        // 4. 提交到后端（后端只取 address + password，多余字段忽略）
+        if (recovered !== userAddress) { err.innerText = '签名地址不匹配，请重试'; return; }
+
         btn.innerText = '校验中...';
         const res = await fetch(`${CONFIG.API_BASE}/auth`, {
             method: 'POST',
@@ -572,9 +700,8 @@ async function verifyAccess() {
             sessionStorage.setItem('dev_signed_at', String(Date.now()));
             await enterApp();
         } else {
-            if (result.code === 'INVALID_PASSWORD') {
-                err.innerText = '密码错误';
-            } else if (result.code === 'NOT_IN_WHITELIST' || result.code === 'EXPIRED') {
+            if (result.code === 'INVALID_PASSWORD') { err.innerText = '密码错误'; }
+            else if (result.code === 'NOT_IN_WHITELIST' || result.code === 'EXPIRED') {
                 if (result.payInfo) payInfo = result.payInfo;
                 $('payReason').innerText = result.code === 'EXPIRED'
                     ? `你的访问已于 ${new Date(result.expireAt * 1000).toLocaleString('zh-CN')} 过期`
@@ -585,9 +712,7 @@ async function verifyAccess() {
                 $('payQQ').innerText = payInfo.contact.QQ || '3751235417';
                 $('stepLogin').style.display = 'none';
                 $('stepPay').style.display = 'block';
-            } else {
-                err.innerText = result.error || '访问被拒绝';
-            }
+            } else { err.innerText = result.error || '访问被拒绝'; }
         }
     } catch (e) {
         err.innerText = '请求失败: ' + ((e && e.message) || e);
@@ -611,14 +736,16 @@ function copyPayWallet() {
 async function enterApp() {
     $('loginOverlay').style.display = 'none';
     $('mainApp').style.display = 'block';
-
     $('headerWallet').innerText = shorten(accessInfo.address);
     $('headerExpire').innerText = accessInfo.expireAtText || '永久';
 
-    // ⭐ 默认筛选当日，避免首次加载全量渲染卡死
     const today = new Date();
-    $('filterDate').value =
-        `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    
+    $('filterDate').value = todayStr;
+    if ($('cashflowDate')) $('cashflowDate').value = todayStr;
+    if ($('redeemDate')) $('redeemDate').value = todayStr;
+    if ($('reinvestDate')) $('reinvestDate').value = todayStr;
 
     await loadCloudData();
 }
@@ -632,15 +759,12 @@ function logout() {
     location.reload();
 }
 
-// checkSession：只读本地 session，不再请求 /api/auth（避免无签名被拒）
 async function checkSession() {
     const addr = sessionStorage.getItem('dev_access_address');
     const info = sessionStorage.getItem('dev_access_info');
     const signedAt = Number(sessionStorage.getItem('dev_signed_at') || 0);
 
     if (!addr || !info) return false;
-
-    // 12 小时后要求重新签名
     if (!signedAt || Date.now() - signedAt > 12 * 3600 * 1000) {
         sessionStorage.removeItem('dev_access_password');
         sessionStorage.removeItem('dev_access_address');
@@ -657,10 +781,13 @@ async function checkSession() {
     $('headerWallet').innerText = shorten(accessInfo.address);
     $('headerExpire').innerText = accessInfo.expireAtText || '永久';
 
-    // ⭐ 恢复会话时同样默认筛选当日
     const today = new Date();
-    $('filterDate').value =
-        `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    
+    $('filterDate').value = todayStr;
+    if ($('cashflowDate')) $('cashflowDate').value = todayStr;
+    if ($('redeemDate')) $('redeemDate').value = todayStr;
+    if ($('reinvestDate')) $('reinvestDate').value = todayStr;
 
     await loadCloudData();
     return true;
@@ -678,11 +805,7 @@ async function loadCloudData() {
             }
         });
         const result = await res.json();
-
-        if (!result.success || !result.data) {
-            alert('ℹ️ 暂无数据');
-            return;
-        }
+        if (!result.success || !result.data) { alert('ℹ️ 暂无数据'); return; }
 
         const cloudData = result.data;
         const fixRec = r => {
@@ -694,9 +817,7 @@ async function loadCloudData() {
         queryResults = (cloudData.records || []).map(fixRec);
         allStakeRecords = (cloudData.allRecords || []).map(fixRec);
 
-        if (cloudData.stats) {
-            stats = Object.assign(stats, cloudData.stats);
-        }
+        if (cloudData.stats) stats = Object.assign(stats, cloudData.stats);
 
         calcStatsFromRecords();
         applyFilters();
@@ -704,6 +825,14 @@ async function loadCloudData() {
         updateDailyStats();
         updateAllCharts();
         updateLeaderboard();
+        
+        // 新增面板渲染，通过 setTimeout 确保 DOM 完全就绪
+        setTimeout(() => {
+            renderCashflow();
+            renderRedeem();
+            renderReinvest();
+            renderExpired();
+        }, 100);
     } catch (e) {
         console.error('加载数据失败:', e);
         alert('❌ 加载数据失败: ' + (e.message || e));
@@ -727,9 +856,7 @@ function calcStatsFromRecords() {
     stats.staked15d = 0; stats.staked30d = 0;
     stats.unlock2d = 0; stats.unlock7d = 0; stats.unlock15d = 0;
 
-    allStakeRecords.forEach(r => {
-        stats.totalStaked += principalOf(r);
-    });
+    allStakeRecords.forEach(r => { stats.totalStaked += principalOf(r); });
 
     queryResults.forEach(r => {
         if (r.status !== 1) return;
@@ -766,6 +893,27 @@ function updateStats() {
     $('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
     $('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
     $('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
+
+    // 新增卡片
+    let directStaked = 0;
+    let reinvestedStaked = 0;
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        const p = principalOf(r);
+        if (!r.previousOrderId || r.previousOrderId === 0) {
+            directStaked += p;
+        } else {
+            reinvestedStaked += p;
+        }
+    });
+    $('directStaked').innerText = directStaked.toFixed(2);
+    $('reinvestedStaked').innerText = reinvestedStaked.toFixed(2);
+
+    const bubble = lp > 0 ? active / lp : 0;
+    $('bubbleValue').innerText = bubble.toFixed(2);
+
+    const coverage = active > 0 ? lp / active * 100 : 0;
+    $('coverageRate').innerText = coverage.toFixed(2) + '%';
 }
 
 // ===== 每日地址趋势 =====
@@ -931,12 +1079,7 @@ function updateUnlockChart() {
             },
             plugins: {
                 legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
-                        footer: items => items.length ? '合计: ' + items.reduce((s,i)=>s+i.raw,0).toFixed(2) + ' UUSD' : ''
-                    }
-                }
+                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
             }
         }
     });
@@ -1141,7 +1284,6 @@ function renderTable() {
 
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
-    // ⭐ 渲染上限：防止一次性渲染上万条导致卡死
     const MAX_RENDER = 1000;
     const toRender = sorted.slice(0, MAX_RENDER);
 
@@ -1163,7 +1305,6 @@ function renderTable() {
         </tr>`;
     }).join('');
 
-    // ⭐ 超出上限时追加提示行
     if (sorted.length > MAX_RENDER) {
         tbody.innerHTML += `<tr><td colspan="10" class="empty-state" style="color:#fbbf24;">
             ⚠️ 仅显示前 ${MAX_RENDER} 条，共 ${sorted.length} 条，请缩小筛选范围（如选择日期或输入地址）
@@ -1179,11 +1320,15 @@ function clearFilters() {
 }
 
 function switchTab(tab) {
-    ['charts','daily','records'].forEach(t => {
+    ['charts', 'daily', 'records', 'cashflow', 'redeem', 'reinvest', 'expired'].forEach(t => {
         $('tab-' + t).classList.toggle('active', t === tab);
         $('panel-' + t).classList.toggle('active', t === tab);
     });
     if (tab === 'charts') setTimeout(updateAllCharts, 300);
+    if (tab === 'cashflow') setTimeout(renderCashflow, 100); // 延时 100ms 确保 DOM 显示
+    if (tab === 'redeem') renderRedeem();
+    if (tab === 'reinvest') renderReinvest();
+    if (tab === 'expired') renderExpired();
 }
 
 function setTrendRange(d, btn) {
@@ -1214,6 +1359,233 @@ function updateAllCharts() {
 }
 
 // ================================================================
+// 新增面板逻辑 (在展示端)
+// ================================================================
+function renderCashflow() {
+    const dateInput = document.getElementById('cashflowDate');
+    const rangeSel = document.getElementById('cashflowRange');
+    const range = rangeSel ? parseInt(rangeSel.value) : 30;
+
+    const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, {
+            in: 0, inCount: 0, out: 0, outCount: 0, reward: 0, reinvest: 0, reinvestCount: 0
+        });
+        return dailyMap.get(ds);
+    }
+
+    allStakeRecords.forEach(r => {
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            const d = ensureDay(ds);
+            d.in += principalOf(r); d.inCount += 1;
+        }
+        if (r.status === 2) {
+            const ts = r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                const ds = getDateStr(ts);
+                const d = ensureDay(ds);
+                d.out += totalOf(r); d.outCount += 1; d.reward += profitOf(r);
+            }
+        }
+        if (r.status === 3) {
+            const ts = r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                const ds = getDateStr(ts);
+                const d = ensureDay(ds);
+                d.reinvest += principalOf(r); d.reinvestCount += 1;
+            }
+        }
+    });
+
+    let dates = Array.from(dailyMap.keys()).sort();
+    if (range > 0) dates = dates.slice(-range);
+
+    if (dateInput && dateInput.value) {
+        const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        document.getElementById('cfIn').innerText = d.in.toFixed(2);
+        document.getElementById('cfInSub').innerText = `质押 ${d.inCount} 笔`;
+        document.getElementById('cfOut').innerText = d.out.toFixed(2);
+        document.getElementById('cfOutSub').innerText = `赎回 ${d.outCount} 笔 · 奖励 ${d.reward.toFixed(2)}`;
+        document.getElementById('cfNet').innerText = (d.in - d.out).toFixed(2);
+        document.getElementById('cfReinvest').innerText = d.reinvest.toFixed(2);
+        document.getElementById('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
+    } else {
+        let totalIn = 0, totalOut = 0, totalReward = 0, totalReinvest = 0;
+        let totalInCount = 0, totalOutCount = 0, totalReinvestCount = 0;
+        dates.forEach(ds => {
+            const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+            totalIn += d.in; totalInCount += d.inCount;
+            totalOut += d.out; totalOutCount += d.outCount;
+            totalReward += d.reward;
+            totalReinvest += d.reinvest; totalReinvestCount += d.reinvestCount;
+        });
+        document.getElementById('cfIn').innerText = totalIn.toFixed(2);
+        document.getElementById('cfInSub').innerText = `质押 ${totalInCount} 笔`;
+        document.getElementById('cfOut').innerText = totalOut.toFixed(2);
+        document.getElementById('cfOutSub').innerText = `赎回 ${totalOutCount} 笔 · 奖励 ${totalReward.toFixed(2)}`;
+        document.getElementById('cfNet').innerText = (totalIn - totalOut).toFixed(2);
+        document.getElementById('cfReinvest').innerText = totalReinvest.toFixed(2);
+        document.getElementById('cfReinvestSub').innerText = `复投 ${totalReinvestCount} 笔`;
+    }
+
+    const tbody = document.getElementById('cashflowTableBody');
+    let html = '';
+    dates.forEach(ds => {
+        const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const net = d.in - d.out;
+        html += `<tr>
+            <td>${ds}</td>
+            <td class="amount-cell" style="color:#10b981;">${d.in.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${d.reward.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
+            <td class="amount-cell" style="color:${net>=0?'#10b981':'#ef4444'};">${net.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#8b5cf6;">${d.reinvest.toFixed(2)}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+
+    const canvas = document.getElementById('cashflowChart');
+    if (!canvas) return;
+
+    // ⭐ 修复空白的关键：在 try-catch 内渲染图表，防止隐藏状态下报错阻断后续代码
+    try {
+        const ctx = canvas.getContext('2d');
+        if (cashflowChart) cashflowChart.destroy();
+
+        const labels = [], inData = [], outData = [], reinvestData = [];
+        dates.forEach(ds => {
+            const d = dailyMap.get(ds) || { in:0, out:0, reinvest:0 };
+            labels.push(ds.slice(5));
+            inData.push(d.in);
+            outData.push(d.out);
+            reinvestData.push(d.reinvest);
+        });
+
+        cashflowChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '入金', data: inData, backgroundColor: '#10b981', borderRadius: 4 },
+                    { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
+                    { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                onClick: (e, activeElements) => {
+                    if (activeElements && activeElements.length > 0) {
+                        const index = activeElements[0].index;
+                        const clickedDate = dates[index];
+                        if (clickedDate) {
+                            document.getElementById('cashflowDate').value = clickedDate;
+                            renderCashflow();
+                        }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { ticks: { color: '#8899bb', maxRotation: 30 } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('图表渲染失败（可能是隐藏状态导致）：', e);
+    }
+}
+
+function renderRedeem() {
+    const tbody = document.getElementById('redeemTableBody');
+    if (!tbody) return;
+    const dateVal = document.getElementById('redeemDate')?.value || '';
+    const search = (document.getElementById('redeemSearch')?.value || '').toLowerCase().trim();
+
+    let list = allStakeRecords.filter(r => r.status === 2);
+    if (dateVal) list = list.filter(r => getDateStr(r.redeemedAt || r.unlockTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (b.redeemedAt || b.unlockTime || 0) - (a.redeemedAt || a.unlockTime || 0));
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map((r, i) => `<tr>
+        <td>${i+1}</td>
+        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+        <td><span class="badge-duration ${r.product===0?'p15':''}">${r.productText}</span></td>
+        <td>${formatTime(r.redeemedAt || r.unlockTime)}</td>
+    </tr>`).join('');
+}
+
+function renderReinvest() {
+    const tbody = document.getElementById('reinvestTableBody');
+    if (!tbody) return;
+    const dateVal = document.getElementById('reinvestDate')?.value || '';
+    const search = (document.getElementById('reinvestSearch')?.value || '').toLowerCase().trim();
+
+    let list = allStakeRecords.filter(r => r.status === 3);
+    if (dateVal) list = list.filter(r => getDateStr(r.redeemedAt || r.unlockTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (b.redeemedAt || b.unlockTime || 0) - (a.redeemedAt || a.unlockTime || 0));
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map((r, i) => `<tr>
+        <td>${i+1}</td>
+        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+        <td><span class="badge-duration ${r.product===0?'p15':''}">${r.productText}</span></td>
+        <td>${r.reinvestedToOrderId || '--'}</td>
+        <td>${formatTime(r.redeemedAt || r.unlockTime)}</td>
+    </tr>`).join('');
+}
+
+function renderExpired() {
+    const tbody = document.getElementById('expiredTableBody');
+    if (!tbody) return;
+    const search = (document.getElementById('expiredSearch')?.value || '').toLowerCase().trim();
+    const now = Math.floor(Date.now() / 1000);
+
+    let list = queryResults.filter(r => r.status === 1 && r.unlockTime > 0 && r.unlockTime <= now);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (a.unlockTime || 0) - (b.unlockTime || 0));
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map((r, i) => {
+        const overdue = now - r.unlockTime;
+        const overdueDays = Math.floor(overdue / 86400);
+        const overdueHours = Math.floor((overdue % 86400) / 3600);
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':''}">${r.productText}</span></td>
+            <td>${formatTime(r.unlockTime)}</td>
+            <td style="color:#f87171;">${overdueDays}d ${overdueHours}h</td>
+        </tr>`;
+    }).join('');
+}
+
+// ================================================================
 // 启动
 // ================================================================
 window.connectWallet = connectWallet;
@@ -1230,6 +1602,10 @@ window.toggleCard = toggleCard;
 window.refreshLPPool = refreshLPPool;
 window.clearFilters = clearFilters;
 window.copyAddress = copyAddress;
+window.renderCashflow = renderCashflow;
+window.renderRedeem = renderRedeem;
+window.renderReinvest = renderReinvest;
+window.renderExpired = renderExpired;
 
 window.addEventListener('load', async () => {
     const ok = await checkSession();
