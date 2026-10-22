@@ -585,7 +585,7 @@ let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 // 工具
 // ================================================================
 const $ = id => document.getElementById(id);
-function shorten(a) { return a ? a.slice(0,6)+'…'+a.slice(-4) : ''; }
+function shorten(a) { return a ? a.slice(0,2)+'…'+a.slice(-6) : ''; }
 function formatDate(ts) {
     if (!ts) return '--';
     const d = new Date(ts * 1000 + 8 * 3600 * 1000);
