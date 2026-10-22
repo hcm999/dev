@@ -1961,77 +1961,96 @@ function updateAddressTrendChart() {
     const ctx = canvas.getContext('2d');
     if (addressTrendChart) addressTrendChart.destroy();
 
-    const addrDailyStatus = new Map();
-    allStakeRecords.forEach(r => {
-        if (r.stakeTime <= 0) return;
-        const addrKey = (r.address||'').toLowerCase();
-        const ds = getDateStr(r.stakeTime);
-        if (!addrDailyStatus.has(addrKey)) addrDailyStatus.set(addrKey, new Map());
-        const dailyMap = addrDailyStatus.get(addrKey);
-        if (!dailyMap.has(ds)) dailyMap.set(ds, { hasUnredeemed: false });
-        const status = dailyMap.get(ds);
-        if (r.status === 1) status.hasUnredeemed = true;
-    });
-
-    const allDates = new Set();
-    allStakeRecords.forEach(r => {
-        if (r.stakeTime <= 0) return;
-        allDates.add(getDateStr(r.stakeTime));
-    });
-    const sortedDates = Array.from(allDates).sort();
-
+    // 预处理：找出所有地址的首单日期（用于计算新增）
     const addrFirstStake = new Map();
+    // 预处理：记录所有订单的生命周期 [开始日, 结束日)
+    const activeIntervals = [];
+    // 预处理：记录“当日型”活跃（按 stakeTime 统计且目前未赎回的地址）
+    const dailyActionMap = new Map();
+
     allStakeRecords.forEach(r => {
         if (r.stakeTime <= 0) return;
-        const addrKey = (r.address||'').toLowerCase();
-        if (!addrFirstStake.has(addrKey)) addrFirstStake.set(addrKey, getDateStr(r.stakeTime));
-    });
-
-    const dailyActive = new Map(), dailyNew = new Map(), dailyExit = new Map();
-    let prevActiveAddrs = new Set();
-
-    sortedDates.forEach((ds, index) => {
-        const todayActive = new Set();
-        addrDailyStatus.forEach((dailyMap, address) => {
-            if (dailyMap.has(ds) && dailyMap.get(ds).hasUnredeemed) todayActive.add(address);
-        });
-        const todayNew = new Set();
-        addrFirstStake.forEach((firstDate, address) => {
-            if (firstDate === ds) todayNew.add(address);
-        });
-        const todayExit = new Set();
-        if (index > 0) {
-            prevActiveAddrs.forEach(address => {
-                if (!todayActive.has(address)) todayExit.add(address);
-            });
+        const addr = (r.address || '').toLowerCase();
+        const startDs = getDateStr(r.stakeTime);
+        
+        // 记录首单
+        if (!addrFirstStake.has(addr) || startDs < addrFirstStake.get(addr)) {
+            addrFirstStake.set(addr, startDs);
         }
-        dailyActive.set(ds, todayActive);
-        dailyNew.set(ds, todayNew);
-        dailyExit.set(ds, todayExit);
-        prevActiveAddrs = new Set(todayActive);
+
+        // 确定订单的存活结束日
+        let endDs = '9999-12-31';
+        if (r.status === 2 || r.status === 3) {
+            endDs = getDateStr(r.redeemedAt || r.unlockTime);
+        }
+
+        activeIntervals.push({ addr, startDs, endDs });
+
+        // 旧版逻辑：当日建单，且当前状态为 1（质押中）
+        if (r.status === 1) {
+            if (!dailyActionMap.has(startDs)) dailyActionMap.set(startDs, new Set());
+            dailyActionMap.get(startDs).add(addr);
+        }
     });
 
     const currentActiveAddresses = new Set();
     allStakeRecords.forEach(r => {
-        if (r.status === 1) currentActiveAddresses.add((r.address||'').toLowerCase());
+        if (r.status === 1) currentActiveAddresses.add((r.address || '').toLowerCase());
     });
     document.getElementById('totalActiveAddresses').innerHTML = `🟢 当前活跃: ${currentActiveAddresses.size}`;
 
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - addressTrendRange);
-    cutoffDate.setHours(0, 0, 0, 0);
-
-    const chartLabels = [], activeCounts = [], newCounts = [], exitCounts = [];
-    const startDate = new Date(cutoffDate);
+    const chartLabels = [], stockActiveCounts = [], dailyActionCounts = [], newCounts = [], exitCounts = [];
+    const now = new Date();
+    const startDate = new Date(now.getTime() - addressTrendRange * 86400000);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date();
     endDate.setHours(23, 59, 59, 999);
 
+    // 先计算起始日期前一天的活跃地址，作为初始对比集
+    const initDs = formatDate(startDate.getTime() / 1000 - 86400);
+    let prevActiveSet = new Set();
+    activeIntervals.forEach(interval => {
+        if (interval.startDs <= initDs && interval.endDs > initDs) {
+            prevActiveSet.add(interval.addr);
+        }
+    });
+
+    // 按天遍历，生成快照
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const ds = formatDate(d.getTime() / 1000);
-        chartLabels.push(`${d.getMonth()+1}/${d.getDate()}`);
-        activeCounts.push((dailyActive.get(ds) || new Set()).size);
-        newCounts.push((dailyNew.get(ds) || new Set()).size);
-        exitCounts.push((dailyExit.get(ds) || new Set()).size);
+        chartLabels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+
+        // 1. 存量活跃（新版逻辑：只要当天有未赎回订单就算）
+        const todayStockActive = new Set();
+        activeIntervals.forEach(interval => {
+            if (interval.startDs <= ds && interval.endDs > ds) {
+                todayStockActive.add(interval.addr);
+            }
+        });
+
+        // 2. 当日动作活跃（旧版逻辑：当天建单且目前未赎回）
+        const todayDailyAction = dailyActionMap.get(ds) || new Set();
+
+        // 3. 新增地址
+        const todayNew = new Set();
+        addrFirstStake.forEach((firstDs, addr) => {
+            if (firstDs === ds) todayNew.add(addr);
+        });
+
+        // 4. 离场地址
+        const todayExit = new Set();
+        prevActiveSet.forEach(addr => {
+            if (!todayStockActive.has(addr)) {
+                todayExit.add(addr);
+            }
+        });
+
+        stockActiveCounts.push(todayStockActive.size);
+        dailyActionCounts.push(todayDailyAction.size);
+        newCounts.push(todayNew.size);
+        exitCounts.push(todayExit.size);
+
+        prevActiveSet = new Set(todayStockActive); 
     }
 
     if (chartLabels.length === 0) {
@@ -2048,8 +2067,55 @@ function updateAddressTrendChart() {
         data: {
             labels: chartLabels,
             datasets: [
-                { label: '活跃地址', data: activeCounts, backgroundColor: 'rgba(59, 130, 246, 0.5)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3, order: 2, yAxisID: 'y' },
-                { label: '新增地址', data: newCounts, type: 'line', borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1, yAxisID: 'y' }
+                { 
+                    label: '存量活跃地址', 
+                    data: stockActiveCounts, 
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)', // 较深的蓝色
+                    borderColor: '#3b82f6', 
+                    borderWidth: 1, 
+                    borderRadius: 3, 
+                    order: 4, 
+                    yAxisID: 'y' 
+                },
+                { 
+                    label: '当日动作活跃', 
+                    data: dailyActionCounts, 
+                    backgroundColor: 'rgba(139, 92, 246, 0.8)', // 紫色
+                    borderColor: '#8b5cf6', 
+                    borderWidth: 1, 
+                    borderRadius: 3, 
+                    order: 3, 
+                    yAxisID: 'y' 
+                },
+                { 
+                    label: '新增地址', 
+                    data: newCounts, 
+                    type: 'line', 
+                    borderColor: '#22c55e', 
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)', 
+                    borderWidth: 2.5, 
+                    pointRadius: 3, 
+                    pointBackgroundColor: '#22c55e', 
+                    tension: 0.3, 
+                    fill: false, 
+                    order: 1, 
+                    yAxisID: 'y' 
+                },
+                { 
+                    label: '离场地址', 
+                    data: exitCounts, 
+                    type: 'line', 
+                    borderColor: '#ef4444', 
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                    borderWidth: 2, 
+                    borderDash: [5, 5], 
+                    pointRadius: 2, 
+                    pointBackgroundColor: '#ef4444', 
+                    tension: 0.3, 
+                    fill: false, 
+                    order: 2, 
+                    yAxisID: 'y' 
+                }
             ]
         },
         options: {
