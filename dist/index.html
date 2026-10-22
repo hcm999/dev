@@ -850,6 +850,73 @@ async function refreshLPPool() {
 // ================================================================
 // 4. 统计与图表
 // ================================================================
+function calcStatsFromRecords() {
+    const now = Math.floor(Date.now() / 1000);
+    stats.totalStaked = 0; stats.activeStaked = 0;
+    stats.staked15d = 0; stats.staked30d = 0;
+    stats.unlock2d = 0; stats.unlock7d = 0; stats.unlock15d = 0;
+
+    allStakeRecords.forEach(r => { stats.totalStaked += principalOf(r); });
+
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        const p = principalOf(r);
+        stats.activeStaked += p;
+        if (r.product === 0) stats.staked15d += p;
+        else if (r.product === 1) stats.staked30d += p;
+
+        const amt = totalOf(r);
+        const remain = r.unlockTime - now;
+        if (remain <= 2*86400)  stats.unlock2d  += amt;
+        if (remain <= 7*86400)  stats.unlock7d  += amt;
+        if (remain <= 15*86400) stats.unlock15d += amt;
+    });
+}
+
+function updateStats() {
+    $('totalStaked').innerText = stats.totalStaked.toFixed(2);
+    $('activeStaked').innerText = stats.activeStaked.toFixed(2);
+    $('staked15d').innerText = stats.staked15d.toFixed(2);
+    $('staked30d').innerText = stats.staked30d.toFixed(2);
+    $('unlock2d').innerText = stats.unlock2d.toFixed(2);
+    $('unlock7d').innerText = stats.unlock7d.toFixed(2);
+    $('unlock15d').innerText = stats.unlock15d.toFixed(2);
+    $('lpBalance').innerText = (stats.lpBalance || 0).toFixed(2);
+    $('resultCount').innerText = queryResults.length;
+
+    const lp = stats.lpBalance || 0;
+    const active = stats.activeStaked || 0;
+
+    $('activePct').innerText = '占LP ' + (lp > 0 ? (active / lp * 100) : 0).toFixed(2) + '%';
+    $('p15Pct').innerText = '占比 ' + (active > 0 ? (stats.staked15d / active * 100) : 0).toFixed(2) + '%';
+    $('p30Pct').innerText = '占比 ' + (active > 0 ? (stats.staked30d / active * 100) : 0).toFixed(2) + '%';
+    $('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
+    $('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
+    $('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
+
+    // 新增卡片
+    let directStaked = 0;
+    let reinvestedStaked = 0;
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        const p = principalOf(r);
+        if (!r.previousOrderId || r.previousOrderId === 0) {
+            directStaked += p;
+        } else {
+            reinvestedStaked += p;
+        }
+    });
+    $('directStaked').innerText = directStaked.toFixed(2);
+    $('reinvestedStaked').innerText = reinvestedStaked.toFixed(2);
+
+    const bubble = lp > 0 ? active / lp : 0;
+    $('bubbleValue').innerText = bubble.toFixed(2);
+
+    const coverage = active > 0 ? lp / active * 100 : 0;
+    $('coverageRate').innerText = coverage.toFixed(2) + '%';
+}
+
+// ===== 每日地址趋势 =====
 function updateAddressTrendChart() {
     const canvas = document.getElementById('addressTrendChart');
     if (!canvas) return;
