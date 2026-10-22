@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<!-- 新增：用于生成图片报告 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding:12px; min-height:100vh; }
@@ -148,6 +150,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .cashflow-out { color:#f97316; }
 .cashflow-net { color:#3b82f6; }
 .cashflow-reinvest { color:#8b5cf6; }
+
+/* 新增：弹窗遮罩 */
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(5px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
 </style>
 </head>
 <body>
@@ -164,6 +169,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn-cloud" onclick="loadCloudData()" id="refreshBtn">☁️ 加载</button>
             <button class="btn-cloud" onclick="uploadToCloud()" id="uploadBtn">⬆️ 上传</button>
+            <button class="btn-cloud" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed); border-color:#a78bfa;" onclick="openReportModal()">📝 简报</button>
         </div>
     </div>
 
@@ -227,7 +233,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
-    <!-- 白名单卡片改为可折叠 -->
+    <!-- 白名单卡片 -->
     <div class="chart-card collapsible-card" style="border:2px solid #22c55e;">
         <div class="card-header" onclick="toggleCard(this)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;flex:1;">
@@ -363,7 +369,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
-                    <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                    <div>
+                        <span style="color:#8899bb;">⏳ 到期分布 (本金 + 收益堆叠)</span>
+                        <div id="bubbleCoverageHint" style="font-size:0.68rem;color:#8899bb;margin-top:3px;">
+                            💡 含收益泡沫: -- · 覆盖率: --
+                        </div>
+                    </div>
                     <div style="font-size:0.7rem;">
                         <span style="color:#3b82f6;">■ 本金</span>
                         <span style="color:#ef4444;margin-left:8px;">■ 收益</span>
@@ -623,6 +634,34 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     </div>
 </div>
 
+<!-- 新增：生成简报弹窗 -->
+<div class="overlay" id="reportModal" style="display:none;">
+    <div class="login-dialog" style="max-width: 520px; width: 100%;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <div style="font-size:1.2rem;font-weight:700;color:#3b82f6;">📝 数据简报</div>
+            <button onclick="closeReportModal()" style="background:none;border:none;color:#8899bb;font-size:1.5rem;cursor:pointer;">&times;</button>
+        </div>
+        
+        <!-- 日期选择 -->
+        <div style="display:flex; gap:10px; margin-bottom:15px; align-items:center; background:#1a2332; padding:10px; border-radius:8px;">
+            <span style="font-size:0.8rem; color:#8899bb;">时间段：</span>
+            <input type="date" id="reportStartDate" class="filter-select" style="flex:1; padding:6px;" onchange="updateReportData()">
+            <span style="font-size:0.8rem; color:#8899bb;">至</span>
+            <input type="date" id="reportEndDate" class="filter-select" style="flex:1; padding:6px;" onchange="updateReportData()">
+        </div>
+
+        <!-- 截图区域 -->
+        <div id="reportContent" style="background:#0a0e1a; border:1px solid #2a3a5a; border-radius:12px; padding:20px; margin-bottom:16px; max-height: 60vh; overflow-y: auto;">
+            <!-- 动态渲染 -->
+        </div>
+        
+        <div style="display:flex;gap:10px; margin-top: 16px;">
+            <button class="btn-query" style="flex:1;padding:10px;font-size:0.9rem;" onclick="copyReportText()">📋 复制文字</button>
+            <button class="btn-incremental" style="flex:1;padding:10px;font-size:0.9rem;" onclick="downloadReportImage()">📥 下载图片</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ================================================================
 // 配置
@@ -680,6 +719,7 @@ let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
 let uploadedMaxId = 0;            
 let uploadedActiveIds = new Set(); 
+let currentReportText = '';
 
 function principalOf(r) { return r.amount || 0; }
 function profitOf(r) { return r.profit || 0; }
@@ -1093,7 +1133,6 @@ async function init() {
     updateStats();
     updateLeaderboard();
 
-    // ⭐ 新打开/刷新时，日期默认选中今天，避免全量渲染卡顿
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     
@@ -1102,7 +1141,7 @@ async function init() {
     if (document.getElementById('redeemDate')) document.getElementById('redeemDate').value = todayStr;
     if (document.getElementById('reinvestDate')) document.getElementById('reinvestDate').value = todayStr;
 
-    applyFilters(); // 刷新质押记录表
+    applyFilters(); 
     renderCashflow();
     renderRedeem();
     renderReinvest();
@@ -1488,6 +1527,26 @@ function updateStats() {
 
     const coverage = active > 0 ? lp / active * 100 : 0;
     document.getElementById('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // ===== 含收益口径（真实兑付压力：本金 + 待付收益） =====
+    let activeWithProfit = 0;
+    queryResults.forEach(r => {
+        if (r.status !== 1) return;
+        activeWithProfit += totalOf(r);   // totalOf 已兼容 amountWithProfit
+    });
+    const bubbleWithProfit   = lp > 0 ? activeWithProfit / lp : 0;
+    const coverageWithProfit = activeWithProfit > 0 ? lp / activeWithProfit * 100 : 0;
+
+    const hintEl = document.getElementById('bubbleCoverageHint');
+    if (hintEl) {
+        const danger = bubbleWithProfit >= 1;   // 泡沫≥1 说明LP不够兑付全部
+        const c1 = danger ? '#f87171' : '#22c55e';
+        const c2 = danger ? '#f87171' : '#22c55e';
+        hintEl.innerHTML =
+            `💡 含收益泡沫: <b style="color:${c1}">${bubbleWithProfit.toFixed(2)}</b>` +
+            ` · 覆盖率: <b style="color:${c2}">${coverageWithProfit.toFixed(2)}%</b>` +
+            `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
+    }
 }
 
 function updateAddressCount() {
@@ -1961,11 +2020,8 @@ function updateAddressTrendChart() {
     const ctx = canvas.getContext('2d');
     if (addressTrendChart) addressTrendChart.destroy();
 
-    // 预处理：找出所有地址的首单日期（用于计算新增）
     const addrFirstStake = new Map();
-    // 预处理：记录所有订单的生命周期 [开始日, 结束日)
     const activeIntervals = [];
-    // 预处理：记录“当日型”活跃（按 stakeTime 统计且目前未赎回的地址）
     const dailyActionMap = new Map();
 
     allStakeRecords.forEach(r => {
@@ -1973,12 +2029,10 @@ function updateAddressTrendChart() {
         const addr = (r.address || '').toLowerCase();
         const startDs = getDateStr(r.stakeTime);
         
-        // 记录首单
         if (!addrFirstStake.has(addr) || startDs < addrFirstStake.get(addr)) {
             addrFirstStake.set(addr, startDs);
         }
 
-        // 确定订单的存活结束日
         let endDs = '9999-12-31';
         if (r.status === 2 || r.status === 3) {
             endDs = getDateStr(r.redeemedAt || r.unlockTime);
@@ -1986,7 +2040,6 @@ function updateAddressTrendChart() {
 
         activeIntervals.push({ addr, startDs, endDs });
 
-        // 旧版逻辑：当日建单，且当前状态为 1（质押中）
         if (r.status === 1) {
             if (!dailyActionMap.has(startDs)) dailyActionMap.set(startDs, new Set());
             dailyActionMap.get(startDs).add(addr);
@@ -2006,7 +2059,6 @@ function updateAddressTrendChart() {
     const endDate = new Date();
     endDate.setHours(23, 59, 59, 999);
 
-    // 先计算起始日期前一天的活跃地址，作为初始对比集
     const initDs = formatDate(startDate.getTime() / 1000 - 86400);
     let prevActiveSet = new Set();
     activeIntervals.forEach(interval => {
@@ -2015,12 +2067,10 @@ function updateAddressTrendChart() {
         }
     });
 
-    // 按天遍历，生成快照
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         const ds = formatDate(d.getTime() / 1000);
         chartLabels.push(`${d.getMonth() + 1}/${d.getDate()}`);
 
-        // 1. 存量活跃（新版逻辑：只要当天有未赎回订单就算）
         const todayStockActive = new Set();
         activeIntervals.forEach(interval => {
             if (interval.startDs <= ds && interval.endDs > ds) {
@@ -2028,16 +2078,13 @@ function updateAddressTrendChart() {
             }
         });
 
-        // 2. 当日动作活跃（旧版逻辑：当天建单且目前未赎回）
         const todayDailyAction = dailyActionMap.get(ds) || new Set();
 
-        // 3. 新增地址
         const todayNew = new Set();
         addrFirstStake.forEach((firstDs, addr) => {
             if (firstDs === ds) todayNew.add(addr);
         });
 
-        // 4. 离场地址
         const todayExit = new Set();
         prevActiveSet.forEach(addr => {
             if (!todayStockActive.has(addr)) {
@@ -2067,55 +2114,10 @@ function updateAddressTrendChart() {
         data: {
             labels: chartLabels,
             datasets: [
-                { 
-                    label: '存量活跃地址', 
-                    data: stockActiveCounts, 
-                    backgroundColor: 'rgba(59, 130, 246, 0.7)', // 较深的蓝色
-                    borderColor: '#3b82f6', 
-                    borderWidth: 1, 
-                    borderRadius: 3, 
-                    order: 4, 
-                    yAxisID: 'y' 
-                },
-                { 
-                    label: '当日动作活跃', 
-                    data: dailyActionCounts, 
-                    backgroundColor: 'rgba(139, 92, 246, 0.8)', // 紫色
-                    borderColor: '#8b5cf6', 
-                    borderWidth: 1, 
-                    borderRadius: 3, 
-                    order: 3, 
-                    yAxisID: 'y' 
-                },
-                { 
-                    label: '新增地址', 
-                    data: newCounts, 
-                    type: 'line', 
-                    borderColor: '#22c55e', 
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)', 
-                    borderWidth: 2.5, 
-                    pointRadius: 3, 
-                    pointBackgroundColor: '#22c55e', 
-                    tension: 0.3, 
-                    fill: false, 
-                    order: 1, 
-                    yAxisID: 'y' 
-                },
-                { 
-                    label: '离场地址', 
-                    data: exitCounts, 
-                    type: 'line', 
-                    borderColor: '#ef4444', 
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-                    borderWidth: 2, 
-                    borderDash: [5, 5], 
-                    pointRadius: 2, 
-                    pointBackgroundColor: '#ef4444', 
-                    tension: 0.3, 
-                    fill: false, 
-                    order: 2, 
-                    yAxisID: 'y' 
-                }
+                { label: '存量活跃地址', data: stockActiveCounts, backgroundColor: 'rgba(59, 130, 246, 0.7)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3, order: 4, yAxisID: 'y' },
+                { label: '当日动作活跃', data: dailyActionCounts, backgroundColor: 'rgba(139, 92, 246, 0.8)', borderColor: '#8b5cf6', borderWidth: 1, borderRadius: 3, order: 3, yAxisID: 'y' },
+                { label: '新增地址', data: newCounts, type: 'line', borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#22c55e', tension: 0.3, fill: false, order: 1, yAxisID: 'y' },
+                { label: '离场地址', data: exitCounts, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 2, borderDash: [5, 5], pointRadius: 2, pointBackgroundColor: '#ef4444', tension: 0.3, fill: false, order: 2, yAxisID: 'y' }
             ]
         },
         options: {
@@ -2451,31 +2453,24 @@ function renderTable() {
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
     
     tbody.innerHTML = sorted.map((r, i) => {
-        // 默认状态
         let status = r.unlockTime <= now ? '可赎回' : '锁仓';
         let cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
         
-        // --- 颜色与标签配置 ---
-        // 1. 直接质押：天空蓝
         let principalColor = '#38bdf8'; 
         let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
         
         if (r.status === 3) {
-            // 2. 被复投的旧单：紫罗兰
             principalColor = '#c084fc'; 
             status = '已复投';
             cls = 'status-unlocked'; 
             tagHtml = '<span style="font-size:0.55rem;background:rgba(192,132,252,0.15);color:#c084fc;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #c084fc;">转</span>';
         } else if (r.previousOrderId > 0) {
-            // 3. 复投产生的新单：亮绿
             principalColor = '#34d399'; 
             tagHtml = '<span style="font-size:0.55rem;background:rgba(52,211,153,0.15);color:#34d399;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #34d399;">复</span>';
         }
 
         const remain = r.unlockTime - now;
         const productCls = r.product === 0 ? 'p15' : 'p30';
-        
-        // 被复投订单的状态列文字染色
         const statusStyle = r.status === 3 ? 'style="color:#c084fc;"' : '';
 
         return `<tr>
@@ -2780,13 +2775,11 @@ function renderCashflow() {
         }
     });
 
-    // 1. 表格和图表受 range 控制（仅范围）
     let dates = Array.from(dailyMap.keys()).sort();
     if (range > 0) {
         dates = dates.slice(-range);
     }
 
-    // 2. 顶部卡片受 dateInput 控制，如果不填则展示图表范围的总和
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
         document.getElementById('cfIn').innerText = d.in.toFixed(2);
@@ -2818,7 +2811,6 @@ function renderCashflow() {
         document.getElementById('cfReinvestSub').innerText = `复投 ${totalReinvestCount} 笔`;
     }
 
-    // 3. 渲染表格
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
     dates.forEach(ds => {
@@ -2836,7 +2828,6 @@ function renderCashflow() {
     });
     tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
 
-    // 4. 渲染图表
     const canvas = document.getElementById('cashflowChart');
     if (!canvas) return;
     
@@ -2871,7 +2862,6 @@ function renderCashflow() {
                     const clickedDate = dates[index];
                     if (clickedDate) {
                         const dateInput = document.getElementById('cashflowDate');
-                        // 直接设置日期并刷新
                         dateInput.value = clickedDate;
                         renderCashflow();
                     }
@@ -3102,6 +3092,189 @@ function exportExpired() {
     addLog('⚠️ 到期未赎已导出', 'ok');
 }
 
+// ================================================================
+// 新增：生成数据简报 (支持任意时间段)
+// ================================================================
+function openReportModal() {
+    if (allStakeRecords.length === 0) {
+        alert('⚠️ 请先加载或查询数据后再生成简报');
+        return;
+    }
+    
+    // 默认开始时间为昨天，结束时间为昨天（即统计昨日一整天）
+    const yesterday = new Date(Date.now() - 86400000);
+    const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+    
+    document.getElementById('reportStartDate').value = dateStr;
+    document.getElementById('reportEndDate').value = dateStr;
+    
+    updateReportData();
+    document.getElementById('reportModal').style.display = 'flex';
+}
+
+function closeReportModal() {
+    document.getElementById('reportModal').style.display = 'none';
+}
+
+function updateReportData() {
+    const startStr = document.getElementById('reportStartDate').value;
+    const endStr = document.getElementById('reportEndDate').value;
+    
+    if (!startStr || !endStr) return;
+    
+    // 转换北京时间 (UTC+8) 的时间戳
+    const startTs = Math.floor(new Date(startStr + 'T00:00:00+08:00').getTime() / 1000);
+    const endTs = Math.floor(new Date(endStr + 'T23:59:59+08:00').getTime() / 1000);
+    
+    if (startTs > endTs) {
+        alert('⚠️ 开始日期不能大于结束日期');
+        return;
+    }
+
+    const isSingleDay = (startStr === endStr);
+    const titleDate = isSingleDay ? startStr : `${startStr} 至 ${endStr}`;
+
+    let totalStakeAmt = 0;
+    let directCount = 0;
+    let reinvestCount = 0;
+    const stakeAddrs = new Set();
+    
+    let p15Amt = 0, p15Count = 0;
+    const p15Addrs = new Set();
+    let p30Amt = 0, p30Count = 0;
+    const p30Addrs = new Set();
+    
+    let totalRedeemAmt = 0;
+    let redeemCount = 0;
+    const redeemAddrs = new Set();
+
+    allStakeRecords.forEach(r => {
+        // 质押统计 (判断建单时间)
+        if (r.stakeTime >= startTs && r.stakeTime <= endTs) {
+            const amt = principalOf(r);
+            totalStakeAmt += amt;
+            stakeAddrs.add(r.address);
+            
+            if (r.previousOrderId > 0) reinvestCount++;
+            else directCount++;
+            
+            if (r.product === 0) {
+                p15Amt += amt;
+                p15Count++;
+                p15Addrs.add(r.address);
+            } else if (r.product === 1) {
+                p30Amt += amt;
+                p30Count++;
+                p30Addrs.add(r.address);
+            }
+        }
+        
+        // 赎回统计 (判断赎回时间/到期时间)
+        if (r.status === 2 || r.status === 3) {
+            const ts = r.redeemedAt || r.unlockTime;
+            if (ts >= startTs && ts <= endTs) {
+                const amt = totalOf(r);
+                totalRedeemAmt += amt;
+                redeemCount++;
+                redeemAddrs.add(r.address);
+            }
+        }
+    });
+
+    const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const p30Pct = totalStakeAmt > 0 ? (p30Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    
+    const html = `
+        <div style="font-family: sans-serif;">
+            <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">DevDao 数据简报｜${titleDate}</div>
+            <div style="color: #8899bb; font-size: 0.75rem; margin-bottom: 16px;">统计时间：${titleDate} 00:00–24:00（北京时间）</div>
+            
+            <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📥 质押金额：<span style="color: #10b981; font-size: 1.1rem;">${fmt(totalStakeAmt)} UUSD</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>直接质押</span><span>${directCount} 笔</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>复投质押</span><span>${reinvestCount} 笔</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押钱包（去重）</span><span>${stakeAddrs.size} 个</span></div>
+            </div>
+
+            <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 赎回金额：<span style="color: #f97316; font-size: 1.1rem;">${fmt(totalRedeemAmt)} UUSD</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回</span><span>${redeemCount} 笔</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>赎回钱包（去重）</span><span>${redeemAddrs.size} 个</span></div>
+            </div>
+
+            <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px; font-size: 0.9rem;">📊 产品周期分布：</div>
+            <div style="font-size: 0.8rem; line-height: 1.8; color: #8899bb;">
+                <div>🟦 15 天：<span style="color:#60a5fa;font-weight:600;">${fmt(p15Amt)} UUSD</span>｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包</div>
+                <div>🟪 30 天：<span style="color:#a78bfa;font-weight:600;">${fmt(p30Amt)} UUSD</span>｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包</div>
+            </div>
+            
+            <div style="color: #64748b; font-size: 0.7rem; margin-top: 16px; text-align: center; border-top: 1px solid #2a3a5a; padding-top: 10px;">
+                注：同一钱包可参与多个周期，各周期钱包数不能相加。<br>
+                详细数据：https://www.ganaweb3.top
+            </div>
+        </div>
+    `;
+
+    document.getElementById('reportContent').innerHTML = html;
+    
+    // 拼接纯文本
+    currentReportText = `DevDao 数据简报｜${titleDate}
+统计时间：${titleDate} 00:00–24:00（北京时间）
+
+质押金额：${fmt(totalStakeAmt)} UUSD
+直接质押：${directCount} 笔
+复投质押：${reinvestCount} 笔
+质押钱包（去重地址）：${stakeAddrs.size} 个
+
+赎回金额：${fmt(totalRedeemAmt)} UUSD
+订单赎回：${redeemCount} 笔
+赎回钱包（去重地址）：${redeemAddrs.size} 个
+
+产品周期分布：
+15 天：${fmt(p15Amt)} UUSD｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
+30 天：${fmt(p30Amt)} UUSD｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包
+
+注：同一钱包可参与多个周期，各周期钱包数不能相加。
+详细数据：https://www.ganaweb3.top`;
+}
+
+function copyReportText() {
+    if (!currentReportText) return;
+    navigator.clipboard.writeText(currentReportText).then(() => {
+        alert('✅ 文字报告已复制到剪贴板');
+    }).catch(err => {
+        alert('❌ 复制失败：' + err.message);
+    });
+}
+
+function downloadReportImage() {
+    const target = document.getElementById('reportContent');
+    if (!target) return;
+    
+    // 截图前，强制设一下背景色，避免截图出来背景透明或者偏白
+    const originalBg = target.style.backgroundColor;
+    target.style.backgroundColor = '#0a0e1a';
+    
+    html2canvas(target, {
+        scale: 2, // 提高清晰度
+        backgroundColor: '#0a0e1a',
+        useCORS: true
+    }).then(canvas => {
+        target.style.backgroundColor = originalBg;
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        const startStr = document.getElementById('reportStartDate').value;
+        const endStr = document.getElementById('reportEndDate').value;
+        const titleDate = startStr === endStr ? startStr : `${startStr}_${endStr}`;
+        a.download = `DEV简报_${titleDate}.png`;
+        a.click();
+    }).catch(err => {
+        target.style.backgroundColor = originalBg;
+        alert('生成图片失败：' + err.message);
+    });
+}
+
 document.getElementById('addressList').addEventListener('input', updateAddressCount);
 window.onload = function() {
     init();
@@ -3147,6 +3320,11 @@ window.renderReinvest = renderReinvest;
 window.exportReinvest = exportReinvest;
 window.renderExpired = renderExpired;
 window.exportExpired = exportExpired;
+window.openReportModal = openReportModal;
+window.closeReportModal = closeReportModal;
+window.copyReportText = copyReportText;
+window.downloadReportImage = downloadReportImage;
+window.updateReportData = updateReportData;
 </script>
 </body>
 </html>
