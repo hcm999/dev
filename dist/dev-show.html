@@ -415,8 +415,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive">
                 <table class="table"><thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>本金+收益</th><th>产品</th><th>质押时间</th><th>解锁时间</th><th>剩余</th><th>状态</th></tr></thead>
                 <tbody id="resultTableBody"><tr><td colspan="10" class="empty-state">请填入钱包地址后查询</td></tr></tbody>
-            </div>
+            </table>
         </div>
+    </div>
     </div>
 
     <!-- ===== 每天进出多少钱 ===== -->
@@ -596,8 +597,13 @@ function formatTime(ts) {
     return `${d.getUTCMonth()+1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 function getDateStr(ts) {
-    const d = new Date(ts * 1000);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    const beijingTime = ts * 1000 + 8 * 3600 * 1000;
+    const d = new Date(beijingTime);
+    const h = d.getUTCHours();
+    // 与管理端统一，默认 8点结算
+    const dailyStartHour = 8;
+    if (h < dailyStartHour) d.setUTCDate(d.getUTCDate() - 1);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 function timeRemain(sec) {
     if (sec <= 0) return '已解锁';
@@ -820,11 +826,13 @@ async function loadCloudData() {
         updateAllCharts();
         updateLeaderboard();
         
-        // 新增面板渲染
-        renderCashflow();
-        renderRedeem();
-        renderReinvest();
-        renderExpired();
+        // 新增面板渲染，通过 setTimeout 确保 DOM 完全就绪
+        setTimeout(() => {
+            renderCashflow();
+            renderRedeem();
+            renderReinvest();
+            renderExpired();
+        }, 100);
     } catch (e) {
         console.error('加载数据失败:', e);
         alert('❌ 加载数据失败: ' + (e.message || e));
@@ -1317,7 +1325,7 @@ function switchTab(tab) {
         $('panel-' + t).classList.toggle('active', t === tab);
     });
     if (tab === 'charts') setTimeout(updateAllCharts, 300);
-    if (tab === 'cashflow') setTimeout(renderCashflow, 50);
+    if (tab === 'cashflow') setTimeout(renderCashflow, 100); // 延时 100ms 确保 DOM 显示
     if (tab === 'redeem') renderRedeem();
     if (tab === 'reinvest') renderReinvest();
     if (tab === 'expired') renderExpired();
@@ -1440,54 +1448,57 @@ function renderCashflow() {
 
     const canvas = document.getElementById('cashflowChart');
     if (!canvas) return;
-    
-    if (canvas.offsetParent === null) return; // 隐藏时不渲染
 
-    const ctx = canvas.getContext('2d');
-    if (cashflowChart) cashflowChart.destroy();
+    // ⭐ 修复空白的关键：在 try-catch 内渲染图表，防止隐藏状态下报错阻断后续代码
+    try {
+        const ctx = canvas.getContext('2d');
+        if (cashflowChart) cashflowChart.destroy();
 
-    const labels = [], inData = [], outData = [], reinvestData = [];
-    dates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, out:0, reinvest:0 };
-        labels.push(ds.slice(5));
-        inData.push(d.in);
-        outData.push(d.out);
-        reinvestData.push(d.reinvest);
-    });
+        const labels = [], inData = [], outData = [], reinvestData = [];
+        dates.forEach(ds => {
+            const d = dailyMap.get(ds) || { in:0, out:0, reinvest:0 };
+            labels.push(ds.slice(5));
+            inData.push(d.in);
+            outData.push(d.out);
+            reinvestData.push(d.reinvest);
+        });
 
-    cashflowChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [
-                { label: '入金', data: inData, backgroundColor: '#10b981', borderRadius: 4 },
-                { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
-                { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            onClick: (e, activeElements) => {
-                if (activeElements && activeElements.length > 0) {
-                    const index = activeElements[0].index;
-                    const clickedDate = dates[index];
-                    if (clickedDate) {
-                        document.getElementById('cashflowDate').value = clickedDate;
-                        renderCashflow();
+        cashflowChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '入金', data: inData, backgroundColor: '#10b981', borderRadius: 4 },
+                    { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
+                    { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                onClick: (e, activeElements) => {
+                    if (activeElements && activeElements.length > 0) {
+                        const index = activeElements[0].index;
+                        const clickedDate = dates[index];
+                        if (clickedDate) {
+                            document.getElementById('cashflowDate').value = clickedDate;
+                            renderCashflow();
+                        }
                     }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { ticks: { color: '#8899bb', maxRotation: 30 } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
                 }
-            },
-            scales: {
-                y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
-                x: { ticks: { color: '#8899bb', maxRotation: 30 } }
-            },
-            plugins: {
-                legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
             }
-        }
-    });
+        });
+    } catch (e) {
+        console.warn('图表渲染失败（可能是隐藏状态导致）：', e);
+    }
 }
 
 function renderRedeem() {
