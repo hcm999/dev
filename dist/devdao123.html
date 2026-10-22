@@ -725,7 +725,7 @@ function addLog(msg, type = 'info') {
 function formatEther(wei, dec = 18) {
     try { return parseFloat(ethers.formatUnits(wei, dec)).toFixed(2); } catch { return "0.00"; }
 }
-function shorten(addr) { return addr ? addr.slice(0,6)+'…'+addr.slice(-4) : ''; }
+function shorten(addr) { return addr ? addr.slice(0,2)+'…'+addr.slice(-6) : ''; }
 function formatTime(ts) {
     if(!ts) return '--';
     const d = new Date(ts * 1000 + 8 * 3600 * 1000);
@@ -1915,7 +1915,7 @@ async function loadWhitelist() {
             const typeText = { single: '单次', monthly: '月卡', permanent: '永久', manual: '手动' }[item.type] || item.type || '-';
             return `<tr>
                 <td>${i+1}</td>
-                <td style="font-family:monospace;font-size:0.7rem;cursor:pointer;" onclick="copyAddress('${item.address}')" title="${item.address}">${item.address.slice(0,6)}...${item.address.slice(-4)}</td>
+                <td style="font-family:monospace;font-size:0.7rem;cursor:pointer;" onclick="copyAddress('${item.address}')" title="${item.address}">${item.address.slice(0,2)}...${item.address.slice(-6)}</td>
                 <td>${typeText}</td>
                 <td style="font-size:0.7rem;">${expireText}</td>
                 <td style="color:${remainColor};font-weight:600;">${remainText}</td>
