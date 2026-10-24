@@ -3009,6 +3009,33 @@ window.closeReportModal = closeReportModal;
 window.copyReportText = copyReportText;
 window.downloadReportImage = downloadReportImage;
 window.updateReportData = updateReportData;
+
+// ================= 打开BscScan下载页面 =================
+function openBscScanDownload() {
+    const CONTRACT_ADDRESS = "0x220cc4a150df778599f39c3de3825ffb3170908b";
+    const downloadUrl = `https://bscscan.com/exportData?type=address&a=${CONTRACT_ADDRESS}`;
+
+    window.open(downloadUrl, '_blank');
+            
+    alert('✅ BscScan下载页面已打开！\n\n请完成以下步骤：\n1. 在页面底部完成验证码\n2. 文件下载到本地\n3. 使用"📊 导入Excel/CSV"功能导入文件');
+            
+    setTimeout(() => {
+        const importLabels = document.querySelectorAll('.file-label');
+        importLabels.forEach(label => {
+            if (label.innerText.includes('导入Excel/CSV')) {
+                label.style.backgroundColor = '#3b82f6';
+                label.style.color = 'white';
+                label.style.transition = 'all 0.3s';
+                        
+                setTimeout(() => {
+                    label.style.backgroundColor = '#475569';
+                    label.style.color = '#e2e8f0';
+                 }, 3000);
+            }
+         });
+    }, 500);
+ } 
+    
 </script>
 </body>
 </html>
