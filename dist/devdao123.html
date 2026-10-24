@@ -309,12 +309,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="stat-sub">本金 · 来自复投</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">🫧 泡沫</div>
+            <div class="stat-title">🫧 本金泡沫</div>
             <div class="stat-value" id="bubbleValue">0.00</div>
             <div class="stat-sub">活跃质押 / LP</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">📊 覆盖率</div>
+            <div class="stat-title">📊 本金覆盖率</div>
             <div class="stat-value" id="coverageRate">0.00%</div>
             <div class="stat-sub">LP / 活跃质押</div>
         </div>
@@ -324,7 +324,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <span class="data-tab active" onclick="switchTab('charts')" id="tab-charts">📊 图表</span>
         <span class="data-tab" onclick="switchTab('daily')" id="tab-daily">📅 每日统计</span>
         <span class="data-tab" onclick="switchTab('records')" id="tab-records">📋 质押记录</span>
-        <span class="data-tab" onclick="switchTab('cashflow')" id="tab-cashflow">💰 每天进出多少钱</span>
+        <span class="data-tab" onclick="switchTab('cashflow')" id="tab-cashflow">💰 每天进出账</span>
         <span class="data-tab" onclick="switchTab('redeem')" id="tab-redeem">💸 赎回记录</span>
         <span class="data-tab" onclick="switchTab('reinvest')" id="tab-reinvest">🔁 复投记录</span>
         <span class="data-tab" onclick="switchTab('expired')" id="tab-expired">⚠️ 到期未赎回</span>
@@ -766,6 +766,13 @@ function formatEther(wei, dec = 18) {
     try { return parseFloat(ethers.formatUnits(wei, dec)).toFixed(2); } catch { return "0.00"; }
 }
 function shorten(addr) { return addr ? addr.slice(0,2)+'…'+addr.slice(-6) : ''; }
+// 新增时间辅助函数
+function pad2(n) { return String(n).padStart(2, '0'); }
+function fmtTsOffset(ts, offsetHours = 8) {
+    const d = new Date(ts * 1000 + offsetHours * 3600 * 1000);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+
 function formatTime(ts) {
     if(!ts) return '--';
     const d = new Date(ts * 1000 + 8 * 3600 * 1000);
@@ -1885,6 +1892,7 @@ async function uploadToCloud() {
             newAll: newAll.map(mapRec),
             changed: changed.map(mapRec),
             stats,
+            dailyStartHour,   // ← 新增
             addresses,
             lastUploadedOrderId: Math.max(
                 uploadedMaxId,
@@ -2672,6 +2680,9 @@ function updateDailyStart() {
         updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard();
         saveToStorage();
         addLog(`📅 起始时间已切换至 ${tzMap[dailyStartHour] || `UTC+${dailyStartHour}`}`, 'ok');
+        // 若简报弹窗已打开，则同步刷新
+        const rm = document.getElementById('reportModal');
+        if (rm && rm.style.display === 'flex') updateReportData();
     }
 }
 
@@ -3100,14 +3111,18 @@ function openReportModal() {
         alert('⚠️ 请先加载或查询数据后再生成简报');
         return;
     }
-    
-    // 默认开始时间为昨天，结束时间为昨天（即统计昨日一整天）
-    const yesterday = new Date(Date.now() - 86400000);
-    const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
-    
-    document.getElementById('reportStartDate').value = dateStr;
-    document.getElementById('reportEndDate').value = dateStr;
-    
+
+    // 按当前每日统计起始时间口径，默认选择"昨天"业务日
+    const nowTs = Math.floor(Date.now() / 1000);
+    const todayBiz = getDateStr(nowTs);
+    const [yy, mm, dd] = todayBiz.split('-').map(Number);
+    const prevUtc = Date.UTC(yy, mm - 1, dd) - 86400 * 1000;
+    const p = new Date(prevUtc);
+    const yesterdayBiz = `${p.getUTCFullYear()}-${pad2(p.getUTCMonth()+1)}-${pad2(p.getUTCDate())}`;
+
+    document.getElementById('reportStartDate').value = yesterdayBiz;
+    document.getElementById('reportEndDate').value = yesterdayBiz;
+
     updateReportData();
     document.getElementById('reportModal').style.display = 'flex';
 }
@@ -3119,62 +3134,66 @@ function closeReportModal() {
 function updateReportData() {
     const startStr = document.getElementById('reportStartDate').value;
     const endStr = document.getElementById('reportEndDate').value;
-    
     if (!startStr || !endStr) return;
-    
-    // 转换北京时间 (UTC+8) 的时间戳
-    const startTs = Math.floor(new Date(startStr + 'T00:00:00+08:00').getTime() / 1000);
-    const endTs = Math.floor(new Date(endStr + 'T23:59:59+08:00').getTime() / 1000);
-    
-    if (startTs > endTs) {
+
+    if (startStr > endStr) {
         alert('⚠️ 开始日期不能大于结束日期');
         return;
     }
 
+    // 按每日统计起始时间 dailyStartHour（北京时间）切分业务日
+    // 业务日 D 的区间 = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
+    const [sy, sm, sd] = startStr.split('-').map(Number);
+    const [ey, em, ed] = endStr.split('-').map(Number);
+
+    // 北京时间 D 日 00:00 的 UTC 时间戳 = Date.UTC(...) - 8h
+    const startTs = Math.floor(Date.UTC(sy, sm - 1, sd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
+    const endTs   = Math.floor(Date.UTC(ey, em - 1, ed) / 1000) - 8 * 3600 + 86400 + dailyStartHour * 3600;
+
     const isSingleDay = (startStr === endStr);
     const titleDate = isSingleDay ? startStr : `${startStr} 至 ${endStr}`;
+
+    // 双时间显示
+    const bjStartDisplay  = fmtTsOffset(startTs, 8);
+    const bjEndDisplay    = fmtTsOffset(endTs, 8);
+    const utcStartDisplay = fmtTsOffset(startTs, 0);
+    const utcEndDisplay   = fmtTsOffset(endTs, 0);
 
     let totalStakeAmt = 0;
     let directCount = 0;
     let reinvestCount = 0;
     const stakeAddrs = new Set();
-    
+
     let p15Amt = 0, p15Count = 0;
     const p15Addrs = new Set();
     let p30Amt = 0, p30Count = 0;
     const p30Addrs = new Set();
-    
+
     let totalRedeemAmt = 0;
     let redeemCount = 0;
     const redeemAddrs = new Set();
 
     allStakeRecords.forEach(r => {
-        // 质押统计 (判断建单时间)
-        if (r.stakeTime >= startTs && r.stakeTime <= endTs) {
+        // 左闭右开
+        if (r.stakeTime >= startTs && r.stakeTime < endTs) {
             const amt = principalOf(r);
             totalStakeAmt += amt;
             stakeAddrs.add(r.address);
-            
+
             if (r.previousOrderId > 0) reinvestCount++;
             else directCount++;
-            
+
             if (r.product === 0) {
-                p15Amt += amt;
-                p15Count++;
-                p15Addrs.add(r.address);
+                p15Amt += amt; p15Count++; p15Addrs.add(r.address);
             } else if (r.product === 1) {
-                p30Amt += amt;
-                p30Count++;
-                p30Addrs.add(r.address);
+                p30Amt += amt; p30Count++; p30Addrs.add(r.address);
             }
         }
-        
-        // 赎回统计 (判断赎回时间/到期时间)
+
         if (r.status === 2 || r.status === 3) {
             const ts = r.redeemedAt || r.unlockTime;
-            if (ts >= startTs && ts <= endTs) {
-                const amt = totalOf(r);
-                totalRedeemAmt += amt;
+            if (ts >= startTs && ts < endTs) {
+                totalRedeemAmt += totalOf(r);
                 redeemCount++;
                 redeemAddrs.add(r.address);
             }
@@ -3184,12 +3203,13 @@ function updateReportData() {
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const p30Pct = totalStakeAmt > 0 ? (p30Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
-    
+
     const html = `
         <div style="font-family: sans-serif;">
             <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">DevDao 数据简报｜${titleDate}</div>
-            <div style="color: #8899bb; font-size: 0.75rem; margin-bottom: 16px;">统计时间：${titleDate} 00:00–24:00（北京时间）</div>
-            
+            <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 4px; line-height: 1.6;">⏰ 北京时间：${bjStartDisplay} → ${bjEndDisplay}</div>
+            <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 16px; line-height: 1.6;">⛓️ 链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}</div>
+
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                 <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📥 质押金额：<span style="color: #10b981; font-size: 1.1rem;">${fmt(totalStakeAmt)} UUSD</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>直接质押</span><span>${directCount} 笔</span></div>
@@ -3208,7 +3228,7 @@ function updateReportData() {
                 <div>🟦 15 天：<span style="color:#60a5fa;font-weight:600;">${fmt(p15Amt)} UUSD</span>｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包</div>
                 <div>🟪 30 天：<span style="color:#a78bfa;font-weight:600;">${fmt(p30Amt)} UUSD</span>｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包</div>
             </div>
-            
+
             <div style="color: #64748b; font-size: 0.7rem; margin-top: 16px; text-align: center; border-top: 1px solid #2a3a5a; padding-top: 10px;">
                 注：同一钱包可参与多个周期，各周期钱包数不能相加。<br>
                 详细数据：https://www.ganaweb3.top
@@ -3217,10 +3237,10 @@ function updateReportData() {
     `;
 
     document.getElementById('reportContent').innerHTML = html;
-    
-    // 拼接纯文本
+
     currentReportText = `DevDao 数据简报｜${titleDate}
-统计时间：${titleDate} 00:00–24:00（北京时间）
+北京时间：${bjStartDisplay} → ${bjEndDisplay}
+链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}
 
 质押金额：${fmt(totalStakeAmt)} UUSD
 直接质押：${directCount} 笔
