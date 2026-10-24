@@ -1047,7 +1047,8 @@ function updateAddressTrendChart() {
 
     // 先计算起始日期前一天的活跃地址，作为初始对比集
     const initDs = (() => {
-        const p = new Date(baseUtc - 86400 * 1000);
+        // 减去图表天数，才是真正的起始对比基准
+        const p = new Date(baseUtc - addressTrendRange * 86400 * 1000); 
         return `${p.getUTCFullYear()}-${pad2(p.getUTCMonth()+1)}-${pad2(p.getUTCDate())}`;
 })();
     let prevActiveSet = new Set();
