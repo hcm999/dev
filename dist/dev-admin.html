@@ -153,6 +153,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
 /* 新增：弹窗遮罩 */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(5px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
+
+/* 👇 新增这段，管理端之前漏掉了 */
+.login-dialog { background:linear-gradient(145deg,#1e293b,#0f172a); border:2px solid #3b82f6; border-radius:24px; padding:32px 24px; max-width:440px; width:100%; box-shadow:0 30px 60px rgba(0,0,0,0.8); }
 </style>
 </head>
 <body>
@@ -2075,7 +2078,7 @@ const baseUtc = Date.UTC(yy, mm - 1, dd);
     // 先计算起始日期前一天的活跃地址，作为初始对比集
     const initDs = (() => {
        // 减去图表天数，才是真正的起始对比基准
-        const p = new Date(baseUtc - 86400 * 1000);
+        const p = new Date(baseUtc - addressTrendRange * 86400 * 1000);
         return `${p.getUTCFullYear()}-${pad2(p.getUTCMonth()+1)}-${pad2(p.getUTCDate())}`;
 })();
     let prevActiveSet = new Set();
