@@ -193,9 +193,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
     <div class="address-input-area" id="address-input">
         <div class="toolbar">
+            <span class="example-tag" onclick="openBscScanDownload()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white;">🌐 获取质押地址</span>
             <span class="example-tag" onclick="clearAddresses()">🗑️ 清空地址</span>
             <span class="example-tag" onclick="dedupeAddressList()">🧹 地址去重</span>
-            <span class="example-tag" onclick="loadLastQuery()">📂 上次查询</span>
             <span class="example-tag" onclick="downloadQueryData()">⬇️ 下载数据</span>
             <span class="file-input-wrapper"><input type="file" id="importFile" accept=".json" onchange="importQueryData(event)" /><label for="importFile" class="file-label">📂 导入数据</label></span>
             <span class="file-input-wrapper"><input type="file" id="excelImportFile" accept=".csv,.xlsx,.xls" onchange="importAddressesFromExcel(event)" /><label for="excelImportFile" class="file-label">📊 导入Excel/CSV</label></span>
@@ -3035,7 +3035,7 @@ function openBscScanDownload() {
          });
     }, 500);
  } 
-    
+
 </script>
 </body>
 </html>
