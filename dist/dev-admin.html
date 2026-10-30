@@ -514,7 +514,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <div id="panel-cashflow" class="data-panel">
         <div class="table-container">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-                <h5 style="color:#e8edf5;">💰 每天进出多少钱（按质押/赎回/复投日期）</h5>
+                <h5 style="color:#e8edf5;">💰 每天进出账（按质押/赎回/复投日期）</h5>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="date" id="cashflowDate" class="filter-select" style="width:auto;" onchange="renderCashflow()" title="仅控制上方统计卡片">
                     <select id="cashflowRange" class="filter-select" onchange="renderCashflow()" title="控制下方图表和表格">
@@ -534,7 +534,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                 <div class="cashflow-card">
                     <div class="cashflow-title">实际出金</div>
                     <div class="cashflow-value cashflow-out" id="cfOut">0.00</div>
-                    <div class="cashflow-sub" id="cfOutSub">赎回 0 笔 · 奖励 0</div>
+                    <div class="cashflow-sub" id="cfOutSub">赎回 0 笔 · 收益 0</div>
                 </div>
                 <div class="cashflow-card">
                     <div class="cashflow-title">资金净额</div>
@@ -559,7 +559,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                             <th>日期</th>
                             <th>实际入金</th>
                             <th>订单赎回</th>
-                            <th>奖励领取</th>
+                            <th>收益领取</th>
                             <th>实际出金</th>
                             <th>资金净额</th>
                             <th>本金复投</th>
@@ -607,7 +607,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive" style="max-height:600px;">
                 <table class="table">
                     <thead>
-                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>新订单ID</th><th>复投时间</th></tr>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>复投时间</th></tr>
                     </thead>
                     <tbody id="reinvestTableBody"><tr><td colspan="8" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
@@ -2226,27 +2226,35 @@ function updateTrendChart() {
     const dailyReinvestMap = new Map(), dailyRedeemMap = new Map();
 
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
+        if (r.stakeTime <= 0) return;
+        const stakeDs = getDateStr(r.stakeTime);
         const amt = principalOf(r);
-        if(!dailyNewMap.has(ds)) dailyNewMap.set(ds, 0);
-        dailyNewMap.set(ds, dailyNewMap.get(ds) + amt);
-        if(r.status === 1 && r.unlockTime > 0) {
-            if(!dailyActiveMap.has(ds)) dailyActiveMap.set(ds, 0);
-            dailyActiveMap.set(ds, dailyActiveMap.get(ds) + amt);
+
+        // 新增质押（所有订单按创建日）
+        dailyNewMap.set(stakeDs, (dailyNewMap.get(stakeDs) || 0) + amt);
+
+        // 活跃质押（status=1 且未解锁，按创建日）
+        if (r.status === 1 && r.unlockTime > 0) {
+            dailyActiveMap.set(stakeDs, (dailyActiveMap.get(stakeDs) || 0) + amt);
         }
-        if(r.status === 3) {
-            if(!dailyReinvestMap.has(ds)) dailyReinvestMap.set(ds, 0);
-            dailyReinvestMap.set(ds, dailyReinvestMap.get(ds) + amt);
+
+        // 【修改】复投：复投新订单（previousOrderId > 0），按新单创建日
+        if (r.previousOrderId > 0) {
+            dailyReinvestMap.set(stakeDs, (dailyReinvestMap.get(stakeDs) || 0) + amt);
         }
-        if(r.status === 2) {
-            if(!dailyRedeemMap.has(ds)) dailyRedeemMap.set(ds, 0);
-            dailyRedeemMap.set(ds, dailyRedeemMap.get(ds) + amt);
+
+        // 【修改】赎回：status 2 或 3，按 redeemedAt（含被复投的旧单）
+        if (r.status === 2 || r.status === 3) {
+            const redeemTs = r.redeemedAt || r.unlockTime;
+            if (redeemTs > 0) {
+                const redeemDs = getDateStr(redeemTs);
+                dailyRedeemMap.set(redeemDs, (dailyRedeemMap.get(redeemDs) || 0) + amt);
+            }
         }
     });
 
     const dates = Array.from(dailyNewMap.keys()).sort().slice(-trendRange);
-    if(!dates.length) return;
+    if (!dates.length) return;
 
     trendChart = new Chart(ctx, {
         type: 'line',
@@ -2673,24 +2681,39 @@ function exportCSV() {
 
 function exportDailyStats() {
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, {
+            stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0
+        });
+        return dailyMap.get(ds);
+    }
+
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
-        const p = principalOf(r);
-        d.stake += p;
-        if(r.status === 1 && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 3) d.reinvest += p;
-        if(r.status === 2) d.redeem += p;
+        if (r.stakeTime > 0) {
+            const d = ensureDay(getDateStr(r.stakeTime));
+            const p = principalOf(r);
+            d.stake += p;
+            if (r.status === 1 && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+            if (r.previousOrderId > 0) d.reinvest += p;   // 【修改】
+        }
+        if (r.status === 2 || r.status === 3) {           // 【修改】
+            const ts = r.redeemedAt || r.unlockTime;
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += principalOf(r);
+        }
     });
+
     const sorted = Array.from(dailyMap.keys()).sort().reverse();
     const headers = ['日期', '新增质押', '活跃质押', '15天周期', '30天周期', '复投', '赎回'];
     const rows = sorted.map(d => {
         const v = dailyMap.get(d);
-        return [d, v.stake.toFixed(2), v.active.toFixed(2), v.p15.toFixed(2), v.p30.toFixed(2), v.reinvest.toFixed(2), v.redeem.toFixed(2)];
+        return [
+            d,
+            v.stake.toFixed(2), v.active.toFixed(2),
+            v.p15.toFixed(2), v.p30.toFixed(2),
+            v.reinvest.toFixed(2), v.redeem.toFixed(2)
+        ];
     });
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
@@ -2767,24 +2790,47 @@ function loadDailyStart() {
 
 function updateDailyStats() {
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, {
+            stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0
+        });
+        return dailyMap.get(ds);
+    }
+
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
-        const p = principalOf(r);
-        d.stake += p;
-        if(r.status === 1 && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 3) d.reinvest += p;
-        if(r.status === 2) d.redeem += p;
+        // ============ 1. 质押口径：按创建日 stakeTime ============
+        if (r.stakeTime > 0) {
+            const d = ensureDay(getDateStr(r.stakeTime));
+            const p = principalOf(r);
+            d.stake += p;
+            if (r.status === 1 && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+
+            // 【修改】复投：复投产生的新单（previousOrderId > 0）
+            // 按新单创建日统计，与统计卡片"复投质押"口径完全一致
+            if (r.previousOrderId > 0) {
+                d.reinvest += p;
+            }
+        }
+
+        // ============ 2. 赎回口径：按 redeemedAt ============
+        // 【修改】含 status=2（正常赎回）和 status=3（被复投的旧单）
+        if (r.status === 2 || r.status === 3) {
+            const ts = r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                const d = ensureDay(getDateStr(ts));
+                d.redeem += principalOf(r);   // 本金口径，与其余列一致
+            }
+        }
     });
 
     const sorted = Array.from(dailyMap.keys()).sort().reverse().slice(0, 30);
     const tbody = document.getElementById('dailyStatsBody');
-    if(!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
-
+    if (!sorted.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
     tbody.innerHTML = sorted.map(d => {
         const v = dailyMap.get(d);
         return `<tr>
@@ -2819,51 +2865,51 @@ function renderCashflow() {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
             in: 0, inCount: 0,
             out: 0, outCount: 0,
-            reward: 0,
+            redeemPrincipal: 0,   // 新增：订单赎回本金
+            reward: 0,            // 奖励（收益）
             reinvest: 0, reinvestCount: 0
         });
         return dailyMap.get(ds);
     }
 
     allStakeRecords.forEach(r => {
+        // 实际入金：所有订单按创建日（复投新单也会入金）
         if (r.stakeTime > 0) {
-            const ds = getDateStr(r.stakeTime);
-            const d = ensureDay(ds);
+            const d = ensureDay(getDateStr(r.stakeTime));
             d.in += principalOf(r);
             d.inCount += 1;
         }
-        if (r.status === 2) {
+        // 【修改】实际出金：status 2 或 3 都算（被复投的旧单也流出）
+        if (r.status === 2 || r.status === 3) {
             const ts = r.redeemedAt || r.unlockTime;
             if (ts > 0) {
-                const ds = getDateStr(ts);
-                const d = ensureDay(ds);
-                d.out += totalOf(r);
+                const d = ensureDay(getDateStr(ts));
+                const pr = principalOf(r);
+                const pf = profitOf(r);
+                d.out += pr + pf;           // 实际出金 = 本金+收益
+                d.redeemPrincipal += pr;    // 订单赎回本金
+                d.reward += pf;             // 奖励（收益）
                 d.outCount += 1;
-                d.reward += profitOf(r);
             }
         }
-        if (r.status === 3) {
-            const ts = r.redeemedAt || r.unlockTime;
-            if (ts > 0) {
-                const ds = getDateStr(ts);
-                const d = ensureDay(ds);
-                d.reinvest += principalOf(r);
-                d.reinvestCount += 1;
-            }
+        // 【修改】本金复投：按复投新单创建日统计
+        if (r.previousOrderId > 0 && r.stakeTime > 0) {
+            const d = ensureDay(getDateStr(r.stakeTime));
+            d.reinvest += principalOf(r);
+            d.reinvestCount += 1;
         }
     });
 
     let dates = Array.from(dailyMap.keys()).sort();
-    if (range > 0) {
-        dates = dates.slice(-range);
-    }
+    if (range > 0) dates = dates.slice(-range);
 
+    // 顶部 4 张卡片
     if (dateInput && dateInput.value) {
-        const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
         document.getElementById('cfIn').innerText = d.in.toFixed(2);
         document.getElementById('cfInSub').innerText = `质押 ${d.inCount} 笔`;
         document.getElementById('cfOut').innerText = d.out.toFixed(2);
-        document.getElementById('cfOutSub').innerText = `赎回 ${d.outCount} 笔 · 奖励 ${d.reward.toFixed(2)}`;
+        document.getElementById('cfOutSub').innerText = `赎回 ${d.outCount} 笔 · 收益 ${d.reward.toFixed(2)}`;
         document.getElementById('cfNet').innerText = (d.in - d.out).toFixed(2);
         document.getElementById('cfReinvest').innerText = d.reinvest.toFixed(2);
         document.getElementById('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
@@ -2871,33 +2917,31 @@ function renderCashflow() {
         let totalIn = 0, totalOut = 0, totalReward = 0, totalReinvest = 0;
         let totalInCount = 0, totalOutCount = 0, totalReinvestCount = 0;
         dates.forEach(ds => {
-            const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
-            totalIn += d.in;
-            totalInCount += d.inCount;
-            totalOut += d.out;
-            totalOutCount += d.outCount;
+            const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
+            totalIn += d.in; totalInCount += d.inCount;
+            totalOut += d.out; totalOutCount += d.outCount;
             totalReward += d.reward;
-            totalReinvest += d.reinvest;
-            totalReinvestCount += d.reinvestCount;
+            totalReinvest += d.reinvest; totalReinvestCount += d.reinvestCount;
         });
         document.getElementById('cfIn').innerText = totalIn.toFixed(2);
         document.getElementById('cfInSub').innerText = `质押 ${totalInCount} 笔`;
         document.getElementById('cfOut').innerText = totalOut.toFixed(2);
-        document.getElementById('cfOutSub').innerText = `赎回 ${totalOutCount} 笔 · 奖励 ${totalReward.toFixed(2)}`;
+        document.getElementById('cfOutSub').innerText = `赎回 ${totalOutCount} 笔 · 收益 ${totalReward.toFixed(2)}`;
         document.getElementById('cfNet').innerText = (totalIn - totalOut).toFixed(2);
         document.getElementById('cfReinvest').innerText = totalReinvest.toFixed(2);
         document.getElementById('cfReinvestSub').innerText = `复投 ${totalReinvestCount} 笔`;
     }
 
+    // 表格：订单赎回列 → 显示本金
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
     dates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
         const net = d.in - d.out;
         html += `<tr>
             <td>${ds}</td>
             <td class="amount-cell" style="color:#10b981;">${d.in.toFixed(2)}</td>
-            <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#f97316;">${(d.redeemPrincipal||0).toFixed(2)}</td>
             <td class="amount-cell" style="color:#ef4444;">${d.reward.toFixed(2)}</td>
             <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
             <td class="amount-cell" style="color:${net>=0?'#10b981':'#ef4444'};">${net.toFixed(2)}</td>
@@ -2906,9 +2950,9 @@ function renderCashflow() {
     });
     tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
 
+    // 图表保持不变（入金/出金/复投）
     const canvas = document.getElementById('cashflowChart');
     if (!canvas) return;
-    
     const ctx = canvas.getContext('2d');
     if (cashflowChart) cashflowChart.destroy();
 
@@ -2936,11 +2980,9 @@ function renderCashflow() {
             interaction: { mode: 'index', intersect: false },
             onClick: (e, activeElements) => {
                 if (activeElements && activeElements.length > 0) {
-                    const index = activeElements[0].index;
-                    const clickedDate = dates[index];
+                    const clickedDate = dates[activeElements[0].index];
                     if (clickedDate) {
-                        const dateInput = document.getElementById('cashflowDate');
-                        dateInput.value = clickedDate;
+                        document.getElementById('cashflowDate').value = clickedDate;
                         renderCashflow();
                     }
                 }
@@ -2951,21 +2993,19 @@ function renderCashflow() {
             },
             plugins: {
                 legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`
-                    }
-                }
+                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
             }
         }
     });
 }
 
+// exportCashflow() 同步
 function exportCashflow() {
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
-            in: 0, inCount: 0, out: 0, outCount: 0, reward: 0, reinvest: 0, reinvestCount: 0
+            in: 0, inCount: 0, out: 0, outCount: 0,
+            redeemPrincipal: 0, reward: 0, reinvest: 0, reinvestCount: 0
         });
         return dailyMap.get(ds);
     }
@@ -2974,29 +3014,31 @@ function exportCashflow() {
             const d = ensureDay(getDateStr(r.stakeTime));
             d.in += principalOf(r); d.inCount += 1;
         }
-        if (r.status === 2) {
+        if (r.status === 2 || r.status === 3) {
             const ts = r.redeemedAt || r.unlockTime;
             if (ts > 0) {
                 const d = ensureDay(getDateStr(ts));
-                d.out += totalOf(r); d.outCount += 1; d.reward += profitOf(r);
+                const pr = principalOf(r), pf = profitOf(r);
+                d.out += pr + pf;
+                d.redeemPrincipal += pr;
+                d.reward += pf;
+                d.outCount += 1;
             }
         }
-        if (r.status === 3) {
-            const ts = r.redeemedAt || r.unlockTime;
-            if (ts > 0) {
-                const d = ensureDay(getDateStr(ts));
-                d.reinvest += principalOf(r); d.reinvestCount += 1;
-            }
+        if (r.previousOrderId > 0 && r.stakeTime > 0) {
+            const d = ensureDay(getDateStr(r.stakeTime));
+            d.reinvest += principalOf(r);
+            d.reinvestCount += 1;
         }
     });
     const dates = Array.from(dailyMap.keys()).sort();
-    const headers = ['日期', '实际入金', '入金笔数', '订单赎回', '赎回笔数', '奖励领取', '实际出金', '资金净额', '本金复投', '复投笔数'];
+    const headers = ['日期', '实际入金', '入金笔数', '订单赎回(本金)', '赎回笔数', '收益领取', '实际出金', '资金净额', '本金复投', '复投笔数'];
     const rows = dates.map(ds => {
         const d = dailyMap.get(ds);
         return [
             ds,
             d.in.toFixed(2), d.inCount,
-            d.out.toFixed(2), d.outCount,
+            d.redeemPrincipal.toFixed(2), d.outCount,
             d.reward.toFixed(2),
             d.out.toFixed(2),
             (d.in - d.out).toFixed(2),
@@ -3021,37 +3063,37 @@ function renderRedeem() {
     const dateVal = document.getElementById('redeemDate')?.value || '';
     const search = (document.getElementById('redeemSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(r => r.status === 2);
-    if (dateVal) {
-        list = list.filter(r => getDateStr(r.redeemedAt || r.unlockTime) === dateVal);
-    }
-    if (search) {
-        list = list.filter(r => r.address.toLowerCase().includes(search));
-    }
+    // 【修改】包含 status=2（正常赎回）和 status=3（被复投的旧单）
+    let list = allStakeRecords.filter(r => r.status === 2 || r.status === 3);
+    if (dateVal) list = list.filter(r => getDateStr(r.redeemedAt || r.unlockTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
     list.sort((a, b) => (b.redeemedAt || b.unlockTime || 0) - (a.redeemedAt || a.unlockTime || 0));
 
     if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
         return;
     }
-    tbody.innerHTML = list.map((r, i) => `<tr>
-        <td>${i+1}</td>
-        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
-        <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${formatTime(r.redeemedAt || r.unlockTime)}</td>
-    </tr>`).join('');
+    tbody.innerHTML = list.map((r, i) => {
+        const isReinvested = r.status === 3;
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}${isReinvested ? ' <span style="font-size:0.55rem;color:#c084fc;border:1px solid #c084fc;border-radius:3px;padding:0 3px;">复投</span>' : ''}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
+            <td>${formatTime(r.redeemedAt || r.unlockTime)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function exportRedeem() {
-    const list = allStakeRecords.filter(r => r.status === 2);
+    const list = allStakeRecords.filter(r => r.status === 2 || r.status === 3);
     if (!list.length) { alert('没有数据可导出'); return; }
-    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '赎回时间'];
+    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '类型', '赎回时间'];
     const rows = list.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, formatTime(r.redeemedAt || r.unlockTime)
+        r.productText, r.status === 3 ? '复投转出' : '正常赎回', formatTime(r.redeemedAt || r.unlockTime)
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
@@ -3071,14 +3113,11 @@ function renderReinvest() {
     const dateVal = document.getElementById('reinvestDate')?.value || '';
     const search = (document.getElementById('reinvestSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(r => r.status === 3);
-    if (dateVal) {
-        list = list.filter(r => getDateStr(r.redeemedAt || r.unlockTime) === dateVal);
-    }
-    if (search) {
-        list = list.filter(r => r.address.toLowerCase().includes(search));
-    }
-    list.sort((a, b) => (b.redeemedAt || b.unlockTime || 0) - (a.redeemedAt || a.unlockTime || 0));
+    // 【修改】改为活跃复投新订单，与统计卡片"复投质押"口径一致
+    let list = queryResults.filter(r => r.previousOrderId > 0);
+    if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
     if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
@@ -3091,18 +3130,18 @@ function renderReinvest() {
         <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
         <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
         <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${r.reinvestedToOrderId || '--'}</td>
-        <td>${formatTime(r.redeemedAt || r.unlockTime)}</td>
+        <td>${r.previousOrderId || '--'}</td>
+        <td>${formatTime(r.stakeTime)}</td>
     </tr>`).join('');
 }
 
 function exportReinvest() {
-    const list = allStakeRecords.filter(r => r.status === 3);
+    const list = queryResults.filter(r => r.previousOrderId > 0);
     if (!list.length) { alert('没有数据可导出'); return; }
-    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '新订单ID', '复投时间'];
+    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '复投时间'];
     const rows = list.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, r.reinvestedToOrderId || '', formatTime(r.redeemedAt || r.unlockTime)
+        r.productText, r.previousOrderId || '', formatTime(r.stakeTime)
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
