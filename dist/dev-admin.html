@@ -2903,6 +2903,9 @@ function renderCashflow() {
     let dates = Array.from(dailyMap.keys()).sort();
     if (range > 0) dates = dates.slice(-range);
 
+    // 表格用倒序（最新日期在上），图表仍用正序
+    const tableDates = [...dates].reverse();
+
     // 顶部 4 张卡片
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
@@ -2935,7 +2938,7 @@ function renderCashflow() {
     // 表格：订单赎回列 → 显示本金
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
-    dates.forEach(ds => {
+    tableDates.forEach(ds => {
         const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
         const net = d.in - d.out;
         html += `<tr>
