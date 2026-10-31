@@ -2269,11 +2269,25 @@ function updateTrendChart() {
         },
         options: {
             responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },   // ← 关键：按当天索引显示全部
             scales: {
                 y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
                 x: { ticks: { color: '#8899bb', maxRotation: 30 } }
             },
-            plugins: { legend: { labels: { color: '#e8edf5', font: { size: 10 } } } }
+            plugins: {
+                legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                        footer: items => {
+                            if (!items.length) return '';
+                            const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
+                            const net = get('新增质押') - get('赎回');
+                            return '净流入: ' + net.toFixed(2) + ' UUSD';
+                        }
+                    }
+                }
+            }
         }
     });
 }
