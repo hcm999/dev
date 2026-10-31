@@ -2528,7 +2528,7 @@ function applyFilters() {
         dateEnd = dateStart + 86400;
     }
 
-    filteredResults = queryResults.filter(r => {
+    filteredResults = allStakeRecords.filter(r => {
         if (type === 'product0' && r.product !== 0) return false;
         if (type === 'product1' && r.product !== 1) return false;
         if (type === 'stake' && r.status !== 1) return false;
@@ -2540,7 +2540,7 @@ function applyFilters() {
     });
 
     renderTable();
-    document.getElementById('filterStats').innerText = `显示 ${filteredResults.length}/${queryResults.length}`;
+    document.getElementById('filterStats').innerText = `显示 ${filteredResults.length}/${allStakeRecords.length}`;
 }
 
 function renderTable() {
@@ -2550,16 +2550,28 @@ function renderTable() {
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
     
     tbody.innerHTML = sorted.map((r, i) => {
-        let status = r.unlockTime <= now ? '可赎回' : '锁仓';
-        let cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
-        
+           // 1. 先判状态
+           let status, cls;
+           if (r.status === 2) {
+               status = '已赎回';
+               cls = 'status-unlocked';
+           } else if (r.status === 3) {
+               status = '已复投';
+               cls = 'status-unlocked';
+           } else if (r.unlockTime <= now) {
+               status = '可赎回';
+               cls = 'status-unlocked';
+           } else {
+               status = '锁仓';
+               cls = 'status-locked';
+           }
+
+        // 2. 本金颜色/标签（保持原逻辑）
         let principalColor = '#38bdf8'; 
         let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
         
         if (r.status === 3) {
             principalColor = '#c084fc'; 
-            status = '已复投';
-            cls = 'status-unlocked'; 
             tagHtml = '<span style="font-size:0.55rem;background:rgba(192,132,252,0.15);color:#c084fc;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #c084fc;">转</span>';
         } else if (r.previousOrderId > 0) {
             principalColor = '#34d399'; 
@@ -2568,7 +2580,10 @@ function renderTable() {
 
         const remain = r.unlockTime - now;
         const productCls = r.product === 0 ? 'p15' : 'p30';
-        const statusStyle = r.status === 3 ? 'style="color:#c084fc;"' : '';
+        // 3. 已赎回绿色、已复投紫色
+        const statusStyle = r.status === 2 ? 'style="color:#22c55e;"'
+                                     : r.status === 3 ? 'style="color:#c084fc;"'
+                                     : '';
 
         return `<tr>
             <td>${i+1}</td>
@@ -2676,14 +2691,21 @@ async function refreshLPPool() {
 }
 
 function exportCSV() {
-    if(!queryResults.length) { alert('没有数据可导出'); return; }
+    if(!allStakeRecords.length) { alert('没有数据可导出'); return; }
+    const now = Math.floor(Date.now() / 1000);
     const headers = ['序号', '地址', '本金', '收益', '本金+收益', '产品', '质押时间', '解锁时间', '剩余', '状态'];
-    const rows = queryResults.map((r, i) => [
-        i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText || '--', formatTime(r.stakeTime), formatTime(r.unlockTime),
-        timeRemain(r.unlockTime - Math.floor(Date.now()/1000)),
-        r.unlockTime <= Math.floor(Date.now()/1000) ? '可赎回' : '锁仓'
-    ]);
+    const rows = allStakeRecords.map((r, i) => {
+        let status;
+        if (r.status === 2) status = '已赎回';
+        else if (r.status === 3) status = '已复投';
+        else status = r.unlockTime <= now ? '可赎回' : '锁仓';
+        return [
+            i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
+            r.productText || '--', formatTime(r.stakeTime), formatTime(r.unlockTime),
+            r.status === 1 ? timeRemain(r.unlockTime - now) : '--',
+            status
+        ];
+    });
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
     const a = document.createElement('a');
