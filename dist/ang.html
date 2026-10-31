@@ -159,8 +159,8 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     </div>
 
     <div class="diagnostic-box" id="protectionPanel" style="border-color:#f59e0b;">
-        <div style="font-weight:600;margin-bottom:6px;color:#f59e0b;">🛡️ 保护模式诊断</div>
-        <div class="diag-row"><span class="diag-label">保护模式激活</span><span class="diag-value" id="ppActive">--</span></div>
+        <div style="font-weight:600;margin-bottom:6px;color:#f59e0b;">🛡️ 熔断模式诊断</div>
+        <div class="diag-row"><span class="diag-label">熔断模式激活</span><span class="diag-value" id="ppActive">--</span></div>
         <div class="diag-row"><span class="diag-label">当前轮次</span><span class="diag-value" id="ppRound">--</span></div>
         <div class="diag-row"><span class="diag-label">历史最高 LP USDT</span><span class="diag-value" id="ppHigh">--</span></div>
         <div class="diag-row"><span class="diag-label">当前 LP USDT</span><span class="diag-value" id="ppCurrent">--</span></div>
@@ -168,7 +168,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="diag-row"><span class="diag-label">本轮赎回比率</span><span class="diag-value" id="ppRatio">--</span></div>
         <div class="diag-row"><span class="diag-label">未付承诺 USDT</span><span class="diag-value" id="ppUnpaid">--</span></div>
         <div class="diag-row"><span class="diag-label">已付 USDT</span><span class="diag-value" id="ppPaid">--</span></div>
-        <div class="diag-row"><span class="diag-label">手动兜底模式</span><span class="diag-value" id="ppManual">--</span></div>
+        <div class="diag-row"><span class="diag-label">手动抽底池模式</span><span class="diag-value" id="ppManual">--</span></div>
     </div>
 
     <div class="log-box" id="queryLog" style="margin-bottom:12px;">
@@ -432,7 +432,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <div id="panel-cashflow" class="data-panel">
         <div class="table-container">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-                <h5 style="color:#e8edf5;">💰 每天进出多少钱（按质押/赎回/复投日期）</h5>
+                <h5 style="color:#e8edf5;">💰 每天进出账（按质押/赎回/复投日期）</h5>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="date" id="cashflowDate" class="filter-select" style="width:auto;" onchange="renderCashflow()" title="仅控制上方统计卡片">
                     <select id="cashflowRange" class="filter-select" onchange="renderCashflow()" title="控制下方图表和表格">
