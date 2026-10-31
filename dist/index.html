@@ -403,7 +403,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive">
                 <table class="table">
                     <thead>
-                        <tr><th>日期</th><th>新增质押</th><th>活跃质押</th><th>15天周期</th><th>30天周期</th><th>复投</th><th>赎回</th></tr>
+                        <tr><th>日期</th><th>新增质押</th><th>活跃质押</th><th>15天周期</th><th>30天周期</th><th>复投</th><th>赎回本息</th></tr>
                     </thead>
                     <tbody id="dailyStatsBody"><tr><td colspan="7" class="empty-state">加载中...</td></tr></tbody>
                 </table>
@@ -1217,7 +1217,7 @@ function updateTrendChart() {
             const redeemTs = r.redeemedAt || r.unlockTime;
             if (redeemTs > 0) {
                 const redeemDs = getDateStr(redeemTs);
-                dailyRedeemMap.set(redeemDs, (dailyRedeemMap.get(redeemDs) || 0) + amt);
+                dailyRedeemMap.set(redeemDs, (dailyRedeemMap.get(redeemDs) || 0) + totalOf(r));  // 本金改amt
             }
         }
     });
@@ -1233,7 +1233,7 @@ function updateTrendChart() {
                 { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
                 { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
                 { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
-                { label: '赎回', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+                { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
             ]
         },
         options: {
@@ -1251,7 +1251,7 @@ function updateTrendChart() {
                         footer: items => {
                             if (!items.length) return '';
                             const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
-                            const net = get('新增质押') - get('赎回');
+                            const net = get('新增质押') - get('赎回本息');
                             return '净流入: ' + net.toFixed(2) + ' UUSD';
                         }
                     }
@@ -1457,7 +1457,7 @@ function updateDailyStats() {
         }
         if (r.status === 2 || r.status === 3) {           // 【修改】
             const ts = r.redeemedAt || r.unlockTime;
-            if (ts > 0) ensureDay(getDateStr(ts)).redeem += principalOf(r);
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
         }
     });
     const sorted = Array.from(map.keys()).sort().reverse().slice(0, 30);
