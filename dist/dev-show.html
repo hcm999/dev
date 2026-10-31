@@ -1490,7 +1490,7 @@ function applyFilters() {
         dateEnd = dateStart + 86400;
     }
 
-    filteredResults = queryResults.filter(r => {
+    filteredResults = allStakeRecords.filter(r => {
         if (type === 'product0' && r.product !== 0) return false;
         if (type === 'product1' && r.product !== 1) return false;
         if (type === 'stake' && r.status !== 1) return false;
@@ -1505,8 +1505,8 @@ function applyFilters() {
     const MAX_RENDER = 1000;
     const shown = Math.min(filteredResults.length, MAX_RENDER);
     $('filterStats').innerText = filteredResults.length > MAX_RENDER
-        ? `显示 ${shown}/${filteredResults.length}（共 ${queryResults.length}，已截断）`
-        : `显示 ${filteredResults.length}/${queryResults.length}`;
+        ? `显示 ${shown}/${filteredResults.length}（共 ${allStakeRecords.length}，已截断）`
+        : `显示 ${filteredResults.length}/${allStakeRecords.length}`;
 }
 
 function renderTable() {
@@ -1520,21 +1520,30 @@ function renderTable() {
     const toRender = sorted.slice(0, MAX_RENDER);
 
     tbody.innerHTML = toRender.map((r, i) => {
-        // 默认状态
-        let s = r.unlockTime <= now ? '可赎回' : '锁仓';
-        let cls = r.unlockTime <= now ? 'status-unlocked' : 'status-locked';
+        // 先判状态
+        let s, cls;
+        if (r.status === 2) {
+            s = '已赎回';
+            cls = 'status-unlocked';
+        } else if (r.status === 3) {
+            s = '已复投';
+            cls = 'status-unlocked';
+        } else if (r.unlockTime <= now) {
+            s = '可赎回';
+            cls = 'status-unlocked';
+        } else {
+            s = '锁仓';
+            cls = 'status-locked';
+        }
         const pCls = r.product === 0 ? 'p15' : '';
         
         // --- 颜色与标签配置 ---
         // 1. 直接质押：天空蓝
         let principalColor = '#38bdf8'; 
         let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
-        
         if (r.status === 3) {
             // 2. 被复投的旧单：紫罗兰
             principalColor = '#c084fc'; 
-            s = '已复投';
-            cls = 'status-unlocked'; 
             tagHtml = '<span style="font-size:0.55rem;background:rgba(192,132,252,0.15);color:#c084fc;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #c084fc;">转</span>';
         } else if (r.previousOrderId > 0) {
             // 3. 复投产生的新单：亮绿
@@ -1543,7 +1552,9 @@ function renderTable() {
         }
 
         // 针对被复投的订单，状态文字专门染色
-        const statusStyle = r.status === 3 ? 'style="color:#c084fc;"' : '';
+        const statusStyle = r.status === 2 ? 'style="color:#22c55e;"'
+                                     : r.status === 3 ? 'style="color:#c084fc;"'
+                                     : '';
 
         return `<tr>
             <td>${i+1}</td>
