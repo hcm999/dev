@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>向北BSC多币种救援2 · 原子锁防重广播版</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0c15; --panel:#0f1722; --panel2:#111827; --border:#2d3a5e;
+    --text:#f1f5f9; --muted:#9ca3af; --accent:#facc15; --blue:#3b82f6;
+    --pink:#ec489a; --danger:#ef4444; --ok:#10b981; --ok2:#6ee7b7; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;background:var(--bg);color:var(--text);
+    font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:13px;padding-bottom:40px}
+  h1,h2{margin:0;font-weight:700}
+  h1{font-size:18px;background:linear-gradient(135deg,#facc15,#fb923c);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  h2{font-size:13px;color:var(--accent);margin-bottom:10px;letter-spacing:.3px}
+  .app{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  .topbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+  .subtitle{margin:4px 0 0;color:#a5b4fc;font-size:12px}
+  .status-row{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{font-size:11px;padding:3px 10px;border-radius:30px;background:#1e2633;
+    color:#cbd5e1;border:1px solid var(--border);font-family:monospace;white-space:nowrap}
+  .pill-danger{background:#7f1a1a;color:#fed7d7;border-color:#7f1a1a}
+  .pill-gas{background:#f97316;color:#0f172a;font-weight:700;border-color:#f97316}
+  .pill-ok{color:var(--ok2);border-color:rgba(110,231,183,.4)}
+  .pill-warn{color:var(--accent);border-color:rgba(250,204,21,.4)}
+  .pill-err{color:#fca5a5;border-color:rgba(252,165,165,.4)}
+  .grid{display:grid;gap:14px}
+  .two{grid-template-columns:1fr 1fr}
+  @media(max-width:820px){.two{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    padding:14px;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .card-head{display:flex;justify-content:space-between;align-items:center;
+    flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .card-head h2{margin:0}
+  label{display:block;font-size:11px;color:var(--muted);margin:8px 0 4px}
+  input,textarea,select{width:100%;background:#1e293b;color:var(--text);
+    border:1px solid #475569;border-radius:10px;padding:8px 12px;font-family:inherit;
+    font-size:12px;outline:none;transition:.15s}
+  input:focus,textarea:focus{border-color:#8b5cf6;background:#0f172a}
+  input[type=checkbox]{width:auto;padding:0;margin:0;accent-color:var(--accent);cursor:pointer}
+  textarea{resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row > *{flex-shrink:0}
+  .row .grow{flex:1;min-width:120px}
+  button{cursor:pointer;background:#1e2633;color:var(--text);border:1px solid var(--border);
+    border-radius:30px;padding:7px 14px;font-family:inherit;font-size:12px;font-weight:600;
+    transition:.15s;white-space:nowrap}
+  button:hover{background:#293244;border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  button.primary:hover{background:#2563eb;border-color:#2563eb}
+  button.pink{background:var(--pink);border-color:var(--pink);color:#fff}
+  button.pink:hover{background:#db2777;border-color:#db2777}
+  button.danger{color:#fca5a5;border-color:rgba(239,68,68,.5)}
+  button.danger:hover{background:rgba(239,68,68,.15)}
+  button.sm{padding:3px 10px;font-size:11px}
+  .hint{font-size:11px;color:var(--muted);margin:8px 0 0;line-height:1.5}
+  .muted{color:var(--muted)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .token-checks{display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 2px}
+  .token-check-label{display:flex;align-items:center;gap:5px;font-size:12px;
+    color:var(--text);cursor:pointer;margin:0}
+  .token-tag{font-size:10px;padding:1px 5px;border-radius:4px;background:#1e2633;
+    color:#cbd5e1;font-family:monospace}
+  .token-tag.usdt{color:#26a17b}
+  .token-tag.usdc{color:#4a9fe0}
+  .token-tag.uusd{color:#a78bfa}
+  .rpc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
+  .rpc-item{font-size:10.5px;font-family:monospace;padding:5px 9px;border-radius:8px;
+    background:#0e131b;border:1px solid var(--border);color:var(--muted);
+    display:flex;justify-content:space-between;gap:6px;overflow:hidden}
+  .rpc-item span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rpc-item.best{border-color:var(--ok);color:var(--ok2)}
+  .rpc-item.dead{color:#fca5a5;border-color:rgba(239,68,68,.3)}
+  .table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--border);vertical-align:middle}
+  th{color:var(--muted);font-weight:500;font-size:10px;text-transform:uppercase;
+    background:#0b1220;letter-spacing:.5px}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .addr{font-family:ui-monospace,Menlo,Consolas,monospace;background:#1e2a3e;
+    padding:2px 8px;border-radius:30px;font-size:11px;cursor:pointer}
+  .bal{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--accent)}
+  .bal-usdc{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:#4a9fe0}
+  .bal-uusd{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:#a78bfa}
+  .bal-bnb{font-family:ui-monospace,Menlo,Consolas,monospace;color:#93c5fd}
+  .bal-off{color:#475569 !important;font-weight:400 !important}
+  .tag{display:inline-block;padding:2px 8px;border-radius:30px;font-size:10px;font-weight:700}
+  .tag.idle{background:#334155;color:#cbd5e1}
+  .tag.watch{background:rgba(59,130,246,.18);color:#93c5fd}
+  .tag.busy{background:rgba(245,158,11,.2);color:#fcd34d}
+  .tag.ok{background:rgba(16,185,129,.2);color:var(--ok2)}
+  .tag.err{background:rgba(239,68,68,.18);color:#fca5a5}
+  .stats{display:flex;gap:14px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+  .stats b{color:var(--text);font-family:monospace}
+  .log-box{height:240px;overflow-y:auto;background:#030712;border:1px solid var(--border);
+    border-radius:12px;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:11.5px;line-height:1.6}
+  .log-line{white-space:pre-wrap;word-break:break-all;border-bottom:1px solid #131c2e;
+    padding:3px 0;color:#e2e8f0}
+  .log-line .ts{color:#64748b;margin-right:6px}
+  .log-line.ok{color:var(--ok2)}
+  .log-line.err{color:#fca5a5}
+  .log-line.warn{color:#fcd34d}
+  .log-line.info{color:#7dd3fc}
+  .footer-note{font-size:11px;text-align:center;color:#7e8aa2;padding:10px;
+    background:var(--panel);border:1px solid var(--border);border-radius:30px}
+  .duration{font-family:monospace;font-size:10.5px;color:#a5b4fc}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div>
+      <h1>⚡向北 BSC 多币种救援2</h1>
+    </div>
+    <div class="status-row">
+      <span class="pill pill-danger">🚨 救援模式</span>
+      <span class="pill pill-gas" id="gasPill">🔥 Gas: --</span>
+      <span class="pill" id="monitorPill">● 未启动</span>
+      <span class="pill" id="walletPill">0 钱包</span>
+      <span class="pill" id="rpcPill">RPC: 探测中…</span>
+    </div>
+  </header>
+
+  <section class="grid two">
+    <div class="card">
+      <div class="card-head">
+        <h2>批量私钥导入</h2>
+        <span class="pill" id="pkCount">0 个</span>
+      </div>
+      <textarea id="pkInput" rows="6" placeholder="一行一个私钥（0x...）&#10;私钥仅保存在内存中，关闭/刷新页面自动清除"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnImportPK" class="primary">导入私钥</button>
+        <button id="btnClearPK" class="danger">清空私钥</button>
+      </div>
+      <p class="hint">私钥仅存内存变量，不写 localStorage / sessionStorage；beforeunload 强制清空。</p>
+    </div>
+
+    <div class="card">
+      <h2>目标地址 & 参数</h2>
+      <label>目标地址（ethers.isAddress + getAddress checksum 校验，自动持久化）</label>
+      <div class="row">
+        <input id="toAddress" class="grow" value="0x9728D428764F846E8DD62C34371db716A9228238">
+        <button id="btnSaveTarget" class="sm">保存</button>
+      </div>
+
+      <label style="margin-top:10px;">救援代币（可多选，同一钱包串行避免 nonce 冲突）</label>
+      <div class="token-checks" id="tokenChecks">
+        <label class="token-check-label"><input type="checkbox" value="USDT" checked> <span class="token-tag usdt">USDT</span></label>
+        <label class="token-check-label"><input type="checkbox" value="USDC" checked> <span class="token-tag usdc">USDC</span></label>
+        <label class="token-check-label"><input type="checkbox" value="UUSD" checked> <span class="token-tag uusd">UUSD</span></label>
+      </div>
+
+      <div class="row" style="margin-top:4px">
+        <div style="flex:1;min-width:120px">
+          <label>增量阈值（每个代币，按代币精度）</label>
+          <input id="thresholdInput" type="number" step="0.01" min="0.01" value="0.1">
+        </div>
+        <div style="flex:1;min-width:120px">
+          <label>Gas 上限（gwei）</label>
+          <input id="gasCapInput" type="number" step="0.1" min="0.1" value="3">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnStart" class="primary">启动监控</button>
+        <button id="btnPause" disabled>暂停</button>
+        <button id="btnRefresh">刷新余额</button>
+        <button id="btnRushAll" class="pink">⚡ 一键抢跑</button>
+        <button id="btnExportPK" class="danger">导出私钥</button>
+      </div>
+      <p class="hint">Gas = min(max(gasPrice×3, 0.3 gwei), 上限)；每笔转账 gasLimit 取代币配置；BNB 预检 1.2 倍缓冲；多 RPC 并发广播。</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>健康节点 RTT</h2>
+      <button class="sm" id="btnReselect">重新探测</button>
+    </div>
+    <div class="rpc-grid" id="rpcPills"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>钱包列表</h2>
+      <div class="stats">
+        <span>监控 <b id="statWatching">0</b></span>
+        <span>抢跑中 <b id="statBusy">0</b></span>
+        <span>成功 <b id="statOk">0</b></span>
+        <span>异常 <b id="statErr">0</b></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>地址</th>
+            <th>USDT</th><th>USDC</th><th>UUSD</th>
+            <th>BNB</th>
+            <th>状态</th><th>广播耗时</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="walletTbody">
+          <tr><td colspan="9" class="muted" style="text-align:center;padding:24px">导入私钥后显示钱包</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>实时日志</h2>
+      <button class="sm" id="btnClearLog">清空</button>
+    </div>
+    <div class="log-box" id="logBox"></div>
+  </section>
+
+  <div class="footer-note">
+    🔐 USDT / USDC / UUSD · 并发 RTT 选节点 · 私钥仅保存在浏览器内存 · 不写 localStorage · beforeunload 清空 &nbsp;|&nbsp;
+    防重复广播：inFlight 原子锁 + nonce(pending) + 三重验证 + 多RPC并发广播 &nbsp;|&nbsp;
+    多币种：每钱包每轮只抢跑一个代币，触发但未处理的代币保留增量，下一轮继续
+  </div>
+</div>
+
+<script>
+const BSC_CHAIN_ID = 56n;
+const ERC20_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function transfer(address to, uint256 amount) returns (bool)"
+];
+const ERC20_IFACE = new ethers.Interface(ERC20_ABI);
+const MAX_ATTEMPTS = 3;
+const TX_WAIT_TIMEOUT = 20000;
+const TARGET_KEY = "bsc_rescue_target";
+
+const TOKEN_REGISTRY = {
+  USDT: { address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, gasLimit: 65000n },
+  USDC: { address: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", decimals: 18, gasLimit: 65000n },
+  UUSD: { address: "0x61a10E8556BEd032eA176330e7F17D6a12a10000", decimals: 18, gasLimit: 80000n },
+};
+
+const RPC_CANDIDATES = [
+  "https://bsc-rpc.publicnode.com",
+  "https://bsc-dataseed1.binance.org",
+  "https://bsc-dataseed2.binance.org",
+  "https://bsc-dataseed1.defibit.io",
+  "https://bsc-dataseed2.defibit.io",
+  "https://bsc-dataseed1.ninicoin.io",
+  "https://bsc-dataseed2.ninicoin.io",
+  "https://bsc.blockrazor.xyz"
+];
+
+let wallets = [];
+let provider = null;
+let currentRpcUrl = "";
+let isRunning = false;
+let loopTimer = null;
+let healthTimer = null;
+let loopBusy = false;
+let rpcSwitching = false;
+let broadcastProviders = null;   // ← 新增：多 RPC 广播 provider 池
+const rttMap = new Map();
+
+function ts() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3,"0")}`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function log(msg, cls) {
+  const box = document.getElementById("logBox");
+  const line = document.createElement("div");
+  line.className = "log-line" + (cls ? " " + cls : "");
+  line.innerHTML = `<span class="ts">${ts()}</span>${escapeHtml(String(msg))}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  while (box.children.length > 800) box.removeChild(box.firstChild);
+}
+function shortAddr(a) { return a ? a.slice(0, 6) + "…" + a.slice(-4) : ""; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function getEnabledTokens() {
+  return Array.from(document.querySelectorAll("#tokenChecks input:checked"))
+    .map(el => el.value)
+    .filter(s => TOKEN_REGISTRY[s]);
+}
+function getThresholdWei(symbol) {
+  const t = TOKEN_REGISTRY[symbol];
+  if (!t) return 0n;
+  const raw = document.getElementById("thresholdInput").value.trim() || "0.1";
+  try { return ethers.parseUnits(raw, t.decimals); }
+  catch { return ethers.parseUnits("0.1", t.decimals); }
+}
+function getGasCapWei() {
+  const v = parseFloat(document.getElementById("gasCapInput").value) || 3;
+  return ethers.parseUnits(v.toFixed(9), "gwei");
+}
+function initTokens() {
+  const o = {};
+  for (const sym of Object.keys(TOKEN_REGISTRY)) {
+    o[sym] = { balance: 0n };
+  }
+  return o;
+}
+
+function loadSavedTarget() {
+  try {
+    const saved = localStorage.getItem(TARGET_KEY);
+    if (saved && saved.startsWith("0x") && saved.length === 42) {
+      document.getElementById("toAddress").value = saved;
+    }
+  } catch (_) {}
+}
+function saveTarget() {
+  const v = document.getElementById("toAddress").value.trim();
+  if (!v || !v.startsWith("0x") || v.length !== 42) {
+    log("目标地址格式非法，未保存", "err");
+    return;
+  }
+  try {
+    localStorage.setItem(TARGET_KEY, v);
+    log("目标地址已保存：" + v, "ok");
+  } catch (e) {
+    log("保存失败：" + e.message, "err");
+  }
+}
+
+async function importPrivateKeys() {
+  const raw = document.getElementById("pkInput").value.trim();
+  if (!raw) { log("请输入至少一个私钥", "warn"); return; }
+
+  const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const next = [];
+  let ok = 0, bad = 0;
+
+  for (const line of lines) {
+    try {
+      const w = new ethers.Wallet(line);
+      if (next.some(x => x.address === w.address)) continue;
+      next.push({ address: w.address, privateKey: line, wallet: w });
+      ok++;
+    } catch (e) { bad++; }
+  }
+
+  if (isRunning) pauseMonitoring();
+
+  wallets = next.map((pk, i) => ({
+    index: i,
+    address: pk.address,
+    privateKey: pk.privateKey,
+    wallet: pk.wallet,
+    tokens: initTokens(),
+    bnb: 0n,
+    status: "idle",
+    inFlight: false,
+    pendingRush: {},
+    lastDuration: 0,
+    lastTxHash: null,
+    _lastBnbWarn: 0,
+    _lastRushTime: 0
+  }));
+
+  document.getElementById("pkCount").textContent = wallets.length + " 个";
+  document.getElementById("pkInput").value = "";
+  renderWalletTable();
+  updateStats();
+  log(`导入完成：成功 ${ok} 个，失败 ${bad} 个。私钥已载入内存。`, "ok");
+
+  if (wallets.length > 0 && provider) {
+    log("自动读取初始余额…", "info");
+    await refreshAllBalances();
+  }
+}
+
+function clearPrivateKeys() {
+  if (isRunning) pauseMonitoring();
+  wallets = [];
+  document.getElementById("pkInput").value = "";
+  document.getElementById("pkCount").textContent = "0 个";
+  renderWalletTable();
+  updateStats();
+  log("私钥和钱包列表已清空", "warn");
+}
+
+function resolveTargetAddress() {
+  const raw = document.getElementById("toAddress").value.trim();
+  if (!raw) throw new Error("目标地址为空");
+  if (!ethers.isAddress(raw)) throw new Error("目标地址格式非法");
+  return ethers.getAddress(raw);
+}
+
+async function probeRpc(url) {
+  const t0 = performance.now();
+  const p = new ethers.JsonRpcProvider(url, BSC_CHAIN_ID, { staticNetwork: true });
+  try {
+    await p.getBlockNumber();
+    return { url, rtt: performance.now() - t0, ok: true };
+  } catch (e) {
+    return { url, rtt: Infinity, ok: false, error: e.message };
+  }
+}
+
+async function selectFastestRpc() {
+  if (rpcSwitching) return;
+  rpcSwitching = true;
+  document.getElementById("rpcPill").textContent = "RPC: 探测中…";
+  document.getElementById("rpcPill").className = "pill";
+  log(`并发探测 ${RPC_CANDIDATES.length} 个 RPC 节点 RTT…`);
+
+  rttMap.clear();
+  const results = await Promise.allSettled(RPC_CANDIDATES.map(u => probeRpc(u)));
+  const alive = results
+    .filter(r => r.status === "fulfilled" && r.value.ok)
+    .map(r => r.value)
+    .sort((a, b) => a.rtt - b.rtt);
+  for (const r of results) {
+    if (r.status === "fulfilled") rttMap.set(r.value.url, r.value.ok ? r.value.rtt : Infinity);
+  }
+
+  if (alive.length === 0) {
+    log("所有 RPC 均不可用，使用备用默认节点", "err");
+    currentRpcUrl = RPC_CANDIDATES[0];
+    provider = new ethers.JsonRpcProvider(currentRpcUrl, BSC_CHAIN_ID, { staticNetwork: true });
+  } else {
+    const best = alive[0];
+    currentRpcUrl = best.url;
+    provider = new ethers.JsonRpcProvider(currentRpcUrl, BSC_CHAIN_ID, { staticNetwork: true });
+    log(`最快 RPC: ${best.url}  (${best.rtt.toFixed(0)} ms)`, "ok");
+  }
+  broadcastProviders = null;   // ← 新增：RPC 变化时清空广播池
+
+  renderRpcPills(alive.length ? alive[0].url : "");
+  document.getElementById("rpcPill").textContent = "RPC: " + currentRpcUrl.replace(/^https?:\/\//, "").slice(0, 26) + "…";
+  document.getElementById("rpcPill").className = "pill pill-ok";
+  rpcSwitching = false;
+}
+
+function renderRpcPills(bestUrl) {
+  const box = document.getElementById("rpcPills");
+  box.innerHTML = RPC_CANDIDATES.map(u => {
+    const rtt = rttMap.get(u);
+    const dead = rtt === undefined || rtt === Infinity;
+    const best = u === bestUrl;
+    const label = u.replace(/^https?:\/\//, "").split("/")[0];
+    return `<div class="rpc-item ${dead ? "dead" : ""} ${best ? "best" : ""}">
+      <span title="${u}">${label}</span>
+      <span>${dead ? "×" : rtt.toFixed(0) + "ms"}</span>
+    </div>`;
+  }).join("");
+}
+
+function startHealthCheck() {
+  stopHealthCheck();
+  healthTimer = setInterval(async () => {
+    if (!provider || !isRunning) return;
+    try {
+      await provider.getBlockNumber();
+      updateGasPill();
+    } catch (e) {
+      log("RPC 健康检查失败，重新选择节点…", "warn");
+      await selectFastestRpc();
+    }
+  }, 30000);
+}
+function stopHealthCheck() {
+  if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
+}
+
+async function readTokenBalances(address, symbols) {
+  const out = {};
+  await Promise.allSettled(
+    symbols.map(async (sym) => {
+      try {
+        const t = TOKEN_REGISTRY[sym];
+        const c = new ethers.Contract(t.address, ERC20_ABI, provider);
+        out[sym] = await c.balanceOf(address);
+      } catch (e) {
+        out[sym] = undefined;
+      }
+    })
+  );
+  return out;
+}
+
+async function refreshWallet(w, onlySymbol) {
+  const symbols = onlySymbol ? [onlySymbol] : getEnabledTokens();
+  if (symbols.length === 0) return;
+  try {
+    const [balMap, bnb] = await Promise.all([
+      readTokenBalances(w.address, symbols),
+      provider.getBalance(w.address)
+    ]);
+    for (const sym of symbols) {
+      if (balMap[sym] !== undefined) {
+        w.tokens[sym].balance = balMap[sym];
+      }
+    }
+    w.bnb = bnb;
+    if (w.status === "idle") w.status = "watch";
+  } catch (e) {
+    log(`${shortAddr(w.address)} 刷新余额失败: ${e.message}`, "err");
+  }
+}
+
+async function refreshAllBalances() {
+  if (!provider) { log("RPC 尚未就绪", "warn"); return; }
+  if (wallets.length === 0) { log("无钱包", "warn"); return; }
+  const enabled = getEnabledTokens();
+  if (enabled.length === 0) { log("请至少勾选一个代币", "warn"); return; }
+  log(`刷新所有钱包余额（代币：${enabled.join(", ")}）…`);
+  await Promise.allSettled(wallets.map(w => refreshWallet(w)));
+  renderWalletTable();
+  updateStats();
+  log("余额刷新完成", "ok");
+}
+
+async function getDynamicGasPrice() {
+  const feeData = await provider.getFeeData();
+  const base = feeData.gasPrice ?? ethers.parseUnits("0.1", "gwei");
+  const tripled = base * 3n;
+  const floor = ethers.parseUnits("0.3", "gwei");
+  const cap = getGasCapWei();
+  let gp = tripled > floor ? tripled : floor;
+  if (gp > cap) gp = cap;
+  return gp;
+}
+
+async function updateGasPill() {
+  try {
+    if (!provider) return;
+    const gp = await getDynamicGasPrice();
+    document.getElementById("gasPill").textContent =
+      "🔥 Gas: " + parseFloat(ethers.formatUnits(gp, "gwei")).toFixed(2) + " gwei";
+  } catch (_) {}
+}
+
+async function precheckBnb(w, gasLimit, gasPrice) {
+  const cost = gasLimit * gasPrice;
+  const need = (cost * 12n) / 10n;
+  const bal = await provider.getBalance(w.address);
+  w.bnb = bal;
+  return { ok: bal >= need, need, bal };
+}
+
+async function isTxAbsent(hash, fromAddress, nonce) {
+  let allSucceeded = true;
+  try {
+    const receipt = await provider.getTransactionReceipt(hash);
+    if (receipt) return false;
+  } catch (_) { allSucceeded = false; }
+  try {
+    const latest = await provider.getTransactionCount(fromAddress, "latest");
+    if (latest > nonce) return false;
+  } catch (_) { allSucceeded = false; }
+  try {
+    const tx = await provider.getTransaction(hash);
+    if (tx) return false;
+  } catch (_) { allSucceeded = false; }
+  return allSucceeded;
+}
+
+async function waitForTxOutcome(hash, fromAddress, nonce, timeoutMs = TX_WAIT_TIMEOUT) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const receipt = await provider.getTransactionReceipt(hash);
+      if (receipt) return { confirmed: true, absent: false, timedOut: false, receipt };
+    } catch (_) {}
+    await sleep(1000);
+  }
+  const absent = await isTxAbsent(hash, fromAddress, nonce);
+  return { confirmed: false, absent, timedOut: true };
+}
+
+/* ← 新增：多 RPC 并发广播 */
+function getBroadcastProviders() {
+  if (broadcastProviders) return broadcastProviders;
+  const list = [];
+  const seen = new Set();
+  if (provider && currentRpcUrl) {
+    list.push(provider);
+    seen.add(currentRpcUrl);
+  }
+  for (const url of RPC_CANDIDATES) {
+    if (seen.has(url)) continue;
+    if (rttMap.get(url) === Infinity) continue;   // ← 新增：跳过探测失败的节点
+    seen.add(url);
+    try {
+      list.push(new ethers.JsonRpcProvider(url, BSC_CHAIN_ID, { staticNetwork: true }));
+    } catch (_) {}
+  }
+  broadcastProviders = list;
+  return list;
+}
+
+async function broadcastToMany(signed, localHash) {
+  const providers = getBroadcastProviders();
+  const tasks = providers.map(p =>
+    p.broadcastTransaction(signed)
+      .then(r => ({ ok: true, hash: r.hash || localHash }))
+      .catch(e => ({ ok: false, err: e.message || String(e) }))
+  );
+  const results = await Promise.all(tasks);
+
+  const success = results.find(r => r.ok);
+  if (success) return success;
+
+  const errors = results.map(r => r.err).filter(Boolean);
+  const alreadyKnown = errors.length > 0 && errors.every(err =>
+    /already known|known transaction|already exists|replacement transaction underpriced|already in mempool|already imported/i.test(err)
+  );
+  if (alreadyKnown) return { ok: true, hash: localHash, alreadyKnown: true };
+
+  return { ok: false, err: errors.slice(0, 3).join(" | ") };
+}
+
+async function rushWallet(w, symbol) {
+  if (w.inFlight) return;
+  const t = TOKEN_REGISTRY[symbol];
+  if (!t) { log(`未知代币 ${symbol}`, "err"); return; }
+
+  w.inFlight = true;
+  w.pendingRush[symbol] = false;
+  w.status = "busy";
+  w._lastRushTime = Date.now();
+  renderWalletTable();
+  updateStats();
+
+  const startedAt = performance.now();
+  let finalStatus = "watch";
+
+  try {
+    const to = resolveTargetAddress();
+    const threshold = getThresholdWei(symbol);
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const [balMap, bnb] = await Promise.all([
+        readTokenBalances(w.address, [symbol]),
+        provider.getBalance(w.address)
+      ]);
+      const amount = balMap[symbol];
+      w.bnb = bnb;
+
+      if (amount === undefined) {
+        log(`${shortAddr(w.address)} [${symbol}] 余额读取失败`, "err");
+        finalStatus = "err";
+        return;
+      }
+      w.tokens[symbol].balance = amount;
+
+      if (amount < threshold) {
+        log(`${shortAddr(w.address)} [${symbol}] 余额 ${ethers.formatUnits(amount, t.decimals)} < 阈值，跳过`, "info");
+        finalStatus = "watch";
+        return;
+      }
+
+      const gasPrice = await getDynamicGasPrice();
+      const pre = await precheckBnb(w, t.gasLimit, gasPrice);
+      if (!pre.ok) {
+        const now = Date.now();
+        if (now - (w._lastBnbWarn || 0) > 5000) {
+          w._lastBnbWarn = now;
+          log(
+            `${shortAddr(w.address)} [${symbol}] BNB 不足：需要 ${ethers.formatEther(pre.need)} BNB，` +
+            `当前 ${ethers.formatEther(pre.bal)} BNB，退避不广播`,
+            "warn"
+          );
+        }
+        w.pendingRush[symbol] = true;
+        finalStatus = "watch";
+        return;
+      }
+
+      const nonce = await provider.getTransactionCount(w.address, "pending");
+      const data = ERC20_IFACE.encodeFunctionData("transfer", [to, amount]);
+      const tx = {
+        to: t.address,
+        data,
+        nonce,
+        gasLimit: t.gasLimit,
+        gasPrice,
+        chainId: BSC_CHAIN_ID
+      };
+
+      const signed = await w.wallet.signTransaction(tx);
+      const localHash = ethers.keccak256(signed);
+
+      log(
+        `${shortAddr(w.address)} [${symbol}] 广播尝试 ${attempt}/${MAX_ATTEMPTS} nonce=${nonce} ` +
+        `gas=${parseFloat(ethers.formatUnits(gasPrice, "gwei")).toFixed(2)}gwei ` +
+        `金额=${ethers.formatUnits(amount, t.decimals)}`,
+        "warn"
+      );
+
+      // ← 改为多 RPC 并发广播
+      let txHash = localHash;
+      const bres = await broadcastToMany(signed, localHash);
+      if (bres.ok) {
+        txHash = bres.hash;
+        if (bres.alreadyKnown) {
+          log(`${shortAddr(w.address)} [${symbol}] 多RPC广播返回 already known，视为已发出`, "warn");
+        }
+      } else {
+        log(`${shortAddr(w.address)} [${symbol}] 多RPC广播全部失败: ${bres.err}`, "err");
+        const absent = await isTxAbsent(localHash, w.address, nonce);
+        if (absent) throw new Error("broadcast failed: " + bres.err);
+        log(`${shortAddr(w.address)} [${symbol}] 广播报错但交易已存在，视为已发出`, "warn");
+        txHash = localHash;
+      }
+
+      w.lastTxHash = txHash;
+      w.lastDuration = Math.round(performance.now() - startedAt);
+
+      const outcome = await waitForTxOutcome(txHash, w.address, nonce, TX_WAIT_TIMEOUT);
+
+      if (outcome.confirmed) {
+        log(`${shortAddr(w.address)} [${symbol}] 抢跑成功 ✅ hash=${txHash.slice(0, 18)}…`, "ok");
+        finalStatus = "ok";
+        w.lastDuration = Math.round(performance.now() - startedAt);
+        await refreshWallet(w, symbol);
+        return;
+      }
+
+      if (outcome.timedOut && outcome.absent) {
+        log(`${shortAddr(w.address)} [${symbol}] 尝试 ${attempt} 超时且回执/latest nonce/getTransaction 均查不到`, "err");
+        if (attempt < MAX_ATTEMPTS) {
+          const backoff = 1500 * attempt;
+          log(`${shortAddr(w.address)} [${symbol}] 退避 ${backoff}ms 后重试…`, "warn");
+          await sleep(backoff);
+          continue;
+        }
+        log(`${shortAddr(w.address)} [${symbol}] 达到最大重试次数，标记异常`, "err");
+        finalStatus = "err";
+        await refreshWallet(w, symbol);
+        return;
+      }
+
+      log(`${shortAddr(w.address)} [${symbol}] 超时但链上/池中仍可查，不重试`, "warn");
+      finalStatus = "watch";
+      await refreshWallet(w, symbol);
+      return;
+    }
+  } catch (e) {
+    log(`${shortAddr(w.address)} [${symbol}] 抢跑异常: ${e.message}`, "err");
+    finalStatus = "err";
+    try { await refreshWallet(w, symbol); } catch (_) {}
+  } finally {
+    w.inFlight = false;
+    w.status = finalStatus;
+    if (!w.lastDuration) w.lastDuration = Math.round(performance.now() - startedAt);
+    renderWalletTable();
+    updateStats();
+  }
+}
+
+async function pollLoop() {
+  if (!isRunning || loopBusy) return;
+  if (!provider || wallets.length === 0) return;
+
+  loopBusy = true;
+  try {
+    try {
+      resolveTargetAddress();
+    } catch (e) {
+      log("目标地址无效，已暂停监控：" + e.message, "err");
+      pauseMonitoring();
+      return;
+    }
+
+    const enabled = getEnabledTokens();
+    if (enabled.length === 0) {
+      log("没有勾选代币，已暂停监控", "warn");
+      pauseMonitoring();
+      return;
+    }
+
+    const targets = wallets.filter(w => !w.inFlight);
+    if (targets.length === 0) return;
+
+    const results = await Promise.allSettled(targets.map(async (w) => {
+      try {
+        const [balMap, bnb] = await Promise.all([
+          readTokenBalances(w.address, enabled),
+          provider.getBalance(w.address)
+        ]);
+        w.bnb = bnb;
+
+        const triggers = [];
+        for (const sym of enabled) {
+          const cur = balMap[sym];
+          if (cur === undefined) continue;
+
+          const prev = w.tokens[sym].balance;
+          const delta = cur - prev;
+          const threshold = getThresholdWei(sym);
+          const incrementHit = cur > 0n && delta >= threshold;
+          const pendingHit = !!w.pendingRush[sym] && cur >= threshold
+            && (Date.now() - (w._lastRushTime || 0) > 5000);
+
+          if (incrementHit || pendingHit) {
+            triggers.push({ sym, delta, cur, reason: incrementHit ? "increment" : "pending" });
+          } else {
+            w.tokens[sym].balance = cur;
+          }
+        }
+        return { w, triggers };
+      } catch (e) {
+        return { w, triggers: [], error: e.message };
+      }
+    }));
+
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      const v = r.value;
+      if (v.error) continue;
+      if (v.triggers && v.triggers.length > 0) {
+        const trg = v.triggers[0];
+        const t = TOKEN_REGISTRY[trg.sym];
+        const deltaStr = ethers.formatUnits(trg.delta, t.decimals);
+        log(
+          `${shortAddr(v.w.address)} [${trg.sym}] ${trg.reason === "increment"
+            ? `检测到增量 +${deltaStr} ≥ 阈值，开始抢跑`
+            : `BNB 已补充，重试待处理转账`}`,
+          "warn"
+        );
+        rushWallet(v.w, trg.sym).catch(() => {});
+      }
+    }
+
+    renderWalletTable();
+    updateStats();
+  } finally {
+    loopBusy = false;
+  }
+}
+
+function startMonitoring() {
+  if (wallets.length === 0) { log("请先导入私钥", "warn"); return; }
+  try { resolveTargetAddress(); }
+  catch (e) { log("目标地址无效：" + e.message, "err"); return; }
+  if (!provider) { log("RPC 尚未就绪，请稍后…", "warn"); return; }
+  if (getEnabledTokens().length === 0) { log("请至少勾选一个代币", "warn"); return; }
+
+  isRunning = true;
+  loopBusy = false;
+  document.getElementById("btnStart").disabled = true;
+  document.getElementById("btnPause").disabled = false;
+  document.getElementById("monitorPill").textContent = "● 监控中";
+  document.getElementById("monitorPill").className = "pill pill-ok";
+
+  refreshAllBalances();
+
+  if (loopTimer) clearInterval(loopTimer);
+  loopTimer = setInterval(() => { pollLoop().catch(() => {}); }, 500);
+  startHealthCheck();
+  updateGasPill();
+  log("监控已启动（500ms 轮询），目标：" + resolveTargetAddress() + "，代币：" + getEnabledTokens().join(", "), "ok");
+}
+
+function pauseMonitoring() {
+  isRunning = false;
+  if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
+  stopHealthCheck();
+  document.getElementById("btnStart").disabled = false;
+  document.getElementById("btnPause").disabled = true;
+  document.getElementById("monitorPill").textContent = "● 已暂停";
+  document.getElementById("monitorPill").className = "pill pill-warn";
+  log("监控已暂停", "warn");
+}
+
+/* =========================================================================
+ *  11. 一键抢跑 / 导出 / 移除
+ * ========================================================================= */
+async function rushAll() {
+  if (wallets.length === 0) { log("无钱包", "warn"); return; }
+  try { resolveTargetAddress(); }
+  catch (e) { log("目标地址无效：" + e.message, "err"); return; }
+
+  const enabled = getEnabledTokens();
+  if (enabled.length === 0) { log("请至少勾选一个代币", "warn"); return; }
+
+  const btn = document.getElementById("btnRushAll");
+  if (btn) btn.disabled = true;
+  try {
+    log(`一键抢跑 ${wallets.length} 个钱包（代币：${enabled.join(", ")}）…`);
+    await Promise.allSettled(wallets.map(async (w) => {
+      for (const sym of enabled) {
+        if (w.inFlight) break;
+        try { await rushWallet(w, sym); } catch (_) {}
+        await sleep(150);
+      }
+    }));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function exportPrivateKeys() {
+  if (wallets.length === 0) { log("无私钥可导出", "warn"); return; }
+  const text = wallets.map(w => w.privateKey).join("\n");
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "bsc-multitoken-rescue-keys-" + Date.now() + ".txt";
+  a.click();
+  URL.revokeObjectURL(url);
+  log(`已导出 ${wallets.length} 个私钥（请妥善保管下载文件）`, "warn");
+}
+
+function removeWallet(index) {
+  if (isRunning) pauseMonitoring();
+  wallets = wallets.filter((_, i) => i !== index);
+  wallets.forEach((w, i) => w.index = i);
+  document.getElementById("pkCount").textContent = wallets.length + " 个";
+  renderWalletTable();
+  updateStats();
+  log(`已移除钱包 #${index + 1}`, "warn");
+}
+
+function tagHtml(status) {
+  const map = {
+    idle: ["idle", "空闲"], watch: ["watch", "监控中"], busy: ["busy", "抢跑中"],
+    ok: ["ok", "成功"], err: ["err", "异常"]
+  };
+  const [cls, label] = map[status] || map.idle;
+  return `<span class="tag ${cls}">${label}</span>`;
+}
+
+function fmtToken(w, sym, enabled) {
+  const t = TOKEN_REGISTRY[sym];
+  if (!t) return "--";
+  if (enabled && !enabled.includes(sym)) {
+    return `<span class="bal-off">--</span>`;
+  }
+  const v = w.tokens[sym]?.balance ?? 0n;
+  return Number(ethers.formatUnits(v, t.decimals)).toFixed(4);
+}
+
+function renderWalletTable() {
+  const tbody = document.getElementById("walletTbody");
+  document.getElementById("walletPill").textContent = wallets.length + " 钱包";
+
+  if (wallets.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">导入私钥后显示钱包</td></tr>`;
+    return;
+  }
+
+  const enabled = getEnabledTokens();
+
+  tbody.innerHTML = wallets.map(w => {
+    const bnbStr = Number(ethers.formatEther(w.bnb)).toFixed(6);
+    const duration = w.lastDuration ? w.lastDuration + " ms" : "--";
+    const usdtCls = enabled.includes("USDT") ? "bal" : "bal-off";
+    const usdcCls = enabled.includes("USDC") ? "bal-usdc" : "bal-off";
+    const uusdCls = enabled.includes("UUSD") ? "bal-uusd" : "bal-off";
+    return `<tr>
+      <td>${w.index + 1}</td>
+      <td><span class="addr" title="${w.address}" data-addr="${w.address}">${shortAddr(w.address)}</span></td>
+      <td class="${usdtCls}">${fmtToken(w, "USDT", enabled)}</td>
+      <td class="${usdcCls}">${fmtToken(w, "USDC", enabled)}</td>
+      <td class="${uusdCls}">${fmtToken(w, "UUSD", enabled)}</td>
+      <td class="bal-bnb">${bnbStr}</td>
+      <td>${tagHtml(w.status)}</td>
+      <td><span class="duration">${duration}</span></td>
+      <td>
+        <button class="sm" data-rush="${w.index}" ${w.inFlight ? "disabled" : ""}>抢跑</button>
+        <button class="sm danger" data-remove="${w.index}">移除</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  tbody.querySelectorAll("[data-rush]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.getAttribute("data-rush"));
+      const w = wallets[idx];
+      if (!w) return;
+      try { resolveTargetAddress(); }
+      catch (e) { log("目标地址无效：" + e.message, "err"); return; }
+      const enabled = getEnabledTokens();
+      if (enabled.length === 0) { log("请至少勾选一个代币", "warn"); return; }
+      for (const sym of enabled) {
+        if (w.inFlight) break;
+        await rushWallet(w, sym);
+      }
+    });
+  });
+  tbody.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.addEventListener("click", () => removeWallet(Number(btn.getAttribute("data-remove"))));
+  });
+}
+
+function updateStats() {
+  document.getElementById("statWatching").textContent =
+    wallets.filter(w => w.status === "watch" || w.status === "idle").length;
+  document.getElementById("statBusy").textContent = wallets.filter(w => w.status === "busy").length;
+  document.getElementById("statOk").textContent = wallets.filter(w => w.status === "ok").length;
+  document.getElementById("statErr").textContent = wallets.filter(w => w.status === "err").length;
+}
+
+window.addEventListener("beforeunload", () => {
+  wallets.forEach(w => { w.privateKey = null; w.wallet = null; });
+  wallets = [];
+  if (loopTimer) clearInterval(loopTimer);
+  if (healthTimer) clearInterval(healthTimer);
+});
+
+document.getElementById("btnImportPK").addEventListener("click", importPrivateKeys);
+document.getElementById("btnClearPK").addEventListener("click", clearPrivateKeys);
+document.getElementById("btnStart").addEventListener("click", startMonitoring);
+document.getElementById("btnPause").addEventListener("click", pauseMonitoring);
+document.getElementById("btnRefresh").addEventListener("click", refreshAllBalances);
+document.getElementById("btnRushAll").addEventListener("click", rushAll);
+document.getElementById("btnExportPK").addEventListener("click", exportPrivateKeys);
+document.getElementById("btnClearLog").addEventListener("click", () => {
+  document.getElementById("logBox").innerHTML = "";
+});
+document.getElementById("btnReselect").addEventListener("click", () => {
+  selectFastestRpc().catch(() => {});
+});
+
+document.getElementById("btnSaveTarget").addEventListener("click", saveTarget);
+document.getElementById("toAddress").addEventListener("blur", () => {
+  const v = document.getElementById("toAddress").value.trim();
+  if (v && v.startsWith("0x") && v.length === 42) {
+    try { localStorage.setItem(TARGET_KEY, v); } catch (_) {}
+  }
+});
+
+(async function init() {
+  loadSavedTarget();
+  log("BSC 多币种多钱包救援已加载（USDT / USDC / UUSD）", "info");
+  log("私钥仅存内存，不写 localStorage；beforeunload 清空。", "info");
+  log("防重复广播：inFlight 原子锁 + nonce(pending) + 三重验证 + 多RPC并发广播", "info");
+  log("多币种：每钱包每轮只处理一个触发代币，其余保留增量下轮继续", "info");
+  await selectFastestRpc();
+  updateGasPill();
+  if (!provider) {
+    log("RPC 初始化失败，请刷新重试", "err");
+  }
+})();
+</script>
+</body>
+</html>
