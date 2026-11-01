@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BSC 向北多币种救援2 · 原子锁防重广播版</title>
+<title>向北BSC多币种救援2 · 原子锁防重广播版</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <style>
   :root{
@@ -119,8 +119,7 @@
 
   <header class="topbar">
     <div>
-      <h1>⚡ BSC 向北多币种救援2</h1>
-      <p class="subtitle">USDT / USDC / UUSD · 并发 RTT 选节点 · 原子锁防重复广播 · 三重验证 · 多RPC并发广播 · 私钥仅存内存</p>
+      <h1>⚡向北 BSC 多币种救援2</h1>
     </div>
     <div class="status-row">
       <span class="pill pill-danger">🚨 救援模式</span>
@@ -225,7 +224,7 @@
   </section>
 
   <div class="footer-note">
-    🔐 私钥仅保存在浏览器内存 · 不写 localStorage · beforeunload 清空 &nbsp;|&nbsp;
+    🔐 USDT / USDC / UUSD · 并发 RTT 选节点 · 私钥仅保存在浏览器内存 · 不写 localStorage · beforeunload 清空 &nbsp;|&nbsp;
     防重复广播：inFlight 原子锁 + nonce(pending) + 三重验证 + 多RPC并发广播 &nbsp;|&nbsp;
     多币种：每钱包每轮只抢跑一个代币，触发但未处理的代币保留增量，下一轮继续
   </div>
@@ -298,8 +297,9 @@ function getEnabledTokens() {
 function getThresholdWei(symbol) {
   const t = TOKEN_REGISTRY[symbol];
   if (!t) return 0n;
-  const v = parseFloat(document.getElementById("thresholdInput").value) || 0.1;
-  return ethers.parseUnits(v.toFixed(Math.min(Number(t.decimals), 18)), t.decimals);
+  const raw = document.getElementById("thresholdInput").value.trim() || "0.1";
+  try { return ethers.parseUnits(raw, t.decimals); }
+  catch { return ethers.parseUnits("0.1", t.decimals); }
 }
 function getGasCapWei() {
   const v = parseFloat(document.getElementById("gasCapInput").value) || 3;
@@ -465,6 +465,7 @@ function startHealthCheck() {
     if (!provider || !isRunning) return;
     try {
       await provider.getBlockNumber();
+      updateGasPill();
     } catch (e) {
       log("RPC 健康检查失败，重新选择节点…", "warn");
       await selectFastestRpc();
@@ -552,19 +553,20 @@ async function precheckBnb(w, gasLimit, gasPrice) {
 }
 
 async function isTxAbsent(hash, fromAddress, nonce) {
+  let allSucceeded = true;
   try {
     const receipt = await provider.getTransactionReceipt(hash);
     if (receipt) return false;
-  } catch (_) {}
+  } catch (_) { allSucceeded = false; }
   try {
     const latest = await provider.getTransactionCount(fromAddress, "latest");
     if (latest > nonce) return false;
-  } catch (_) {}
+  } catch (_) { allSucceeded = false; }
   try {
     const tx = await provider.getTransaction(hash);
     if (tx) return false;
-  } catch (_) {}
-  return true;
+  } catch (_) { allSucceeded = false; }
+  return allSucceeded;
 }
 
 async function waitForTxOutcome(hash, fromAddress, nonce, timeoutMs = TX_WAIT_TIMEOUT) {
@@ -591,6 +593,7 @@ function getBroadcastProviders() {
   }
   for (const url of RPC_CANDIDATES) {
     if (seen.has(url)) continue;
+    if (rttMap.get(url) === Infinity) continue;   // ← 新增：跳过探测失败的节点
     seen.add(url);
     try {
       list.push(new ethers.JsonRpcProvider(url, BSC_CHAIN_ID, { staticNetwork: true }));
@@ -826,8 +829,8 @@ async function pollLoop() {
         const deltaStr = ethers.formatUnits(trg.delta, t.decimals);
         log(
           `${shortAddr(v.w.address)} [${trg.sym}] ${trg.reason === "increment"
-            ? `检测到 USDT 增量 +${deltaStr} ≥ 阈值，开始抢跑`
-            : `BNB 已补充，重试待处理转账`}`.replace(/USDT/g, trg.sym),
+            ? `检测到增量 +${deltaStr} ≥ 阈值，开始抢跑`
+            : `BNB 已补充，重试待处理转账`}`,
           "warn"
         );
         rushWallet(v.w, trg.sym).catch(() => {});
@@ -1032,6 +1035,7 @@ document.getElementById("toAddress").addEventListener("blur", () => {
   log("防重复广播：inFlight 原子锁 + nonce(pending) + 三重验证 + 多RPC并发广播", "info");
   log("多币种：每钱包每轮只处理一个触发代币，其余保留增量下轮继续", "info");
   await selectFastestRpc();
+  updateGasPill();
   if (!provider) {
     log("RPC 初始化失败，请刷新重试", "err");
   }
