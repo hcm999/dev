@@ -278,12 +278,33 @@ body {
   <div class="page active" id="page-home">
     <div class="hero-section">
       <div class="hero-icon">✳️</div>
-      <h1>DevDao</h1>
+      <h1>向北DevDao</h1>
       <p>链上质押协议 · 15 天 / 30 天双周期</p>
       <div style="margin-top:12px;">
         <button class="hero-btn" onclick="navigateTo('stake')">
           <i class="fas fa-rocket"></i> 立即质押
         </button>
+      </div>
+    </div>
+
+    <!-- DEV 代币权限 + 二级市场状态 -->
+    <div class="card" id="devAuthCard" style="margin-top:0; padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; color:var(--text-secondary);">DEV 代币权限</span>
+        <span id="devAuthStatus" style="font-size:13px; font-weight:600; color:var(--text-muted);">加载中...</span>
+      </div>
+      <div style="margin-top:4px; font-size:11px; color:var(--text-muted);" id="devAuthDetail">
+        正在查询合约状态...
+      </div>
+
+      <div style="height:1px; background:var(--border-color); margin:10px 0;"></div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; color:var(--text-secondary);">二级市场</span>
+        <span id="devMarketStatus" style="font-size:13px; font-weight:600; color:var(--text-muted);">加载中...</span>
+      </div>
+      <div style="margin-top:4px; font-size:11px; color:var(--text-muted);" id="devMarketDetail">
+        正在查询市场状态...
       </div>
     </div>
 
@@ -313,7 +334,9 @@ body {
         <div class="num" id="homeMyComp">--</div>
         <div class="label">我的计算力</div>
       </div>
-    </div>🟢推荐码：NRDPC6 <a href="https://devdao.ai/?invite=NRDPC6" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">🟢 前往官方dapp</a>
+    </div>
+        <div class="logo">🟢 推荐码：NRDPC6 <a href="https://devdao.ai/?invite=NRDPC6" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">🟢 前往官方dapp</a>
+    </div>
 
     <div class="card">
       <div class="card-title">核心功能</div>
@@ -509,6 +532,17 @@ const CONFIG = {
   nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
 };
 
+// ===== DEV 代币权限 / 市场状态 ABI =====
+const DEV_AUTH_ABI = [
+  "function managementRenounced() view returns (bool)",
+  "function funder() view returns (address)",
+  "function pendingFunder() view returns (address)",
+  "function FUNDER_BURN_ADDRESS() view returns (address)",
+  "function marketOpened() view returns (bool)",
+  "function marketOpenUusd() view returns (uint256)",
+  "function pair() view returns (address)"
+];
+
 // ===== UUSD 代币 ABI =====
 const UUSD_ABI = [
   "function approve(address spender, uint256 amount) external returns (bool)",
@@ -592,6 +626,7 @@ let uusdContract = null;
 let uusdAllowance = 0n;
 let selectedProduct = 0;
 let uusdDecimals = 18;
+let devAuthContract = null;
 
 const OrderStatus = { None: 0, Staking: 1, Redeemed: 2, Reinvested: 3 };
 
@@ -828,6 +863,14 @@ function resetUI() {
   $('stakeRecords').innerHTML = `<div class="empty-state"><i class="fas fa-inbox"></i>请连接钱包</div>`;
   $('stakeRecordCount').textContent = '0';
   $('orderCountBadge').textContent = '0 笔';
+  $('devAuthStatus').textContent = '加载中...';
+  $('devAuthStatus').style.color = 'var(--text-muted)';
+  $('devAuthDetail').textContent = '查询中...';
+  $('devMarketStatus').textContent = '加载中...';
+  $('devMarketStatus').style.color = 'var(--text-muted)';
+  $('devMarketDetail').textContent = '查询中...';
+  loadDevAuthStatus();
+  loadDevMarketStatus();
 }
 
 // ================================================================
@@ -908,6 +951,118 @@ async function fetchLiquidityAndPrice() {
   } catch (err) {
     console.error('读取 LP 数据失败:', err);
     return { liquidity: null, price: null };
+  }
+}
+
+// ================================================================
+// DEV 代币权限状态查询
+// ================================================================
+async function loadDevAuthStatus() {
+  const statusEl = $('devAuthStatus');
+  const detailEl = $('devAuthDetail');
+  if (!statusEl || !detailEl) return;
+
+  const readProvider = provider || new ethers.JsonRpcProvider(CONFIG.rpcUrl);
+  if (!devAuthContract) {
+    devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, readProvider);
+  }
+
+  try {
+    const [renounced, funder, pending, burnAddr] = await Promise.all([
+      devAuthContract.managementRenounced().catch(() => null),
+      devAuthContract.funder().catch(() => null),
+      devAuthContract.pendingFunder().catch(() => null),
+      devAuthContract.FUNDER_BURN_ADDRESS().catch(() => null),
+    ]);
+
+    if (renounced === null) {
+      statusEl.textContent = '❓ 无法读取';
+      statusEl.style.color = 'var(--text-muted)';
+      detailEl.textContent = '合约不支持 managementRenounced';
+      return;
+    }
+
+    const isBurn = burnAddr && funder &&
+      funder.toLowerCase() === burnAddr.toLowerCase();
+
+    if (renounced || isBurn) {
+      statusEl.textContent = '✅ 已放弃';
+      statusEl.style.color = 'var(--green)';
+      detailEl.textContent = renounced
+        ? 'managementRenounced = true，合约管理权已放弃'
+        : `funder 指向黑洞地址 ${shortenAddress(funder)}`;
+    } else {
+      statusEl.textContent = '⚠️ 未放弃';
+      statusEl.style.color = 'var(--gold)';
+      detailEl.textContent = `funder: ${shortenAddress(funder)}` +
+        (pending && pending !== ethers.ZeroAddress
+          ? ` · 待接任: ${shortenAddress(pending)}`
+          : '');
+    }
+  } catch (e) {
+    console.error('DEV 权限查询失败:', e);
+    statusEl.textContent = '❓ 查询失败';
+    statusEl.style.color = 'var(--text-muted)';
+    detailEl.textContent = 'RPC 异常，请刷新重试';
+  }
+}
+
+// ================================================================
+// DEV 二级市场状态查询
+// ================================================================
+async function loadDevMarketStatus() {
+  const statusEl = $('devMarketStatus');
+  const detailEl = $('devMarketDetail');
+  if (!statusEl || !detailEl) return;
+
+  const readProvider = provider || new ethers.JsonRpcProvider(CONFIG.rpcUrl);
+  if (!devAuthContract) {
+    devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, readProvider);
+  }
+
+  try {
+    const [opened, openUusd, pairAddr] = await Promise.all([
+      devAuthContract.marketOpened().catch(() => null),
+      devAuthContract.marketOpenUusd().catch(() => null),
+      devAuthContract.pair().catch(() => null),
+    ]);
+
+    if (opened === null) {
+      statusEl.textContent = '❓ 无法读取';
+      statusEl.style.color = 'var(--text-muted)';
+      detailEl.textContent = '合约不支持 marketOpened';
+      return;
+    }
+
+    const hasPair = pairAddr &&
+      pairAddr !== ethers.ZeroAddress &&
+      pairAddr.toLowerCase() !== '0x0000000000000000000000000000000000000000';
+
+    if (opened) {
+      statusEl.textContent = '🟢 已开放';
+      statusEl.style.color = 'var(--green)';
+
+      let detail = 'marketOpened = true，二级市场已开盘';
+      if (openUusd && openUusd > 0n) {
+        detail += ` · 开盘 UUSD: ${formatEther(openUusd, uusdDecimals)}`;
+      }
+      if (hasPair) {
+        detail += ` · Pair: ${shortenAddress(pairAddr)}`;
+      }
+      detailEl.textContent = detail;
+    } else {
+      statusEl.textContent = '🔴 未开放';
+      statusEl.style.color = 'var(--red)';
+
+      detailEl.textContent = hasPair
+        ? 'marketOpened = false，Pair 已存在但官方市场未开盘'
+        : 'marketOpened = false，Pair 尚未创建';
+    }
+  } catch (e) {
+    console.error('DEV 二级市场状态查询失败:', e);
+    statusEl.textContent = '❓ 查询失败';
+    statusEl.style.color = 'var(--text-muted)';
+    detailEl.textContent = 'RPC 异常，请刷新重试';
   }
 }
 
@@ -1010,6 +1165,8 @@ async function loadAllData() {
 
     await loadOrders();
     updateProfileData();
+    await loadDevAuthStatus();
+    await loadDevMarketStatus();
   } catch (err) {
     console.error('加载数据失败:', err);
     lastError = err.message || '加载失败';
@@ -1407,6 +1564,8 @@ $('walletBtn').addEventListener('click', () => {
 // 初始化
 // ================================================================
 updatePreview();
+loadDevAuthStatus();
+loadDevMarketStatus();
 if (window.ethereum && window.ethereum.selectedAddress) {
   setTimeout(connectWallet, 500);
 }
