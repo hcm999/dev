@@ -527,7 +527,14 @@ const CONFIG = {
   pair: '0xbe432d066ee1c664fc28ee7263a44edfbfb1e1ed',
   chainId: 56,
   chainName: 'BSC',
-  rpcUrl: 'https://bsc-dataseed.binance.org/',
+  rpcUrls: [
+    'https://bsc-mainnet.public.blastapi.io/',
+    'https://rpc.swiftnodes.io/rpc/bsc',
+    'https://bsc.blockrazor.xyz',
+    'https://bsc-dataseed.binance.org/'
+  ],
+  // 保留 rpcUrl 作为首选节点，兼容旧引用
+  rpcUrl: 'https://bsc-mainnet.public.blastapi.io/',
   explorerUrl: 'https://bscscan.com/',
   nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
 };
@@ -631,6 +638,25 @@ let devAuthContract = null;
 const OrderStatus = { None: 0, Staking: 1, Redeemed: 2, Reinvested: 3 };
 
 const $ = id => document.getElementById(id);
+
+// ================================================================
+// 只读 RPC：多节点 Fallback，提升 DEV 状态查询成功率
+// ================================================================
+let _readProvider = null;
+function createReadProvider() {
+  if (_readProvider) return _readProvider;
+
+  const backends = CONFIG.rpcUrls.map((url, i) => ({
+    provider: new ethers.JsonRpcProvider(url),
+    priority: i + 1,      // 数字越小优先级越高
+    weight: 1,
+    stallTimeout: 3000     // 3 秒无响应切下一个
+  }));
+
+  // quorum=1：任一节点返回即接受，适合只读查询
+  _readProvider = new ethers.FallbackProvider(backends, 1);
+  return _readProvider;
+}
 
 // ================================================================
 // Toast
@@ -924,15 +950,17 @@ async function ensureAllowance(amount) {
 // 读取 LP 流动性和 DEV 价格
 // ================================================================
 async function fetchLiquidityAndPrice() {
-  if (!provider) return { liquidity: null, price: null };
   try {
-    if (!uusdAddress) {
-      uusdAddress = await stakingContract.uusd();
+    const rp = createReadProvider();
+
+    // 未连接钱包时，用临时只读合约读取代币地址
+    if (!uusdAddress || !devAddress) {
+      const tmp = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, rp);
+      if (!uusdAddress) uusdAddress = await tmp.uusd();
+      if (!devAddress) devAddress = await tmp.dev();
     }
-    if (!devAddress) {
-      devAddress = await stakingContract.dev();
-    }
-    const pairContract = new ethers.Contract(CONFIG.pair, PAIR_ABI, provider);
+
+    const pairContract = new ethers.Contract(CONFIG.pair, PAIR_ABI, rp);
     const reserves = await pairContract.getReserves();
     const token0 = await pairContract.token0();
 
@@ -962,10 +990,8 @@ async function loadDevAuthStatus() {
   const detailEl = $('devAuthDetail');
   if (!statusEl || !detailEl) return;
 
-  const readProvider = provider || new ethers.JsonRpcProvider(CONFIG.rpcUrl);
-  if (!devAuthContract) {
-    devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, readProvider);
-  }
+  // 每次都用多节点 Fallback provider 新建合约实例，避免缓存到失效节点
+  devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, createReadProvider());
 
   try {
     const [renounced, funder, pending, burnAddr] = await Promise.all([
@@ -1003,7 +1029,7 @@ async function loadDevAuthStatus() {
     console.error('DEV 权限查询失败:', e);
     statusEl.textContent = '❓ 查询失败';
     statusEl.style.color = 'var(--text-muted)';
-    detailEl.textContent = 'RPC 异常，请刷新重试';
+    detailEl.textContent = '所有 RPC 节点均无响应，请稍后重试';
   }
 }
 
@@ -1015,10 +1041,7 @@ async function loadDevMarketStatus() {
   const detailEl = $('devMarketDetail');
   if (!statusEl || !detailEl) return;
 
-  const readProvider = provider || new ethers.JsonRpcProvider(CONFIG.rpcUrl);
-  if (!devAuthContract) {
-    devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, readProvider);
-  }
+  devAuthContract = new ethers.Contract(CONFIG.devToken, DEV_AUTH_ABI, createReadProvider());
 
   try {
     const [opened, openUusd, pairAddr] = await Promise.all([
@@ -1062,7 +1085,7 @@ async function loadDevMarketStatus() {
     console.error('DEV 二级市场状态查询失败:', e);
     statusEl.textContent = '❓ 查询失败';
     statusEl.style.color = 'var(--text-muted)';
-    detailEl.textContent = 'RPC 异常，请刷新重试';
+    detailEl.textContent = '所有 RPC 节点均无响应，请稍后重试';
   }
 }
 
@@ -1569,6 +1592,25 @@ loadDevMarketStatus();
 if (window.ethereum && window.ethereum.selectedAddress) {
   setTimeout(connectWallet, 500);
 }
+
+// ================================================================
+// RPC 节点诊断（控制台查看哪个节点最快）
+// ================================================================
+async function diagnoseRpcs() {
+  console.log('--- BSC RPC 节点诊断 ---');
+  for (const url of CONFIG.rpcUrls) {
+    const p = new ethers.JsonRpcProvider(url);
+    const start = Date.now();
+    try {
+      const block = await p.getBlockNumber();
+      console.log(`✅ ${url} | 区块: ${block} | ${Date.now() - start}ms`);
+    } catch (e) {
+      console.log(`❌ ${url} | ${(e && (e.shortMessage || e.message)) || e}`);
+    }
+  }
+  console.log('--- 诊断结束 ---');
+}
+diagnoseRpcs();
 
 console.log('🚀 DevDao DApp 已加载');
 console.log('📋 质押合约:', CONFIG.stakingContract);
