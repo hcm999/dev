@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BSC 向北多币种救援1 · USDT / USDC / UUSD</title>
+<title>向北BSC多币种救援1 · USDT / USDC / UUSD</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <style>
   :root{
@@ -101,6 +101,16 @@
   .log-line.err{color:#fca5a5}
   .log-line.warn{color:#fcd34d}
   .log-line.info{color:#7dd3fc}
+  .footer-note{
+    font-size:11px;
+    text-align:center;
+    color:#7e8aa2;
+    padding:10px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:30px;
+    margin-top:12px;
+  }
   .duration{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:#a5b4fc}
   .badge{font-size:10px;padding:1px 6px;border-radius:3px;background:#1e2633;color:var(--muted)}
 </style>
@@ -108,7 +118,7 @@
 <body>
 
 <div class="flex-between" style="margin-bottom:10px;">
-  <h2 style="margin:0;">⚡ BSC 向北多币种救援1 · USDT / USDC / UUSD</h2>
+  <h2 style="margin:0;">⚡向北 BSC 多币种救援1 · USDT / USDC / UUSD</h2>
   <div class="status-row">
     <span class="pill pill-danger">🚨 救援模式</span>
     <span class="pill pill-gas" id="gasPill">🔥 Gas: --</span>
@@ -208,6 +218,12 @@
   <div class="log-box" id="logBox"></div>
 </div>
 
+  <div class="footer-note">
+    🔐 USDT / USDC / UUSD · 并发 RTT 选节点 · 私钥仅保存在浏览器内存 · 不写 localStorage · beforeunload 清空 &nbsp;|&nbsp;
+    防重复广播：inFlight 原子锁 + nonce(pending) + 三重验证 + 多RPC并发广播 &nbsp;|&nbsp;
+    多币种：每钱包每轮只抢跑一个代币，触发但未处理的代币保留增量，下一轮继续
+  </div>
+
 <script>
 /* =========================================================================
  *  常量 & 代币注册表
@@ -284,8 +300,9 @@ function getEnabledTokens() {
 function getThresholdWei(symbol) {
   const t = TOKEN_REGISTRY[symbol];
   if (!t) return 0n;
-  const v = parseFloat(document.getElementById("thresholdInput").value) || 0.1;
-  return ethers.parseUnits(v.toFixed(Math.min(Number(t.decimals), 18)), t.decimals);
+  const raw = document.getElementById("thresholdInput").value.trim() || "0.1";
+  try { return ethers.parseUnits(raw, t.decimals); }
+  catch { return ethers.parseUnits("0.1", t.decimals); }
 }
 function getGasCapWei() {
   const v = parseFloat(document.getElementById("gasCapInput").value) || 3;
@@ -563,19 +580,20 @@ async function precheckBnb(w, gasLimit, gasPrice) {
  *  8. 防重复广播核心
  * ========================================================================= */
 async function isTxAbsent(hash, fromAddress, nonce) {
+  let allSucceeded = true;
   try {
     const receipt = await provider.getTransactionReceipt(hash);
     if (receipt) return false;
-  } catch (_) {}
+  } catch (_) { allSucceeded = false; }
   try {
     const latest = await provider.getTransactionCount(fromAddress, "latest");
     if (latest > nonce) return false;
-  } catch (_) {}
+  } catch (_) { allSucceeded = false; }
   try {
     const tx = await provider.getTransaction(hash);
     if (tx) return false;
-  } catch (_) {}
-  return true;
+  } catch (_) { allSucceeded = false; }
+  return allSucceeded;
 }
 
 async function waitForTxOutcome(hash, fromAddress, nonce, timeoutMs = TX_WAIT_TIMEOUT) {
@@ -604,6 +622,7 @@ function getBroadcastProviders() {
   }
   for (const url of RPC_CANDIDATES) {
     if (seen.has(url)) continue;
+    if (rttMap.get(url) === Infinity) continue;   // ← 新增：跳过探测失败的节点
     seen.add(url);
     try {
       list.push(new ethers.JsonRpcProvider(url, BSC_CHAIN_ID, { staticNetwork: true }));
