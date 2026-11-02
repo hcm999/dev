@@ -20,10 +20,8 @@ export async function handleProjectData(request, env) {
   if (!CONFIG.PROJECTS.includes(projectId)) return json({ success: false, error: '无效的项目ID' }, 400);
 
   if (projectId === 'dev' || projectId === 'ang') {
-    const adminToken = request.headers.get('x-admin-token');
-    // DEV 用 ADMIN_TOKEN，ANG 用 ANG 自己的 token，都放行（管理端/管理页）
-    const isAdmin = adminToken === CONFIG.ADMIN_TOKEN;
-                 || adminToken === CONFIG.ANG_ADMIN_TOKEN;
+      const adminToken = request.headers.get('x-admin-token');
+      const isAdmin = adminToken === CONFIG.ADMIN_TOKEN || adminToken === CONFIG.ANG_ADMIN_TOKEN;
     
     if (!isAdmin) {
       const password = request.headers.get('x-access-password');
