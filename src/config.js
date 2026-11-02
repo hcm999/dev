@@ -1,5 +1,5 @@
 export const CONFIG = {
-  PROJECTS: ['alfa', 'gana', 'vd', 'atm', 'atmvip', 'dev'],
+  PROJECTS: ['alfa', 'gana', 'vd', 'atm', 'ang', 'dev'],
   KV: {
     ADDRESS_KEY_PREFIX: 'address_list',
     LAST_UPDATE_PREFIX: 'last_update'
