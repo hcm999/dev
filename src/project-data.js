@@ -19,20 +19,24 @@ export async function handleProjectData(request, env) {
   if (!projectId) return json({ success: false, error: '缺少projectId参数' }, 400);
   if (!CONFIG.PROJECTS.includes(projectId)) return json({ success: false, error: '无效的项目ID' }, 400);
 
-  if (projectId === 'dev') {
+  if (projectId === 'dev' || projectId === 'ang') {
     const adminToken = request.headers.get('x-admin-token');
+    // DEV 用 ADMIN_TOKEN，ANG 用 ANG 自己的 token，都放行（管理端/管理页）
     const isAdmin = adminToken === CONFIG.ADMIN_TOKEN;
-
+                 || adminToken === CONFIG.ANG_ADMIN_TOKEN;
+    
     if (!isAdmin) {
       const password = request.headers.get('x-access-password');
       const address = (request.headers.get('x-access-address') || '').toLowerCase();
+      // 两个项目共用同一个访问密码配置（也可以分开）
       const A = CONFIG.DEV_ACCESS;
 
       if (password !== A.PASSWORD) {
         return json({ success: false, error: '密码错误', code: 'INVALID_PASSWORD' }, 401);
       }
       if (!address) return json({ success: false, error: '缺少地址', code: 'NO_ADDRESS' }, 403);
-
+      
+      // ← 关键：两个项目都读同一份白名单 dev:whitelist
       const wlData = await kvGet(env, 'dev:whitelist');
       const items = wlData?.items || [];
       const item = items.find(i => i.address.toLowerCase() === address);
