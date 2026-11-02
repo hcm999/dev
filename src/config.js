@@ -12,5 +12,5 @@ export const CONFIG = {
     CONTACT: { TG: '', WECHAT: '', QQ: '3751235417' }
   },
   ADMIN_TOKEN: 'dev-admin-2025-xK9mN2pQ7vL4bR8jH3fT6yW1sA5cD0eZ',
-  ANG_ADMIN_TOKEN: 'ang-admin-2025-xK9mN2pQ7vL4bR8jH3fT6yW1sA5cD0eZ'
+  ANG_ADMIN_TOKEN: 'ang-admin-2025-xK9mN2pQ7vL4bR8jH3fT6yW1sA5cD0eZ',
 };
