@@ -1841,19 +1841,19 @@ function closeReportModal() {
 }
 
 function updateReportData() {
-    const startStr = $('reportStartDate').value;
-    const endStr = $('reportEndDate').value;
+    const startStr = document.getElementById('reportStartDate').value;
+    const endStr = document.getElementById('reportEndDate').value;
     if (!startStr || !endStr) return;
 
     if (startStr > endStr) {
-        $('reportStartDate').value = endStr;
-        $('reportEndDate').value = startStr;
-        return updateReportData();
+        alert('⚠️ 开始日期不能大于结束日期');
+        return;
     }
 
     const [sy, sm, sd] = startStr.split('-').map(Number);
     const [ey, em, ed] = endStr.split('-').map(Number);
 
+    // 按每日统计起始时间 dailyStartHour（北京时间）切分业务日
     const startTs = Math.floor(Date.UTC(sy, sm - 1, sd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
     const endTs   = Math.floor(Date.UTC(ey, em - 1, ed) / 1000) - 8 * 3600 + 86400 + dailyStartHour * 3600;
 
@@ -1888,11 +1888,12 @@ function updateReportData() {
         // 复投 / 赎回：按结束日
         const endTsV = r.unstakeTime || r.unlockTime;
         if (endTsV >= startTs && endTsV < endTs) {
-            if (isRestakedOf(r)) {
+            // 兼容原生字符串状态判断，不依赖外部函数
+            if (r.status === 'restaked') {
                 reinvestAmt += principalOf(r);
                 reinvestCount++;
                 reinvestAddrs.add(r.address);
-            } else if (isSettledOf(r)) {
+            } else if (['redeemed', 'settled', 'expired'].includes(r.status)) {
                 redeemAmt += totalOf(r);
                 redeemCount++;
                 redeemAddrs.add(r.address);
@@ -1940,7 +1941,7 @@ function updateReportData() {
         </div>
     `;
 
-    $('reportContent').innerHTML = html;
+    document.getElementById('reportContent').innerHTML = html;
 
     currentReportText = `ANG 数据简报｜${titleDate}
 北京时间：${bjStartDisplay} → ${bjEndDisplay}
