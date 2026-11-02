@@ -134,6 +134,12 @@ async function handleFinalize(env, projectId, data) {
   return json({ success: true, timestamp: finalTimestamp, recordCount: allRecords.length, message: '分批上传完成' });
 }
 
+// 兼容 DEV(数字 status) 和 ANG(字符串 status + isActive) 两种语义
+function isActiveRecord(r) {
+    if (!r) return false;
+    if (typeof r.isActive === 'boolean') return r.isActive;   // ANG 走这条
+    return r.status === 1;                                      // DEV 走这条
+}
 // ==========================================
 // 4. 全新：增量上传（精准合并 + 极低写入）
 // ==========================================
@@ -159,15 +165,14 @@ async function handleIncremental(env, projectId, data) {
   for (const r of (newAll || [])) allMap.set(r.orderId, r);
   for (const r of (newActive || [])) activeMap.set(r.orderId, r);
 
-  // 2. 状态变化订单（比如之前活跃，现在变成已赎回）
-  for (const r of (changed || [])) {
+for (const r of (changed || [])) {
     allMap.set(r.orderId, r);
-    if (r.status !== 1) activeMap.delete(r.orderId);
+    if (!isActiveRecord(r)) activeMap.delete(r.orderId);
     else activeMap.set(r.orderId, r);
-  }
+}
 
   // 3. 组装并排序
-  const records = Array.from(activeMap.values()).filter(r => r.status === 1);
+  const records = Array.from(activeMap.values()).filter(isActiveRecord);
   const allRecords = Array.from(allMap.values()).sort((a, b) => (a.orderId || 0) - (b.orderId || 0));
 
   const saveData = {
