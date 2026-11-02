@@ -1821,7 +1821,11 @@ async function adminFetch(action, data = {}) {
     const response = await fetch(`${CONFIG.API_BASE}/admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': CONFIG.ADMIN_TOKEN },
-        body: JSON.stringify({ action, ...data })
+        body: JSON.stringify({ 
+            action, 
+            projectId: 'dev',     // ← 白名单共用 DEV 的
+            ...data 
+        })
     });
     return await response.json();
 }
