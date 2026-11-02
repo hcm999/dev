@@ -14,7 +14,9 @@ function json(data, status = 200) {
 export async function handleAdmin(request, env) {
   if (request.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
   const token = request.headers.get('x-admin-token');
-  if (token !== CONFIG.ADMIN_TOKEN) return json({ success: false, error: '无权访问' }, 401);
+  if (token !== CONFIG.ADMIN_TOKEN && token !== CONFIG.ANG_ADMIN_TOKEN) {
+      return json({ success: false, error: '无权访问' }, 401);
+  }
 
   const body = await request.json();
   const { action, ...data } = body;
