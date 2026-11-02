@@ -13,20 +13,10 @@ function json(data, status = 200) {
 
 export async function handleAdmin(request, env) {
   if (request.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
+
   const token = request.headers.get('x-admin-token');
   if (token !== CONFIG.ADMIN_TOKEN && token !== CONFIG.ANG_ADMIN_TOKEN) {
-      return json({ 
-          success: false, 
-          error: '无权访问',
-          debug: {
-              receivedToken: token,
-              receivedLength: token ? token.length : 0,
-              devToken: CONFIG.ADMIN_TOKEN,
-              angToken: CONFIG.ANG_ADMIN_TOKEN || '(undefined)',
-              angTokenType: typeof CONFIG.ANG_ADMIN_TOKEN,
-              angTokenLength: (CONFIG.ANG_ADMIN_TOKEN || '').length,
-          }
-      }, 401);
+    return json({ success: false, error: '无权访问' }, 401);
   }
 
   const body = await request.json();
