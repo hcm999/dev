@@ -148,7 +148,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div style="font-weight:600;margin-bottom:6px;">🔍 连接诊断</div>
         <div class="diag-row"><span class="diag-label">运行环境</span><span class="diag-value" id="diagEnv">--</span></div>
         <div class="diag-row"><span class="diag-label">质押合约</span><span class="diag-value" id="diagContract">检查中...</span></div>
-        <div class="diag-row"><span class="diag-label">USDT</span><span class="diag-value" id="diagUUSD">--</span></div>
+        <div class="diag-row"><span class="diag-label">USDT</span><span class="diag-value" id="diagUSDT">--</span></div>
         <div class="diag-row"><span class="diag-label">ANG Token</span><span class="diag-value" id="diagDev">--</span></div>
         <div class="diag-row"><span class="diag-label">LP Pair</span><span class="diag-value" id="diagPair">--</span></div>
         <div class="diag-row"><span class="diag-label">LP池 USDT</span><span class="diag-value" id="diagLPBalance">--</span></div>
@@ -482,7 +482,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <div id="panel-reinvest" class="data-panel">
         <div class="table-container">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-                <h5 style="color:#e8edf5;">🔁 复投记录 <span style="font-size:0.7rem;color:#8899bb;">（旧单被 restake 标记）</span></h5>
+                <h5 style="color:#e8edf5;">🔁 复投记录 <span style="font-size:0.7rem;color:#8899bb;">（复投新单，按新单质押时间）</span></h5>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="date" id="reinvestDate" class="filter-select" style="width:auto;" onchange="renderReinvest()">
                     <input type="text" id="reinvestSearch" class="search-input" placeholder="搜索地址..." oninput="renderReinvest()">
@@ -694,6 +694,99 @@ function dedupeAddresses(text) {
         if (!seen.has(k)) { seen.add(k); addresses.push(a); }
     }
     return { addresses, raw: rawAddrs, removed: rawAddrs.length - addresses.length };
+}
+
+// ================================================================
+// 复投新单识别（ANG 无 previousOrderId，用旧单 restaked + 时间窗口 + 金额容差匹配）
+// 返回 { reinvestSet: Set<newOrderId>, matchedOldByNew: Map<newOrderId, oldOrder> }
+// ================================================================
+const REINVEST_WINDOW = 7 * 86400;   // restake 时间窗口（旧单 unstakeTime → 新单 stakeTime 允许的最大间隔）
+const REINVEST_AMOUNT_TOLERANCE = 0.05;  // 金额容差 5%
+
+function buildReinvestNewOrderSet(allRecords) {
+    // ① 收集 restaked 旧单，按地址分桶
+    const restakedByAddr = new Map();
+    allRecords.forEach(r => {
+        if (r.status !== 'restaked') return;
+        const ts = Number(r.unstakeTime || r.unlockTime || 0);
+        if (ts <= 0) return;
+        const k = (r.address || '').toLowerCase();
+        if (!restakedByAddr.has(k)) restakedByAddr.set(k, []);
+        restakedByAddr.get(k).push({
+            orderId: r.orderId,
+            amount: Number(r.amount || 0),
+            amountWithProfit: Number(r.amountWithProfit || (r.amount || 0) + (r.profit || 0)),
+            unstakeTime: ts,
+            used: false,
+        });
+    });
+    restakedByAddr.forEach(list => list.sort((a, b) => a.unstakeTime - b.unstakeTime));
+
+    // ② 所有新单按 stakeTime 升序
+    const newOrders = allRecords
+        .filter(r => Number(r.stakeTime || 0) > 0)
+        .sort((a, b) => Number(a.stakeTime || 0) - Number(b.stakeTime || 0));
+
+    const reinvestSet = new Set();
+    const matchedOldByNew = new Map();
+
+    // ③ 第 1 遍：严格金额匹配（新单 amount 与旧单 amount 或 amountWithProfit 差 ≤ 5%）
+    for (const no of newOrders) {
+        const k = (no.address || '').toLowerCase();
+        const candidates = restakedByAddr.get(k) || [];
+        const ts = Number(no.stakeTime || 0);
+        const amt = Number(no.amount || 0);
+        let best = null, bestDiff = Infinity;
+        for (const old of candidates) {
+            if (old.used) continue;
+            if (old.unstakeTime > ts) continue;
+            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
+            const d1 = old.amount > 0 ? Math.abs(amt - old.amount) / old.amount : Infinity;
+            const d2 = old.amountWithProfit > 0 ? Math.abs(amt - old.amountWithProfit) / old.amountWithProfit : Infinity;
+            const diff = Math.min(d1, d2);
+            if (diff <= REINVEST_AMOUNT_TOLERANCE && diff < bestDiff) {
+                bestDiff = diff;
+                best = old;
+            }
+        }
+        if (best) {
+            best.used = true;
+            reinvestSet.add(no.orderId);
+            matchedOldByNew.set(no.orderId, best);
+        }
+    }
+
+    // ④ 第 2 遍：兜底（严格匹配失败时，取时间窗口内最早的未匹配旧单）
+    for (const no of newOrders) {
+        if (reinvestSet.has(no.orderId)) continue;
+        const k = (no.address || '').toLowerCase();
+        const candidates = restakedByAddr.get(k) || [];
+        const ts = Number(no.stakeTime || 0);
+        for (const old of candidates) {
+            if (old.used) continue;
+            if (old.unstakeTime > ts) continue;
+            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
+            old.used = true;
+            reinvestSet.add(no.orderId);
+            matchedOldByNew.set(no.orderId, old);
+            break;
+        }
+    }
+
+    return { reinvestSet, matchedOldByNew };
+}
+
+// 全局缓存：calcStatsFromRecords 后自动重建，其他模块调用 getReinvestSet() 读取
+let _reinvestSet = null;
+
+function rebuildReinvestSet() {
+    _reinvestSet = buildReinvestNewOrderSet(allStakeRecords).reinvestSet;
+    return _reinvestSet;
+}
+
+function getReinvestSet() {
+    if (_reinvestSet === null) rebuildReinvestSet();
+    return _reinvestSet;
 }
 
 // ================================================================
@@ -1303,8 +1396,8 @@ async function init() {
     document.getElementById('diagContract').innerText = CONFIG.CONTRACT;
     document.getElementById('diagContract').className = 'diag-value ok';
 
-    document.getElementById('diagUUSD').innerText = CONFIG.USDT;
-    document.getElementById('diagUUSD').className = 'diag-value ok';
+    document.getElementById('diagUSDT').innerText = CONFIG.USDT;
+    document.getElementById('diagUSDT').className = 'diag-value ok';
     document.getElementById('diagDev').innerText = CONFIG.ANG_TOKEN;
     document.getElementById('diagDev').className = 'diag-value ok';
     document.getElementById('diagPair').innerText = CONFIG.LP_PAIR;
@@ -1386,6 +1479,7 @@ function calcStatsFromRecords() {
         if (remain <= DURATION_7)  stats.unlock7d  += amt;
         if (remain <= DURATION_15) stats.unlock15d += amt;
     });
+    rebuildReinvestSet();
 }
 
 function updateStats() {
@@ -2033,26 +2127,33 @@ function updateTrendChart() {
     const ctx = document.getElementById('trendChart').getContext('2d');
     if(trendChart) trendChart.destroy();
 
+    const reinvestSet = getReinvestSet();
     const dailyNewMap = new Map(), dailyActiveMap = new Map();
     const dailyReinvestMap = new Map(), dailyRedeemMap = new Map();
 
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
         const amt = principalOf(r);
-        if(!dailyNewMap.has(ds)) dailyNewMap.set(ds, 0);
-        dailyNewMap.set(ds, dailyNewMap.get(ds) + amt);
-        if(r.isActive && r.unlockTime > 0) {
-            if(!dailyActiveMap.has(ds)) dailyActiveMap.set(ds, 0);
-            dailyActiveMap.set(ds, dailyActiveMap.get(ds) + amt);
+
+        // ✅ 新增 / 活跃 / 复投：全部按新单 stakeTime
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            dailyNewMap.set(ds, (dailyNewMap.get(ds) || 0) + amt);
+            if (r.isActive && r.unlockTime > 0) {
+                dailyActiveMap.set(ds, (dailyActiveMap.get(ds) || 0) + amt);
+            }
+            // ✅ 复投：复投新单，按新单 stakeTime
+            if (reinvestSet.has(r.orderId)) {
+                dailyReinvestMap.set(ds, (dailyReinvestMap.get(ds) || 0) + amt);
+            }
         }
-        if(r.status === 'restaked') {
-            if(!dailyReinvestMap.has(ds)) dailyReinvestMap.set(ds, 0);
-            dailyReinvestMap.set(ds, dailyReinvestMap.get(ds) + amt);
-        }
-        if(['redeemed','settled','expired'].includes(r.status)) {
-            if(!dailyRedeemMap.has(ds)) dailyRedeemMap.set(ds, 0);
-            dailyRedeemMap.set(ds, dailyRedeemMap.get(ds) + amt);
+
+        // ✅ 赎回：旧单退出，按旧单赎回时间（unstakeTime / redeemedAt）
+        if (['redeemed','settled','expired'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                const ds = getDateStr(ts);
+                dailyRedeemMap.set(ds, (dailyRedeemMap.get(ds) || 0) + amt);
+            }
         }
     });
 
@@ -2072,6 +2173,7 @@ function updateTrendChart() {
         },
         options: {
             responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
                 y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
                 x: { ticks: { color: '#8899bb', maxRotation: 30 } }
@@ -2486,19 +2588,27 @@ function exportCSV() {
 }
 
 function exportDailyStats() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
+        return dailyMap.get(ds);
+    }
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
         const p = principalOf(r);
-        d.stake += p;
-        if(r.isActive && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 'restaked') d.reinvest += p;
-        if(['redeemed','settled','expired'].includes(r.status)) d.redeem += p;
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            const d = ensureDay(ds);
+            d.stake += p;
+            if (r.isActive && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+            if (reinvestSet.has(r.orderId)) d.reinvest += p;
+        }
+        if (['redeemed','settled','expired'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += p;
+        }
     });
     const sorted = Array.from(dailyMap.keys()).sort().reverse();
     const headers = ['日期', '新增质押', '活跃质押', '15天周期', '30天周期', '复投', '赎回'];
@@ -2579,25 +2689,42 @@ function loadDailyStart() {
 }
 
 function updateDailyStats() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
+        return dailyMap.get(ds);
+    }
+
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
         const p = principalOf(r);
-        d.stake += p;
-        if(r.isActive && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 'restaked') d.reinvest += p;
-        if(['redeemed','settled','expired'].includes(r.status)) d.redeem += p;
+
+        // ✅ 质押类（新单，按 stakeTime）
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            const d = ensureDay(ds);
+            d.stake += p;
+            if (r.isActive && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+            if (reinvestSet.has(r.orderId)) d.reinvest += p;  // ✅ 复投新单
+        }
+
+        // ✅ 赎回类（旧单，按赎回时间）
+        if (['redeemed','settled','expired'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                ensureDay(getDateStr(ts)).redeem += p;
+            }
+        }
     });
 
     const sorted = Array.from(dailyMap.keys()).sort().reverse().slice(0, 30);
     const tbody = document.getElementById('dailyStatsBody');
-    if(!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
-
+    if (!sorted.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
     tbody.innerHTML = sorted.map(d => {
         const v = dailyMap.get(d);
         return `<tr>
@@ -2627,6 +2754,8 @@ function renderCashflow() {
     const rangeSel = document.getElementById('cashflowRange');
     const range = rangeSel ? parseInt(rangeSel.value) : 30;
 
+    const reinvestSet = getReinvestSet();
+
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
@@ -2639,12 +2768,21 @@ function renderCashflow() {
     }
 
     allStakeRecords.forEach(r => {
+        // ✅ 入金：所有新单，按 stakeTime
         if (r.stakeTime > 0) {
             const ds = getDateStr(r.stakeTime);
             const d = ensureDay(ds);
             d.in += principalOf(r);
             d.inCount += 1;
+
+            // ✅ 复投：复投新单，按新单 stakeTime（和"入金"同一天，标记其中来自复投的部分）
+            if (reinvestSet.has(r.orderId)) {
+                d.reinvest += principalOf(r);
+                d.reinvestCount += 1;
+            }
         }
+
+        // ✅ 出金：redeemed / settled / expired 旧单，按旧单赎回时间
         if (['redeemed','settled','expired'].includes(r.status)) {
             const ts = r.unstakeTime || r.unlockTime;
             if (ts > 0) {
@@ -2655,6 +2793,8 @@ function renderCashflow() {
                 d.reward += profitOf(r);
             }
         }
+
+        // ✅ 出金：restaked 旧单本息，按旧单赎回时间（本金进"复投"标记在新单侧，此处只算本息出金）
         if (r.status === 'restaked') {
             const ts = r.unstakeTime || r.unlockTime;
             if (ts > 0) {
@@ -2663,16 +2803,12 @@ function renderCashflow() {
                 d.out += totalOf(r);
                 d.outCount += 1;
                 d.reward += profitOf(r);
-                d.reinvest += principalOf(r);
-                d.reinvestCount += 1;
             }
         }
     });
 
     let dates = Array.from(dailyMap.keys()).sort();
-    if (range > 0) {
-        dates = dates.slice(-range);
-    }
+    if (range > 0) dates = dates.slice(-range);
 
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
@@ -2688,13 +2824,10 @@ function renderCashflow() {
         let totalInCount = 0, totalOutCount = 0, totalReinvestCount = 0;
         dates.forEach(ds => {
             const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
-            totalIn += d.in;
-            totalInCount += d.inCount;
-            totalOut += d.out;
-            totalOutCount += d.outCount;
+            totalIn += d.in; totalInCount += d.inCount;
+            totalOut += d.out; totalOutCount += d.outCount;
             totalReward += d.reward;
-            totalReinvest += d.reinvest;
-            totalReinvestCount += d.reinvestCount;
+            totalReinvest += d.reinvest; totalReinvestCount += d.reinvestCount;
         });
         document.getElementById('cfIn').innerText = totalIn.toFixed(2);
         document.getElementById('cfInSub').innerText = `质押 ${totalInCount} 笔`;
@@ -2708,7 +2841,7 @@ function renderCashflow() {
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
     dates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const d = dailyMap.get(ds) || { in:0, out:0, reward:0, reinvest:0 };
         const net = d.in - d.out;
         html += `<tr>
             <td>${ds}</td>
@@ -2724,7 +2857,6 @@ function renderCashflow() {
 
     const canvas = document.getElementById('cashflowChart');
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (cashflowChart) cashflowChart.destroy();
 
@@ -2752,11 +2884,9 @@ function renderCashflow() {
             interaction: { mode: 'index', intersect: false },
             onClick: (e, activeElements) => {
                 if (activeElements && activeElements.length > 0) {
-                    const index = activeElements[0].index;
-                    const clickedDate = dates[index];
+                    const clickedDate = dates[activeElements[0].index];
                     if (clickedDate) {
-                        const dateInput = document.getElementById('cashflowDate');
-                        dateInput.value = clickedDate;
+                        document.getElementById('cashflowDate').value = clickedDate;
                         renderCashflow();
                     }
                 }
@@ -2774,6 +2904,7 @@ function renderCashflow() {
 }
 
 function exportCashflow() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
@@ -2785,6 +2916,9 @@ function exportCashflow() {
         if (r.stakeTime > 0) {
             const d = ensureDay(getDateStr(r.stakeTime));
             d.in += principalOf(r); d.inCount += 1;
+            if (reinvestSet.has(r.orderId)) {
+                d.reinvest += principalOf(r); d.reinvestCount += 1;
+            }
         }
         if (['redeemed','settled','expired'].includes(r.status)) {
             const ts = r.unstakeTime || r.unlockTime;
@@ -2798,7 +2932,6 @@ function exportCashflow() {
             if (ts > 0) {
                 const d = ensureDay(getDateStr(ts));
                 d.out += totalOf(r); d.outCount += 1; d.reward += profitOf(r);
-                d.reinvest += principalOf(r); d.reinvestCount += 1;
             }
         }
     });
@@ -2885,14 +3018,12 @@ function renderReinvest() {
     const dateVal = document.getElementById('reinvestDate')?.value || '';
     const search = (document.getElementById('reinvestSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(r => r.status === 'restaked');
-    if (dateVal) {
-        list = list.filter(r => getDateStr(r.unstakeTime || r.unlockTime) === dateVal);
-    }
-    if (search) {
-        list = list.filter(r => r.address.toLowerCase().includes(search));
-    }
-    list.sort((a, b) => (b.unstakeTime || b.unlockTime || 0) - (a.unstakeTime || a.unlockTime || 0));
+    const reinvestSet = getReinvestSet();
+    // ✅ 改为：复投新单（按新单 stakeTime）
+    let list = allStakeRecords.filter(r => reinvestSet.has(r.orderId));
+    if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
     if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
@@ -2905,17 +3036,18 @@ function renderReinvest() {
         <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
         <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
         <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
+        <td>${formatTime(r.stakeTime)}</td>
     </tr>`).join('');
 }
 
 function exportReinvest() {
-    const list = allStakeRecords.filter(r => r.status === 'restaked');
+    const reinvestSet = getReinvestSet();
+    const list = allStakeRecords.filter(r => reinvestSet.has(r.orderId));
     if (!list.length) { alert('没有数据可导出'); return; }
     const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '复投时间'];
     const rows = list.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, formatTime(r.unstakeTime || r.unlockTime)
+        r.productText, formatTime(r.stakeTime)
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
@@ -3028,132 +3160,41 @@ function updateReportData() {
     const utcStartDisplay = fmtTsOffset(startTs, 0);
     const utcEndDisplay = fmtTsOffset(endTs, 0);
 
-    // ============================================================
-    // 复投识别（ANG 无 previousOrderId）
-    //   ① 旧单 status === 'restaked' 是复投的唯一可靠信号
-    //   ② 旧单 unstakeTime 记录的是"到期时刻"，而非 restake 时刻，
-    //      所以不能要求新旧订单时间戳相等
-    //   ③ 用 [unstakeTime, unstakeTime + 7天] 作为"可能产生复投新单"的时间窗口
-    //   ④ 再叠加金额匹配（amount 或 amountWithProfit，5% 容差），提高准确率
-    //   ⑤ 严格匹配优先；剩余未匹配的新单按时间窗口内最早未匹配旧单兜底
-    //   ⑥ 一笔旧单只匹配一笔新单（1:1）
-    // ============================================================
-    const REINVEST_WINDOW = 7 * 86400;   // restake 窗口 7 天
-    const AMOUNT_TOLERANCE = 0.05;       // 金额容差 5%
+    const reinvestSet = getReinvestSet();   // ✅ 统一调用
 
-    // 收集 restaked 旧单
-    const restakedByAddr = new Map();
-    allStakeRecords.forEach(r => {
-        if (r.status !== 'restaked') return;
-        const ts = Number(r.unstakeTime || r.unlockTime || 0);
-        if (ts <= 0) return;
-        const k = (r.address || '').toLowerCase();
-        if (!restakedByAddr.has(k)) restakedByAddr.set(k, []);
-        restakedByAddr.get(k).push({
-            orderId: r.orderId,
-            amount: Number(r.amount || 0),
-            amountWithProfit: Number(r.amountWithProfit || (r.amount || 0) + (r.profit || 0)),
-            unstakeTime: ts,
-            used: false,
-        });
-    });
-    restakedByAddr.forEach(list => list.sort((a, b) => a.unstakeTime - b.unstakeTime));
-
-    // 窗口内的新订单（按 stakeTime 升序）
-    const newOrdersInWindow = allStakeRecords
-        .filter(r => {
-            const ts = Number(r.stakeTime || 0);
-            return ts >= startTs && ts < endTs;
-        })
-        .sort((a, b) => Number(a.stakeTime || 0) - Number(b.stakeTime || 0));
-
-    // 第 1 遍：严格金额匹配
-    const reinvestMap = new Map();   // newOrderId → oldOrder
-    for (const no of newOrdersInWindow) {
-        const k = (no.address || '').toLowerCase();
-        const candidates = restakedByAddr.get(k) || [];
-        const ts = Number(no.stakeTime || 0);
-        const amt = Number(no.amount || 0);
-        let best = null, bestDiff = Infinity;
-        for (const old of candidates) {
-            if (old.used) continue;
-            if (old.unstakeTime > ts) continue;
-            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
-            const d1 = old.amount > 0 ? Math.abs(amt - old.amount) / old.amount : Infinity;
-            const d2 = old.amountWithProfit > 0 ? Math.abs(amt - old.amountWithProfit) / old.amountWithProfit : Infinity;
-            const diff = Math.min(d1, d2);
-            if (diff <= AMOUNT_TOLERANCE && diff < bestDiff) {
-                bestDiff = diff;
-                best = old;
-            }
-        }
-        if (best) {
-            best.used = true;
-            reinvestMap.set(no.orderId, best);
-        }
-    }
-
-    // 第 2 遍：兜底匹配（时间窗口内最早的未匹配旧单）
-    for (const no of newOrdersInWindow) {
-        if (reinvestMap.has(no.orderId)) continue;
-        const k = (no.address || '').toLowerCase();
-        const candidates = restakedByAddr.get(k) || [];
-        const ts = Number(no.stakeTime || 0);
-        for (const old of candidates) {
-            if (old.used) continue;
-            if (old.unstakeTime > ts) continue;
-            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
-            old.used = true;
-            reinvestMap.set(no.orderId, old);
-            break;
-        }
-    }
-
-    // ============================================================
-    // 统计
-    // ============================================================
-    let totalStakeAmt = 0, stakeCount = 0;
-    const stakeAddrs = new Set();
-
-    let firstStakeAmt = 0, firstStakeCount = 0;
-    const firstStakeAddrs = new Set();
-
-    let reinvestAmt = 0, reinvestCount = 0;
-    const reinvestAddrs = new Set();
-
+    let totalStakeAmt = 0, stakeCount = 0; const stakeAddrs = new Set();
+    let firstStakeAmt = 0, firstStakeCount = 0; const firstStakeAddrs = new Set();
+    let reinvestAmt = 0, reinvestCount = 0; const reinvestAddrs = new Set();
     let p15Amt = 0, p15Count = 0; const p15Addrs = new Set();
     let p30Amt = 0, p30Count = 0; const p30Addrs = new Set();
+    let redeemAmt = 0, redeemCount = 0; const redeemAddrs = new Set();
 
-    for (const r of newOrdersInWindow) {
-        const amt = Number(r.amount || 0);
-        totalStakeAmt += amt;
-        stakeCount++;
-        if (r.address) stakeAddrs.add(r.address);
+    allStakeRecords.forEach(r => {
+        // 质押类（新单，按 stakeTime）
+        if (r.stakeTime >= startTs && r.stakeTime < endTs) {
+            const amt = principalOf(r);
+            totalStakeAmt += amt;
+            stakeCount++;
+            stakeAddrs.add(r.address);
 
-        if (reinvestMap.has(r.orderId)) {
-            reinvestAmt += amt;
-            reinvestCount++;
-            if (r.address) reinvestAddrs.add(r.address);
-        } else {
-            firstStakeAmt += amt;
-            firstStakeCount++;
-            if (r.address) firstStakeAddrs.add(r.address);
+            if (reinvestSet.has(r.orderId)) {
+                reinvestAmt += amt; reinvestCount++; reinvestAddrs.add(r.address);
+            } else {
+                firstStakeAmt += amt; firstStakeCount++; firstStakeAddrs.add(r.address);
+            }
+
+            if (r.product === 0) { p15Amt += amt; p15Count++; p15Addrs.add(r.address); }
+            else if (r.product === 1) { p30Amt += amt; p30Count++; p30Addrs.add(r.address); }
         }
 
-        if (r.product === 0) { p15Amt += amt; p15Count++; if (r.address) p15Addrs.add(r.address); }
-        else if (r.product === 1) { p30Amt += amt; p30Count++; if (r.address) p30Addrs.add(r.address); }
-    }
-
-    // 赎回：旧单按 redeemedAt / unstakeTime / unlockTime 落窗口
-    const REDEEM_STATUSES = ['redeemed', 'settled', 'restaked', 'expired'];
-    let redeemAmt = 0, redeemCount = 0; const redeemAddrs = new Set();
-    allStakeRecords.forEach(r => {
-        if (!REDEEM_STATUSES.includes(r.status)) return;
-        const ts = Number(r.redeemedAt || r.unstakeTime || r.unlockTime || 0);
-        if (ts >= startTs && ts < endTs) {
-            redeemAmt += totalOf(r);
-            redeemCount++;
-            if (r.address) redeemAddrs.add(r.address);
+        // 赎回类（旧单，按赎回时间）
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = Number(r.unstakeTime || r.redeemedAt || r.unlockTime || 0);
+            if (ts >= startTs && ts < endTs) {
+                redeemAmt += totalOf(r);
+                redeemCount++;
+                redeemAddrs.add(r.address);
+            }
         }
     });
 
@@ -3164,7 +3205,7 @@ function updateReportData() {
     const reinvestPct = totalStakeAmt > 0 ? (reinvestAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
 
     // ============================================================
-    // HTML / 文本输出（和之前一致，只把"UUSD"改成"USDT"）
+    // HTML / 文本输出（和之前一致）
     // ============================================================
     const html = `
         <div style="font-family: sans-serif;">
