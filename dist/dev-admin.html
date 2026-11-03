@@ -3374,7 +3374,7 @@ function updateReportData() {
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押钱包（去重）</span><span>${stakeAddrs.size} 个</span></div>
                 <div style="border-top: 1px dashed #2a3a5a; margin-top: 8px; padding-top: 8px;">
                     <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
-                        <span style="color: #8899bb;">├ 首次质押（不含复投）</span>
+                        <span style="color: #8899bb;">├ 首次质押</span>
                         <span><span style="color:#22c55e;font-weight:600;">${fmt(firstStakeAmt)}</span> UUSD｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 钱包｜占 ${firstPct}%</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 4px;">
@@ -3414,7 +3414,7 @@ function updateReportData() {
 质押金额：${fmt(totalStakeAmt)} UUSD
 新增订单：${stakeCount} 笔
 质押钱包（去重地址）：${stakeAddrs.size} 个
-├ 首次质押（不含复投）：${fmt(firstStakeAmt)} UUSD｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 个钱包｜占 ${firstPct}%
+├ 首次质押：${fmt(firstStakeAmt)} UUSD｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 个钱包｜占 ${firstPct}%
 └ 复投质押：${fmt(reinvestAmt)} UUSD｜${reinvestCount} 笔｜${reinvestAddrs.size} 个钱包｜占 ${reinvestPct}%
 
 赎回金额：${fmt(redeemAmt)} UUSD
