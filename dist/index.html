@@ -1897,7 +1897,6 @@ function updateReportData() {
     const endStr = document.getElementById('reportEndDate').value;
     if (!startStr || !endStr) return;
 
-    // 【修改点】保留了原来的弹窗提示
     if (startStr > endStr) {
         alert('⚠️ 开始日期不能大于结束日期');
         return;
@@ -1913,36 +1912,48 @@ function updateReportData() {
     const isSingleDay = (startStr === endStr);
     const titleDate = isSingleDay ? startStr : `${startStr} 至 ${endStr}`;
 
-    // 双时间显示
     const bjStartDisplay  = fmtTsOffset(startTs, 8);
     const bjEndDisplay    = fmtTsOffset(endTs, 8);
     const utcStartDisplay = fmtTsOffset(startTs, 0);
     const utcEndDisplay   = fmtTsOffset(endTs, 0);
 
+    // 质押合计（含复投新单）
     let totalStakeAmt = 0, stakeCount = 0;
     const stakeAddrs = new Set();
-    
+
+    // 首次质押（不含复投）—— 新增
+    let firstStakeAmt = 0, firstStakeCount = 0;
+    const firstStakeAddrs = new Set();
+
+    // 周期分布（含复投）
     let p15Amt = 0, p15Count = 0; const p15Addrs = new Set();
     let p30Amt = 0, p30Count = 0; const p30Addrs = new Set();
 
+    // 复投
     let reinvestAmt = 0, reinvestCount = 0; const reinvestAddrs = new Set();
+
+    // 赎回（含 status 2 和 3）
     let redeemAmt = 0, redeemCount = 0; const redeemAddrs = new Set();
 
     allStakeRecords.forEach(r => {
-        // 1. 质押和复投统计（按创建时间 stakeTime）
         if (r.stakeTime >= startTs && r.stakeTime < endTs) {
             const amt = principalOf(r);
             totalStakeAmt += amt;
             stakeCount++;
             stakeAddrs.add(r.address);
 
-            // 【核心修复】复投判定：匹配原版 previousOrderId > 0 的逻辑
+            // 首投 / 复投 拆分：两者之和 = 质押金额
             if (r.previousOrderId > 0) {
                 reinvestAmt += amt;
                 reinvestCount++;
                 reinvestAddrs.add(r.address);
+            } else {
+                firstStakeAmt += amt;
+                firstStakeCount++;
+                firstStakeAddrs.add(r.address);
             }
 
+            // 周期分布：所有订单（含复投），与管理端口径一致
             if (r.product === 0) {
                 p15Amt += amt; p15Count++; p15Addrs.add(r.address);
             } else if (r.product === 1) {
@@ -1950,7 +1961,6 @@ function updateReportData() {
             }
         }
 
-        // 2. 赎回统计（按结束时间）
         if (r.status === 2 || r.status === 3) {
             const ts = r.redeemedAt || r.unlockTime;
             if (ts >= startTs && ts < endTs) {
@@ -1964,31 +1974,36 @@ function updateReportData() {
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const p30Pct = totalStakeAmt > 0 ? (p30Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const firstPct = totalStakeAmt > 0 ? (firstStakeAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const reinvestPct = totalStakeAmt > 0 ? (reinvestAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
 
-    // 生成与截图相同的卡片 UI
     const html = `
         <div style="font-family: sans-serif;">
             <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">数据简报｜${titleDate}</div>
             <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 4px; line-height: 1.6;">⏰ 北京时间：${bjStartDisplay} → ${bjEndDisplay}</div>
             <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 16px; line-height: 1.6;">⛓️ 链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}</div>
 
-            <!-- 质押金额 -->
+            <!-- 质押金额（含首次 + 复投） -->
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                 <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📥 质押金额：<span style="color: #10b981; font-size: 1.1rem;">${fmt(totalStakeAmt)} UUSD</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>新增订单</span><span>${stakeCount} 笔</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押钱包（去重）</span><span>${stakeAddrs.size} 个</span></div>
-            </div>
-
-            <!-- 复投金额 -->
-            <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">🔁 复投金额：<span style="color: #8b5cf6; font-size: 1.1rem;">${fmt(reinvestAmt)} UUSD</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>复投订单</span><span>${reinvestCount} 笔（${reinvestAddrs.size} 个钱包）</span></div>
+                <div style="border-top: 1px dashed #2a3a5a; margin-top: 8px; padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                        <span style="color: #8899bb;">├ 首次质押</span>
+                        <span><span style="color:#22c55e;font-weight:600;">${fmt(firstStakeAmt)}</span> UUSD｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 钱包｜占 ${firstPct}%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 4px;">
+                        <span style="color: #8899bb;">└ 复投质押</span>
+                        <span><span style="color:#8b5cf6;font-weight:600;">${fmt(reinvestAmt)}</span> UUSD｜${reinvestCount} 笔｜${reinvestAddrs.size} 钱包｜占 ${reinvestPct}%</span>
+                    </div>
+                </div>
             </div>
 
             <!-- 赎回金额 -->
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
                 <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 赎回金额：<span style="color: #f97316; font-size: 1.1rem;">${fmt(redeemAmt)} UUSD</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回（不含复投）</span><span>${redeemCount} 笔</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回（含本息）</span><span>${redeemCount} 笔</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>赎回钱包（去重）</span><span>${redeemAddrs.size} 个</span></div>
             </div>
 
@@ -2000,7 +2015,7 @@ function updateReportData() {
             </div>
 
             <div style="color: #64748b; font-size: 0.7rem; margin-top: 16px; text-align: center; border-top: 1px solid #2a3a5a; padding-top: 10px;">
-                注：同一钱包可参与多个周期，各周期钱包数不能相加。<br>
+                注：质押金额 = 首次质押 + 复投质押；周期分布含复投。<br>
                 详细数据：https://www.ganaweb3.top
             </div>
         </div>
@@ -2008,7 +2023,6 @@ function updateReportData() {
 
     document.getElementById('reportContent').innerHTML = html;
 
-    // 纯文本复制逻辑更新
     currentReportText = `数据简报｜${titleDate}
 北京时间：${bjStartDisplay} → ${bjEndDisplay}
 链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}
@@ -2016,9 +2030,8 @@ function updateReportData() {
 质押金额：${fmt(totalStakeAmt)} UUSD
 新增订单：${stakeCount} 笔
 质押钱包（去重地址）：${stakeAddrs.size} 个
-
-复投金额：${fmt(reinvestAmt)} UUSD
-复投订单：${reinvestCount} 笔（${reinvestAddrs.size} 个钱包）
+├ 首次质押：${fmt(firstStakeAmt)} UUSD｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 个钱包｜占 ${firstPct}%
+└ 复投质押：${fmt(reinvestAmt)} UUSD｜${reinvestCount} 笔｜${reinvestAddrs.size} 个钱包｜占 ${reinvestPct}%
 
 赎回金额：${fmt(redeemAmt)} UUSD
 订单赎回：${redeemCount} 笔
@@ -2028,9 +2041,9 @@ function updateReportData() {
 15 天：${fmt(p15Amt)} UUSD｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
 30 天：${fmt(p30Amt)} UUSD｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包
 
-注：同一钱包可参与多个周期，各周期钱包数不能相加。
+注：质押金额 = 首次质押 + 复投质押；周期分布含复投。
 详细数据：https://www.ganaweb3.top`;
-} 
+}
 
 function copyReportText() {
     if (!currentReportText) return;
