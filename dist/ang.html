@@ -521,7 +521,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive" style="max-height:600px;">
                 <table class="table">
                     <thead>
-                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>复投时间</th></tr>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>复投时间</th></tr>
                     </thead>
                     <tbody id="reinvestTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
@@ -766,13 +766,20 @@ function buildReinvestNewOrderSet(allRecords) {
 }
 
 let _reinvestSet = null;
+let _reinvestMatch = null;
 function rebuildReinvestSet() {
-    _reinvestSet = buildReinvestNewOrderSet(allStakeRecords).reinvestSet;
+    const r = buildReinvestNewOrderSet(allStakeRecords);
+    _reinvestSet = r.reinvestSet;
+    _reinvestMatch = r.matchedOldByNew;
     return _reinvestSet;
 }
 function getReinvestSet() {
     if (_reinvestSet === null) rebuildReinvestSet();
     return _reinvestSet;
+}
+function getReinvestMatch() {
+    if (_reinvestMatch === null) rebuildReinvestSet();
+    return _reinvestMatch;
 }
 
 // ================================================================
@@ -1233,8 +1240,8 @@ function updateTrendChart() {
             }
         }
 
-        // ✅ 赎回：旧单退出，按旧单结束时间
-        if (isSettledOf(r)) {
+        // ✅ 赎回：含被复投的旧单（restaked），按旧单结束时间，本息
+        if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts > 0) {
                 const ds = getDateStr(ts);
@@ -1514,10 +1521,10 @@ function updateDailyStats() {
             if (reinvestSet.has(r.orderId)) d.reinvest += p;
         }
 
-        // ✅ 赎回类（旧单，按结束时间）
-        if (isSettledOf(r)) {
+        // ✅ 赎回类（旧单，含被复投的，本息）
+        if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
-            if (ts > 0) ensureDay(getDateStr(ts)).redeem += p;
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
         }
     });
 
@@ -1792,7 +1799,7 @@ function renderRedeem() {
     const dateVal = $('redeemDate')?.value || '';
     const search = ($('redeemSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(isSettledOf);
+    let list = allStakeRecords.filter(isClosedOf);
     if (dateVal) list = list.filter(r => getDateStr(r.unstakeTime || r.unlockTime) === dateVal);
     if (search) list = list.filter(r => r.address.includes(search));
     list.sort((a, b) => (b.unstakeTime || b.unlockTime || 0) - (a.unstakeTime || a.unlockTime || 0));
@@ -1801,16 +1808,19 @@ function renderRedeem() {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
         return;
     }
-    tbody.innerHTML = list.map((r, i) => `<tr>
-        <td>${i+1}</td>
-        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
-        <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${statusText(r.status)}</td>
-        <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
-    </tr>`).join('');
+    tbody.innerHTML = list.map((r, i) => {
+        const isRestaked = r.status === 'restaked';
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}${isRestaked ? ' <span style="font-size:0.55rem;color:#c084fc;border:1px solid #c084fc;border-radius:3px;padding:0 3px;">复投</span>' : ''}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
+            <td>${statusText(r.status)}</td>
+            <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function renderReinvest() {
@@ -1820,25 +1830,30 @@ function renderReinvest() {
     const search = ($('reinvestSearch')?.value || '').toLowerCase().trim();
 
     const reinvestSet = getReinvestSet();
-    // ✅ 复投新单（按新单 stakeTime）
-    let list = allStakeRecords.filter(r => reinvestSet.has(r.orderId));
+    const reinvestMatch = getReinvestMatch();
+    // ✅ 对齐 DEV：只显示活跃中的复投新单
+    let list = activeRecords.filter(r => reinvestSet.has(r.orderId));
     if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
     if (search) list = list.filter(r => r.address.includes(search));
     list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
         return;
     }
-    tbody.innerHTML = list.map((r, i) => `<tr>
-        <td>${i+1}</td>
-        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
-        <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${formatTime(r.stakeTime)}</td>
-    </tr>`).join('');
+    tbody.innerHTML = list.map((r, i) => {
+        const old = reinvestMatch.get(r.orderId);
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
+            <td>${old ? ('#' + old.orderId) : '--'}</td>
+            <td>${formatTime(r.stakeTime)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function renderExpired() {
