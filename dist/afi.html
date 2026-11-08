@@ -344,8 +344,8 @@ body {
         <div class="label">总活跃本金 (USDT)</div>
       </div>
       <div class="stat-item">
-        <div class="num" id="homeMyComp">--</div>
-        <div class="label">我的活跃本金</div>
+        <div class="num" id="homePayable">--</div>
+        <div class="label">可兑付金额 (USDT)</div>
       </div>
     </div>
 
@@ -929,7 +929,8 @@ function resetUI() {
 
   $('homeNextOrderId').textContent = '--';
   $('homeTotalActive').textContent = '--';
-  $('homeMyComp').textContent = '--';
+  $('homePayable').textContent = '--';
+  $('homePayable').style.color = '';
   $('stakeTotalActive').textContent = '--';
   $('stakeProtection').textContent = '--';
   $('statusProtection').textContent = '--';
@@ -1128,7 +1129,6 @@ async function loadAllData() {
 
     $('homeNextOrderId').textContent = (Number(nextId) - 1).toString();
     $('homeTotalActive').textContent = formatUnits(totalActive, usdtDecimals, 2);
-    $('homeMyComp').textContent = formatUnits(myActive, usdtDecimals, 2);
     $('stakeTotalActive').textContent = formatUnits(totalActive, usdtDecimals, 2);
     $('minStakeLabel').textContent = formatUnits(minAmt, usdtDecimals, 0);
     $('maxStakeLabel').textContent = formatUnits(maxAmt, usdtDecimals, 0);
@@ -1155,6 +1155,16 @@ async function loadAllData() {
     } else {
       $('statusProtection').textContent = '--';
       $('statusLp').textContent = '--';
+    }
+
+    // 可兑付金额 = 当前 LP 储备 − 熔断触发阈值
+    if (prot && prot.currentReserve != null && prot.triggerReserve != null) {
+      const lpNum = parseFloat(ethers.formatUnits(prot.currentReserve, 18));
+      const triggerNum = parseFloat(ethers.formatUnits(prot.triggerReserve, 18));
+      const payable = lpNum - triggerNum;
+      const el = $('homePayable');
+      el.textContent = Math.max(0, payable).toFixed(2);
+      el.style.color = payable <= 0 ? 'var(--red)' : 'var(--gold)';
     }
 
     await renderProtectionDiagnosis();
