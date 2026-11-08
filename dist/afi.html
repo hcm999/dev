@@ -724,11 +724,27 @@ function selectProduct(periodDays) {
   updatePreview();
 }
 
-function updatePreview() {
+async function updatePreview() {
   const val = parseFloat($('stakeInput').value) || 0;
-  const rate = selectedProduct === 15 ? 0.15 : 0.45;
+
+  // 从合约读取日利率（BPS，1/10000）
+  let dailyRateBps;
+  try {
+    if (selectedProduct === 15) {
+      dailyRateBps = Number(await stakingContract.DAILY_RATE_15_BPS());
+    } else {
+      dailyRateBps = Number(await stakingContract.DAILY_RATE_30_BPS());
+    }
+  } catch (e) {
+    // 未连接钱包时的回退值，按合约实际值修改
+    dailyRateBps = selectedProduct === 15 ? 150 : 200;
+  }
+
+  // 总收益率 = 日利率 * 天数 / 10000
+  const rate = (dailyRateBps * selectedProduct) / 10000;
   const profit = val * rate;
   $('previewProfit').textContent = profit.toFixed(2) + ' USDT';
+
   const days = selectedProduct;
   const end = new Date(Date.now() + days * 86400 * 1000);
   $('previewEndTime').textContent = end.toLocaleString('zh-CN', {
@@ -737,7 +753,7 @@ function updatePreview() {
 }
 
 $('stakeInput').addEventListener('input', updatePreview);
-
+  
 // ================================================================
 // 连接钱包
 // ================================================================
