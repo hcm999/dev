@@ -242,9 +242,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="stat-sub">活跃质押 / LP</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">📊 本金覆盖率</div>
-            <div class="stat-value" id="coverageRate">0.00%</div>
-            <div class="stat-sub">LP / 活跃质押</div>
+            <div class="stat-title">💵 可兑付金额</div>
+            <div class="stat-value" id="payableAmount">--</div>
+            <div class="stat-sub">LP − 熔断阈值 (USDT)</div>
         </div>
     </div>
 
@@ -585,6 +585,8 @@ const CONFIG = {
     // 白名单 / 付费校验：沿用 DEV 的数据
     AUTH_PROJECT_ID: 'dev',
     ACCESS_PASSWORD: 'dev-2025',
+    STAKING_CONTRACT: '0x220cc4a150df778599f39c3de3825ffb3170908b',  // 新增
+    BSC_RPC: 'https://bsc-dataseed.binance.org/',                       // 新增
 };
 
 let payInfo = {
@@ -615,10 +617,18 @@ let stats = {
     totalStaked: 0, activeStaked: 0,
     staked15d: 0, staked30d: 0,
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
-    lpBalance: 0, lpAngReserve: 0, totalOrders: 0
+    lpBalance: 0, lpAngReserve: 0, totalOrders: 0,
+    triggerReserve: 0   // 新增
 };
 
 let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
+
+// 链上触发阈值缓存（5分钟）
+const PROTECTION_ABI = [
+    "function protectionInfo() view returns (bool active, uint256 round, uint256 highReserve, uint256 currentReserve, uint256 triggerReserve, uint256 eligiblePrincipal, uint256 ratioE18, uint256 userPayoutBps, uint256 backstopPayoutBps, uint256 firstCutoffOrderId)"
+];
+let _triggerCache = { value: 0, ts: 0 };
+const TRIGGER_CACHE_MS = 5 * 60 * 1000;
 
 // ================================================================
 // 工具
@@ -686,6 +696,29 @@ function normalizeRec(r) {
     if (r.status === 'active' && r.unlockTime > 0 && r.unlockTime <= now) r.status = 'matured';
     r.isActive = (r.status === 'active' || r.status === 'matured');
     return r;
+}
+
+// 从链上直读触发阈值（避免依赖脚本上传的 stats）
+async function fetchTriggerReserveFromChain() {
+    if (_triggerCache.value > 0 && Date.now() - _triggerCache.ts < TRIGGER_CACHE_MS) {
+        return _triggerCache.value;
+    }
+    try {
+        const provider = new ethers.JsonRpcProvider(CONFIG.BSC_RPC, undefined, {
+            batchMaxCount: 1, staticNetwork: true
+        });
+        const c = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
+        const info = await c.protectionInfo();
+        const triggerWei = info.triggerReserve ?? info[4];
+        const trigger = parseFloat(ethers.formatUnits(triggerWei, 18));
+        if (trigger > 0) {
+            _triggerCache = { value: trigger, ts: Date.now() };
+        }
+        return trigger;
+    } catch (e) {
+        console.warn('读取链上触发阈值失败:', e);
+        return 0;
+    }
 }
 
 // ================================================================
@@ -975,6 +1008,12 @@ async function loadCloudData() {
         stats.lpBalance = Number(cs.lpBalance || 0);
         stats.lpAngReserve = Number(cs.lpAngReserve || 0);
         stats.totalOrders = Number(cs.totalOrders || 0);
+        stats.triggerReserve = Number(cs.triggerReserve || 0);
+
+        // 优先用链上实时值（脚本增量上传不会带 triggerReserve）
+        const chainTrigger = await fetchTriggerReserveFromChain();
+        if (chainTrigger > 0) stats.triggerReserve = chainTrigger;
+        stats.triggerReserve = Number(cs.triggerReserve || 0);   // 新增
 
         // 结算口径
         const cloudStartHour = cs.dailyStartHour ?? cloudData.dailyStartHour;
@@ -1062,8 +1101,20 @@ function updateStats() {
     // 本金口径
     const bubble = lp > 0 ? active / lp : 0;
     $('bubbleValue').innerText = bubble.toFixed(2);
-    const coverage = active > 0 ? lp / active * 100 : 0;
-    $('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // 可兑付金额 = LP − 触发阈值
+    const trigger = Number(stats.triggerReserve || 0);
+    const payEl = $('payableAmount');
+    if (payEl) {
+        if (trigger > 0) {
+            const payable = lp - trigger;
+            payEl.innerText = payable.toFixed(2);
+            payEl.style.color = payable <= 0 ? '#f87171' : '#3b82f6';
+        } else {
+            payEl.innerText = '--';
+            payEl.style.color = '#8899bb';
+        }
+    }
 
     // 含收益口径
     let activeWithProfit = 0;
