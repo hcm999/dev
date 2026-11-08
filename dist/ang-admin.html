@@ -258,9 +258,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
     </div>
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock2dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock7dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock15dPct">占可兑付 --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
             <div class="stat-title">💰 LP池余额 <span style="font-size:0.7rem;color:#60a5fa;">🔄</span></div>
             <div class="stat-value" id="lpBalance">0.00</div>
@@ -269,10 +269,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">🫧 含收益泡沫</div><div class="stat-value" id="bubbleWithProfit">0.00</div><div class="stat-sub">(活跃本金+收益) / LP</div></div>
-        <div class="stat-card"><div class="stat-title">📊 含收益覆盖率</div><div class="stat-value" id="coverageWithProfit">0.00%</div><div class="stat-sub">LP / (活跃本金+收益)</div></div>
-        <div class="stat-card"><div class="stat-title">🫧 本金泡沫</div><div class="stat-value" id="bubbleValue">0.00</div><div class="stat-sub">活跃质押 / LP</div></div>
-        <div class="stat-card"><div class="stat-title">💵 可兑付金额</div><div class="stat-value" id="payableAmount">--</div><div class="stat-sub">LP − 熔断阈值 (USDT)</div></div>
+        <div class="stat-card"><div class="stat-title">🫧 含收益泡沫</div><div class="stat-value" id="bubbleWithProfit">0.00</div><div class="stat-sub">(本息) / 可兑付</div></div>
+        <div class="stat-card"><div class="stat-title">📊 含收益覆盖率</div><div class="stat-value" id="coverageWithProfit">0.00%</div><div class="stat-sub">可兑付 / (本息)</div></div>
+        <div class="stat-card"><div class="stat-title">🫧 本金泡沫</div><div class="stat-value" id="bubbleValue">0.00</div><div class="stat-sub">活跃质押 / 可兑付</div></div>
+        <div class="stat-card"><div class="stat-title">💵 可兑付金额</div><div class="stat-value" id="payableAmount">--</div><div class="stat-sub">LP − 熔断阈值</div></div>
     </div>
 
     <div class="data-tabs">
@@ -1497,6 +1497,19 @@ function calcStatsFromRecords() {
     rebuildReinvestSet();
 }
 
+function setUnlockPct(elId, val, payable) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (payable <= 0) {
+        el.innerText = '占DF --';
+        el.style.color = '#8899bb';
+        return;
+    }
+    const pct = val / payable * 100;
+    el.innerText = '占DF ' + pct.toFixed(2) + '%';
+    el.style.color = pct > 100 ? '#f87171' : '#fbbf24';
+}
+
 function updateStats() {
     document.getElementById('totalStaked').innerText = stats.totalStaked.toFixed(2);
     document.getElementById('activeStaked').innerText = stats.activeStaked.toFixed(2);
@@ -1514,20 +1527,14 @@ function updateStats() {
     document.getElementById('activePct').innerText = '占LP ' + (lp > 0 ? (active / lp * 100) : 0).toFixed(2) + '%';
     document.getElementById('p15Pct').innerText = '占比 ' + (active > 0 ? (stats.staked15d / active * 100) : 0).toFixed(2) + '%';
     document.getElementById('p30Pct').innerText = '占比 ' + (active > 0 ? (stats.staked30d / active * 100) : 0).toFixed(2) + '%';
-    document.getElementById('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
-    document.getElementById('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
-    document.getElementById('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
 
-    // 本金口径
-    const bubble = lp > 0 ? active / lp : 0;
-    document.getElementById('bubbleValue').innerText = bubble.toFixed(2);
-
-    // 可兑付金额 = LP − 触发阈值
+    // ===== 可兑付（后续所有比例的分母）=====
     const trigger = Number(stats.triggerReserve || 0);
     const payEl = document.getElementById('payableAmount');
+    let payable = 0;
     if (payEl) {
         if (trigger > 0) {
-            const payable = lp - trigger;
+            payable = lp - trigger;
             payEl.innerText = payable.toFixed(2);
             payEl.style.color = payable <= 0 ? '#f87171' : '#3b82f6';
         } else {
@@ -1535,35 +1542,62 @@ function updateStats() {
             payEl.style.color = '#8899bb';
         }
     }
+    const hasPayable = payable > 0;
 
-    // 含收益口径（活跃本金 + 名义收益）
+    // 到期占可兑付
+    setUnlockPct('unlock2dPct',  stats.unlock2d,  payable);
+    setUnlockPct('unlock7dPct',  stats.unlock7d,  payable);
+    setUnlockPct('unlock15dPct', stats.unlock15d, payable);
+
+    // 本金泡沫 = 活跃质押 / 可兑付
+    const bubbleEl = document.getElementById('bubbleValue');
+    if (hasPayable) {
+        const bubble = active / payable;
+        bubbleEl.innerText = bubble.toFixed(2);
+        bubbleEl.style.color = bubble >= 1 ? '#f87171' : '#3b82f6';
+    } else {
+        bubbleEl.innerText = '--';
+        bubbleEl.style.color = '#8899bb';
+    }
+
+    // 含收益口径 = (活跃本金+收益) / 可兑付
     let activeWithProfit = 0;
     queryResults.forEach(r => {
         if (!r.isActive) return;
         activeWithProfit += totalOf(r);
     });
-    const bubbleWithProfit   = lp > 0 ? activeWithProfit / lp : 0;
-    const coverageWithProfit = activeWithProfit > 0 ? lp / activeWithProfit * 100 : 0;
 
     const bwEl = document.getElementById('bubbleWithProfit');
     const cwEl = document.getElementById('coverageWithProfit');
-    if (bwEl) {
-        bwEl.innerText = bubbleWithProfit.toFixed(2);
-        bwEl.style.color = bubbleWithProfit >= 1 ? '#f87171' : '#3b82f6';
-    }
-    if (cwEl) {
-        cwEl.innerText = coverageWithProfit.toFixed(2) + '%';
-        cwEl.style.color = coverageWithProfit < 100 ? '#f87171' : '#22c55e';
-    }
-
     const hintEl = document.getElementById('bubbleCoverageHint');
-    if (hintEl) {
-        const danger = bubbleWithProfit >= 1;
-        const c = danger ? '#f87171' : '#22c55e';
-        hintEl.innerHTML =
-            `💡 含收益泡沫: <b style="color:${c}">${bubbleWithProfit.toFixed(2)}</b>` +
-            ` · 覆盖率: <b style="color:${c}">${coverageWithProfit.toFixed(2)}%</b>` +
-            `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
+
+    if (hasPayable && activeWithProfit > 0) {
+        const bubbleWithProfit   = activeWithProfit / payable;
+        const coverageWithProfit = payable / activeWithProfit * 100;
+
+        if (bwEl) {
+            bwEl.innerText = bubbleWithProfit.toFixed(2);
+            bwEl.style.color = bubbleWithProfit >= 1 ? '#f87171' : '#3b82f6';
+        }
+        if (cwEl) {
+            cwEl.innerText = coverageWithProfit.toFixed(2) + '%';
+            cwEl.style.color = coverageWithProfit < 100 ? '#f87171' : '#22c55e';
+        }
+        if (hintEl) {
+            const danger = bubbleWithProfit >= 1;
+            const c = danger ? '#f87171' : '#22c55e';
+            hintEl.innerHTML =
+                `💡 含收益泡沫: <b style="color:${c}">${bubbleWithProfit.toFixed(2)}</b>` +
+                ` · 覆盖率: <b style="color:${c}">${coverageWithProfit.toFixed(2)}%</b>` +
+                `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / 可兑付）</span>`;
+        }
+    } else {
+        if (bwEl) { bwEl.innerText = '--'; bwEl.style.color = '#8899bb'; }
+        if (cwEl) { cwEl.innerText = '--'; cwEl.style.color = '#8899bb'; }
+        if (hintEl) {
+            hintEl.innerHTML = `💡 含收益泡沫: <b>--</b> · 覆盖率: <b>--</b>` +
+                `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / 可兑付）</span>`;
+        }
     }
 }
 
