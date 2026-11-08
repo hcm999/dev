@@ -148,7 +148,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div style="font-weight:600;margin-bottom:6px;">🔍 连接诊断</div>
         <div class="diag-row"><span class="diag-label">运行环境</span><span class="diag-value" id="diagEnv">--</span></div>
         <div class="diag-row"><span class="diag-label">质押合约</span><span class="diag-value" id="diagContract">检查中...</span></div>
-        <div class="diag-row"><span class="diag-label">USDT</span><span class="diag-value" id="diagUUSD">--</span></div>
+        <div class="diag-row"><span class="diag-label">USDT</span><span class="diag-value" id="diagUSDT">--</span></div>
         <div class="diag-row"><span class="diag-label">ANG Token</span><span class="diag-value" id="diagDev">--</span></div>
         <div class="diag-row"><span class="diag-label">LP Pair</span><span class="diag-value" id="diagPair">--</span></div>
         <div class="diag-row"><span class="diag-label">LP池 USDT</span><span class="diag-value" id="diagLPBalance">--</span></div>
@@ -156,6 +156,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="diag-row"><span class="diag-label">查询地址数</span><span class="diag-value" id="diagAddressCount">0</span></div>
         <div class="diag-row"><span class="diag-label">活跃记录数</span><span class="diag-value" id="diagRecordCount">0</span></div>
         <div class="diag-row"><span class="diag-label">当前节点</span><span class="diag-value" id="diagNode">--</span></div>
+        <div class="diag-row"><span class="diag-label">事件同步区块</span><span class="diag-value" id="diagSyncBlock">--</span></div>
     </div>
 
     <div class="diagnostic-box" id="protectionPanel" style="border-color:#f59e0b;">
@@ -271,7 +272,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🫧 含收益泡沫</div><div class="stat-value" id="bubbleWithProfit">0.00</div><div class="stat-sub">(活跃本金+收益) / LP</div></div>
         <div class="stat-card"><div class="stat-title">📊 含收益覆盖率</div><div class="stat-value" id="coverageWithProfit">0.00%</div><div class="stat-sub">LP / (活跃本金+收益)</div></div>
         <div class="stat-card"><div class="stat-title">🫧 本金泡沫</div><div class="stat-value" id="bubbleValue">0.00</div><div class="stat-sub">活跃质押 / LP</div></div>
-        <div class="stat-card"><div class="stat-title">📊 本金覆盖率</div><div class="stat-value" id="coverageRate">0.00%</div><div class="stat-sub">LP / 活跃质押</div></div>
+        <div class="stat-card"><div class="stat-title">💵 可兑付金额</div><div class="stat-value" id="payableAmount">--</div><div class="stat-sub">LP − 熔断阈值 (USDT)</div></div>
     </div>
 
     <div class="data-tabs">
@@ -481,7 +482,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <div id="panel-reinvest" class="data-panel">
         <div class="table-container">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-                <h5 style="color:#e8edf5;">🔁 复投记录 <span style="font-size:0.7rem;color:#8899bb;">（旧单被 restake 标记）</span></h5>
+                <h5 style="color:#e8edf5;">🔁 复投记录 <span style="font-size:0.7rem;color:#8899bb;">（复投新单，按新单质押时间）</span></h5>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="date" id="reinvestDate" class="filter-select" style="width:auto;" onchange="renderReinvest()">
                     <input type="text" id="reinvestSearch" class="search-input" placeholder="搜索地址..." oninput="renderReinvest()">
@@ -490,7 +491,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
             <div class="table-responsive" style="max-height:600px;">
                 <table class="table">
-                    <thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>复投时间</th></tr></thead>
+                    <thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>复投时间</th></tr></thead>
                     <tbody id="reinvestTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
             </div>
@@ -587,6 +588,7 @@ let stats = {
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
     lpBalance: 0, lpAngReserve: 0, totalOrders: 0,
     protectionActive: false, protectionRatio: 1,
+    historicalHighReserve: 0, triggerReserve: 0,   // 新增
 };
 let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
@@ -696,6 +698,107 @@ function dedupeAddresses(text) {
 }
 
 // ================================================================
+// 复投新单识别（ANG 无 previousOrderId，用旧单 restaked + 时间窗口 + 金额容差匹配）
+// 返回 { reinvestSet: Set<newOrderId>, matchedOldByNew: Map<newOrderId, oldOrder> }
+// ================================================================
+const REINVEST_WINDOW = 7 * 86400;   // restake 时间窗口（旧单 unstakeTime → 新单 stakeTime 允许的最大间隔）
+const REINVEST_AMOUNT_TOLERANCE = 0.05;  // 金额容差 5%
+
+function buildReinvestNewOrderSet(allRecords) {
+    // ① 收集 restaked 旧单，按地址分桶
+    const restakedByAddr = new Map();
+    allRecords.forEach(r => {
+        if (r.status !== 'restaked') return;
+        const ts = Number(r.unstakeTime || r.unlockTime || 0);
+        if (ts <= 0) return;
+        const k = (r.address || '').toLowerCase();
+        if (!restakedByAddr.has(k)) restakedByAddr.set(k, []);
+        restakedByAddr.get(k).push({
+            orderId: r.orderId,
+            amount: Number(r.amount || 0),
+            amountWithProfit: Number(r.amountWithProfit || (r.amount || 0) + (r.profit || 0)),
+            unstakeTime: ts,
+            used: false,
+        });
+    });
+    restakedByAddr.forEach(list => list.sort((a, b) => a.unstakeTime - b.unstakeTime));
+
+    // ② 所有新单按 stakeTime 升序
+    const newOrders = allRecords
+        .filter(r => Number(r.stakeTime || 0) > 0)
+        .sort((a, b) => Number(a.stakeTime || 0) - Number(b.stakeTime || 0));
+
+    const reinvestSet = new Set();
+    const matchedOldByNew = new Map();
+
+    // ③ 第 1 遍：严格金额匹配（新单 amount 与旧单 amount 或 amountWithProfit 差 ≤ 5%）
+    for (const no of newOrders) {
+        const k = (no.address || '').toLowerCase();
+        const candidates = restakedByAddr.get(k) || [];
+        const ts = Number(no.stakeTime || 0);
+        const amt = Number(no.amount || 0);
+        let best = null, bestDiff = Infinity;
+        for (const old of candidates) {
+            if (old.used) continue;
+            if (old.unstakeTime > ts) continue;
+            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
+            const d1 = old.amount > 0 ? Math.abs(amt - old.amount) / old.amount : Infinity;
+            const d2 = old.amountWithProfit > 0 ? Math.abs(amt - old.amountWithProfit) / old.amountWithProfit : Infinity;
+            const diff = Math.min(d1, d2);
+            if (diff <= REINVEST_AMOUNT_TOLERANCE && diff < bestDiff) {
+                bestDiff = diff;
+                best = old;
+            }
+        }
+        if (best) {
+            best.used = true;
+            reinvestSet.add(no.orderId);
+            matchedOldByNew.set(no.orderId, best);
+        }
+    }
+
+    // ④ 第 2 遍：兜底（严格匹配失败时，取时间窗口内最早的未匹配旧单）
+    for (const no of newOrders) {
+        if (reinvestSet.has(no.orderId)) continue;
+        const k = (no.address || '').toLowerCase();
+        const candidates = restakedByAddr.get(k) || [];
+        const ts = Number(no.stakeTime || 0);
+        for (const old of candidates) {
+            if (old.used) continue;
+            if (old.unstakeTime > ts) continue;
+            if (ts - old.unstakeTime > REINVEST_WINDOW) continue;
+            old.used = true;
+            reinvestSet.add(no.orderId);
+            matchedOldByNew.set(no.orderId, old);
+            break;
+        }
+    }
+
+    return { reinvestSet, matchedOldByNew };
+}
+
+// 全局缓存：calcStatsFromRecords 后自动重建，其他模块调用 getReinvestSet() 读取
+let _reinvestSet = null;
+let _reinvestMatch = null;
+
+function rebuildReinvestSet() {
+    const r = buildReinvestNewOrderSet(allStakeRecords);
+    _reinvestSet = r.reinvestSet;
+    _reinvestMatch = r.matchedOldByNew;
+    return _reinvestSet;
+}
+
+function getReinvestSet() {
+    if (_reinvestSet === null) rebuildReinvestSet();
+    return _reinvestSet;
+}
+
+function getReinvestMatch() {
+    if (_reinvestMatch === null) rebuildReinvestSet();
+    return _reinvestMatch;
+}
+
+// ================================================================
 // ABI
 // ================================================================
 const STAKING_ABI = [
@@ -728,6 +831,12 @@ const STAKING_ABI = [
     "function DAILY_RATE_30_BPS() view returns (uint256)",
     "function ANG() view returns (address)",
     "function USDT() view returns (address)",
+"event Staked(address indexed user, uint256 indexed orderId, uint256 indexed index, uint256 amount, uint8 periodDays, uint256 maturityTime)",
+"event PrincipalRedeemed(address indexed user, uint256 indexed orderId, uint256 indexed index, uint256 principal, uint256 protectionGrossPayout, uint256 userPrincipalPaid, uint256 backstopPaid, bool protectionRedeem, uint256 protectionRound, uint256 protectionRatioE18, uint256 usedAng)",
+"event ProfitClaimed(address indexed user, uint256 indexed orderId, uint256 indexed index, uint256 totalProfitUSDT, uint256 staticProfitUSDTValue, uint256 userUSDT, uint256 userANG, uint256 systemUSDT, uint256 usedAngForUSDT)",
+"event ProfitPreparedOnUnstake(address indexed user, uint256 indexed orderId, uint256 userUSDT, uint256 userANG)",
+"event OrderProfitExpired(address indexed user, uint256 indexed orderId, uint256 releasedANG)",
+"event NodeRewardPaidOnRestake(address indexed user, uint256 indexed orderId, uint256 nodeUSDT)"
 ];
 
 const ANG_TOKEN_ABI = [
@@ -929,64 +1038,265 @@ async function fullQuery() {
 }
 
 // ================================================================
+// 事件增量同步（按 logs 扫地址，告别每次下载全量地址）
+// ================================================================
+const SCAN_CONFIG = {
+    BLOCK_CHUNK: 5000,   // getLogs 每次跨度；节点偶尔 502 会自动重试
+    BLOCK_KEY: 'angLastSyncedBlock_v1',
+    RETRY: 4,
+};
+
+function _getSyncBlock() {
+    return parseInt(localStorage.getItem(SCAN_CONFIG.BLOCK_KEY) || '0');
+}
+function _setSyncBlock(n) {
+    localStorage.setItem(SCAN_CONFIG.BLOCK_KEY, String(n));
+    _refreshSyncBlockDisplay();
+}
+function _refreshSyncBlockDisplay() {
+    const el = document.getElementById('diagSyncBlock');
+    if (!el) return;
+    const b = _getSyncBlock();
+    el.innerText = b > 0 ? String(b) : '未初始化';
+    el.className = 'diag-value ' + (b > 0 ? 'ok' : 'warn');
+}
+
+// 从合约 ABI 里提取每个事件中 address 类型 indexed 参数所在的位置
+function _buildAddressTopicMap(iface) {
+    const map = new Map();
+    for (const frag of Object.values(iface.fragments)) {
+        if (frag.type !== 'event') continue;
+        const positions = [];
+        let idx = 0;                                  // 第几个 indexed 参数
+        for (const inp of frag.inputs) {
+            if (inp.indexed) {
+                if (inp.type === 'address') positions.push(idx);
+                idx++;
+            }
+        }
+        if (positions.length) map.set(frag.topicHash, positions);
+    }
+    return map;
+}
+
+// 二分查找某时间戳对应的区块
+async function _findBlockByTimestamp(targetTs) {
+    const latest = await provider.getBlockNumber();
+    let lo = 0, hi = latest;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        try {
+            const b = await provider.getBlock(mid);
+            if (!b || b.timestamp < targetTs) lo = mid + 1;
+            else hi = mid;
+        } catch { hi = mid; }
+    }
+    return lo;
+}
+
+// 分块扫 logs，从 indexed topics 里提取所有地址
+// 返回 { addrSet, failedAt }：failedAt = 第一个扫描失败段的起点区块，0 表示全部成功
+async function _scanLogsForAddresses(fromBlock, toBlock, addrTopicMap, onProgress) {
+    const addrSet = new Set();
+    const total = toBlock - fromBlock + 1;
+    const totalChunks = Math.ceil(total / SCAN_CONFIG.BLOCK_CHUNK);
+    let done = 0, chunkIdx = 0, failedAt = 0;
+    for (let s = fromBlock; s <= toBlock; s += SCAN_CONFIG.BLOCK_CHUNK) {
+        const e = Math.min(s + SCAN_CONFIG.BLOCK_CHUNK - 1, toBlock);
+        let logs = null;
+        for (let retry = 0; retry < SCAN_CONFIG.RETRY && !logs; retry++) {
+            try {
+                logs = await provider.getLogs({ address: CONFIG.CONTRACT, fromBlock: s, toBlock: e });
+            } catch (err) {
+                if (retry === SCAN_CONFIG.RETRY - 1) {
+                    addLog(`❌ 扫描 ${s}-${e} 失败: ${err.message}`, 'err');
+                    if (!failedAt) failedAt = s;
+                } else {
+                    await sleep(500 * (retry + 1));
+                }
+            }
+        }
+        if (logs) {
+            for (const log of logs) {
+                const positions = addrTopicMap.get(log.topics[0]);
+                if (!positions) continue;
+                for (const p of positions) {
+                    const t = log.topics[p + 1];
+                    if (!t || t.length !== 66) continue;
+                    const addr = ('0x' + t.slice(26)).toLowerCase();
+                    if (addr === '0x0000000000000000000000000000000000000000') continue;
+                    addrSet.add(addr);
+                }
+            }
+        }
+        done += (e - s + 1);
+        chunkIdx += 1;
+        if (onProgress) onProgress(done, total, addrSet.size, chunkIdx, totalChunks);
+        await sleep(30);
+    }
+    return { addrSet, failedAt };
+}
+
+// ================================================================
 // 增量更新（对已有地址重查）
 // ================================================================
 async function incrementalQuery() {
-    if(isQuerying || !stakingContract) return;
-    if (allStakeRecords.length === 0) {
-        alert('⚠️ 请先执行一次「全量查询」建立基准');
-        return;
-    }
+    if (isQuerying || !stakingContract) return;
     isQuerying = true;
     document.getElementById('progressContainer').style.display = 'block';
-    addLog('🔄 增量：重查已有地址（ANG 无全局游标）...', 'info');
+    document.getElementById('progressFill').style.width = '0%';
 
-    const addrs = [...new Set(allStakeRecords.map(r => r.address))];
-    const now = Math.floor(Date.now() / 1000);
+    try {
+        const latestBlock = await provider.getBlockNumber();
+        let lastSynced = _getSyncBlock();
 
-    const newQuery = [], newAll = [];
-    const qSeen = new Set(), aSeen = new Set();
-    let processed = 0;
-
-    for (let i = 0; i < addrs.length; i += CONFIG.BATCH_SIZE) {
-        const batch = addrs.slice(i, i + CONFIG.BATCH_SIZE);
-        const results = await Promise.all(batch.map(a => queryAddress(a, now)));
-        for (const r of results) {
-            if (!r.success) continue;
-            for (const o of r.orders) {
-                const k = o.address + '_' + o.orderId;
-                if (o.isActive && !qSeen.has(k)) { qSeen.add(k); newQuery.push(o); }
-                if (!aSeen.has(k)) { aSeen.add(k); newAll.push(o); }
+        // 首次启用：给用户选择起点
+        if (lastSynced === 0) {
+            if (allStakeRecords.length > 0) {
+                const ok = confirm(
+                    `首次启用「事件增量同步」\n\n` +
+                    `本地已有 ${allStakeRecords.length} 条记录，无需重新下载地址清单。\n\n` +
+                    `建议直接把同步起点设为最新区块 ${latestBlock}，\n` +
+                    `之后每次点「增量更新」只处理新增区块（几秒完成）。\n\n` +
+                    `✅ 确定 = 从最新区块开始（推荐）\n` +
+                    `❌ 取消 = 从本地最早订单往回扫描（较慢）`
+                );
+                if (ok) {
+                    _setSyncBlock(latestBlock);
+                    addLog(`✅ 事件同步起点已设为区块 ${latestBlock}`, 'ok');
+                    alert(`✅ 首次启用完成！\n同步起点: ${latestBlock}\n今后「增量更新」只扫新增区块。`);
+                    document.getElementById('progressContainer').style.display = 'none';
+                    isQuerying = false;
+                    return;
+                }
+                const times = allStakeRecords.map(r => r.stakeTime).filter(t => t > 0);
+                const minTs = times.length ? Math.min(...times) : Math.floor(Date.now() / 1000) - 90 * 86400;
+                addLog('🕰️ 反查最早订单时间对应区块...', 'info');
+                lastSynced = Math.max(0, (await _findBlockByTimestamp(minTs)) - 1);
+            } else {
+                const ok = confirm(
+                    `首次启用「事件增量同步」\n\n本地暂无数据。是否从最新区块 ${latestBlock} 开始？\n\n` +
+                    `✅ 确定 = 从最新开始（推荐）\n❌ 取消 = 从最近 90 天开始扫描`
+                );
+                if (ok) {
+                    _setSyncBlock(latestBlock);
+                    addLog(`✅ 事件同步起点已设为区块 ${latestBlock}`, 'ok');
+                    alert(`✅ 首次启用完成！\n同步起点: ${latestBlock}`);
+                    document.getElementById('progressContainer').style.display = 'none';
+                    isQuerying = false;
+                    return;
+                }
+                lastSynced = Math.max(0, latestBlock - Math.floor(90 * 86400 / 3));
             }
         }
-        processed += batch.length;
-        document.getElementById('progressFill').style.width =
-            Math.round(processed / addrs.length * 100) + '%';
-        document.getElementById('progressText').innerHTML =
-            `增量 ${processed}/${addrs.length}`;
-        await sleep(50);
-    }
 
-    queryResults = newQuery;
-    allStakeRecords = newAll;
-    calcStatsFromRecords();
-    document.getElementById('diagRecordCount').innerText = queryResults.length;
+        if (lastSynced >= latestBlock) {
+            addLog('✅ 已是最新，无新事件', 'ok');
+            alert(`✅ 已同步到最新区块 ${latestBlock}，没有新事件。`);
+            document.getElementById('progressContainer').style.display = 'none';
+            isQuerying = false;
+            return;
+        }
 
-    updateStats(); saveToStorage(); applyFilters(); updateDailyStats();
-    updateAllCharts(); updateLeaderboard();
-    renderCashflow(); renderRedeem(); renderReinvest(); renderExpired();
-    renderProtectionPanel();
-    await fetchLPBalance();
+        addLog(`🔍 事件扫描：区块 ${lastSynced + 1} → ${latestBlock}`, 'info');
 
-    addLog(`✅ 增量完成：活跃 ${queryResults.length} / 历史 ${allStakeRecords.length}`, 'ok');
-    document.getElementById('progressText').innerHTML = `✅ 完成，活跃 ${queryResults.length} 条`;
-    document.getElementById('progressText').style.color = '#22c55e';
+        const addrTopicMap = _buildAddressTopicMap(stakingContract.interface);
+        document.getElementById('progressText').innerHTML = '扫描区块事件...';
 
-    setTimeout(() => {
+        const scanResult = await _scanLogsForAddresses(
+            lastSynced + 1, latestBlock, addrTopicMap,
+            (done, total, count, chunk, chunks) => {
+                const pct = Math.round(done / total * 80);
+                document.getElementById('progressFill').style.width = pct + '%';
+                document.getElementById('progressText').innerHTML =
+                    `扫描区块 ${done}/${total} (${chunk}/${chunks}) · 提取地址 ${count}`;
+            }
+        );
+        const touched = scanResult.addrSet;
+        const failedAt = scanResult.failedAt;
+
+        addLog(`📥 事件涉及地址: ${touched.size} 个`, 'info');
+
+        if (touched.size === 0) {
+            const syncTo = failedAt > 0 ? Math.max(0, failedAt - 1) : latestBlock;
+            _setSyncBlock(syncTo);
+            if (failedAt > 0) addLog(`⚠️ 区块 ${failedAt} 起扫描失败，同步位置回退到 ${syncTo}`, 'err');
+            else addLog(`✅ 无新事件，已同步到区块 ${latestBlock}`, 'ok');
+            document.getElementById('progressFill').style.width = '100%';
+            document.getElementById('progressText').innerHTML = '✅ 无新事件';
+            document.getElementById('progressText').style.color = '#22c55e';
+            setTimeout(() => {
+                document.getElementById('progressContainer').style.display = 'none';
+                document.getElementById('progressText').style.color = '#3b82f6';
+                isQuerying = false;
+            }, 1500);
+            return;
+        }
+
+        // 合并：已有记录不动，只重查事件涉及的地址
+        const merged = new Map();
+        allStakeRecords.forEach(r => merged.set(r.address + '_' + r.orderId, r));
+
+        const addrList = [...touched];
+        const BATCH = 10;
+        let processed = 0;
+        for (let i = 0; i < addrList.length; i += BATCH) {
+            const batch = addrList.slice(i, i + BATCH);
+            await Promise.all(batch.map(async a => {
+                try {
+                    const fresh = await fetchAddressOrders(a);
+                    for (const o of fresh) merged.set(o.address + '_' + o.orderId, o);
+                } catch (e) { /* skip */ }
+            }));
+            processed += batch.length;
+            const pct = 80 + Math.round(processed / addrList.length * 18);
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressText').innerHTML =
+                `重查地址 ${processed}/${addrList.length} · 累计 ${merged.size} 条`;
+            await sleep(30);
+        }
+
+        allStakeRecords = [...merged.values()];
+        queryResults = allStakeRecords.filter(r => r.isActive || r.status === 'matured');
+
+        // 关键：只有全部成功才推进；有失败段则回退到失败起点，下次增量会重扫
+        const syncTo = failedAt > 0 ? Math.max(0, failedAt - 1) : latestBlock;
+        _setSyncBlock(syncTo);
+        if (failedAt > 0) {
+            addLog(`⚠️ 区块 ${failedAt} 起扫描失败，同步位置回退到 ${syncTo}，下次增量会重扫`, 'err');
+        }
+
+        calcStatsFromRecords();
+        document.getElementById('diagRecordCount').innerText = queryResults.length;
+        updateStats();
+        saveToStorage();
+        applyFilters();
+        updateDailyStats();
+        updateAllCharts();
+        updateLeaderboard();
+        renderCashflow();
+        renderRedeem();
+        renderReinvest();
+        renderExpired();
+        await fetchLPBalance();
+        renderProtectionPanel();
+
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('progressText').innerHTML = `✅ 完成：活跃 ${queryResults.length} 条`;
+        document.getElementById('progressText').style.color = '#22c55e';
+        addLog(`✅ 增量完成：涉及 ${touched.size} 地址，活跃 ${queryResults.length} / 历史 ${allStakeRecords.length}，同步至区块 ${latestBlock}`, 'ok');
+
+        setTimeout(() => {
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('progressText').style.color = '#3b82f6';
+            isQuerying = false;
+        }, 2000);
+
+    } catch (e) {
+        addLog('❌ 增量失败: ' + e.message, 'err');
         document.getElementById('progressContainer').style.display = 'none';
-        document.getElementById('progressText').style.color = '#3b82f6';
         isQuerying = false;
-    }, 2000);
+    }
 }
 
 // ================================================================
@@ -1038,6 +1348,8 @@ async function renderProtectionPanel() {
 
         stats.protectionActive = active;
         stats.protectionRatio = ratioNum;
+        stats.historicalHighReserve = highNum;
+        stats.triggerReserve = trigger;
 
         const set = (id, txt, cls) => {
             const el = document.getElementById(id);
@@ -1054,6 +1366,7 @@ async function renderProtectionPanel() {
         set('ppUnpaid', parseFloat(ethers.formatUnits(unpaid,18)).toFixed(2) + ' USDT');
         set('ppPaid', parseFloat(ethers.formatUnits(paid,18)).toFixed(2) + ' USDT');
         set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
+        updateStats();   // ← 新增：用刚读到的阈值刷新可兑付金额
     } catch (e) {
         addLog('保护面板读取失败: ' + e.message, 'err');
     }
@@ -1095,8 +1408,8 @@ async function init() {
     document.getElementById('diagContract').innerText = CONFIG.CONTRACT;
     document.getElementById('diagContract').className = 'diag-value ok';
 
-    document.getElementById('diagUUSD').innerText = CONFIG.USDT;
-    document.getElementById('diagUUSD').className = 'diag-value ok';
+    document.getElementById('diagUSDT').innerText = CONFIG.USDT;
+    document.getElementById('diagUSDT').className = 'diag-value ok';
     document.getElementById('diagDev').innerText = CONFIG.ANG_TOKEN;
     document.getElementById('diagDev').className = 'diag-value ok';
     document.getElementById('diagPair').innerText = CONFIG.LP_PAIR;
@@ -1120,6 +1433,7 @@ async function init() {
 
     loadDailyStart();
     loadFromStorage();
+    _refreshSyncBlockDisplay();
 
     try {
         const cursorRaw = localStorage.getItem('angUploadCursor_v1');
@@ -1177,6 +1491,7 @@ function calcStatsFromRecords() {
         if (remain <= DURATION_7)  stats.unlock7d  += amt;
         if (remain <= DURATION_15) stats.unlock15d += amt;
     });
+    rebuildReinvestSet();
 }
 
 function updateStats() {
@@ -1203,8 +1518,20 @@ function updateStats() {
     // 本金口径
     const bubble = lp > 0 ? active / lp : 0;
     document.getElementById('bubbleValue').innerText = bubble.toFixed(2);
-    const coverage = active > 0 ? lp / active * 100 : 0;
-    document.getElementById('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // 可兑付金额 = LP − 触发阈值
+    const trigger = Number(stats.triggerReserve || 0);
+    const payEl = document.getElementById('payableAmount');
+    if (payEl) {
+        if (trigger > 0) {
+            const payable = lp - trigger;
+            payEl.innerText = payable.toFixed(2);
+            payEl.style.color = payable <= 0 ? '#f87171' : '#3b82f6';
+        } else {
+            payEl.innerText = '--';
+            payEl.style.color = '#8899bb';
+        }
+    }
 
     // 含收益口径（活跃本金 + 名义收益）
     let activeWithProfit = 0;
@@ -1612,11 +1939,7 @@ async function adminFetch(action, data = {}) {
     const response = await fetch(`${CONFIG.API_BASE}/admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': CONFIG.ADMIN_TOKEN },
-        body: JSON.stringify({ 
-            action, 
-            projectId: 'dev',     // ← 白名单共用 DEV 的
-            ...data 
-        })
+        body: JSON.stringify({ action, ...data })
     });
     return await response.json();
 }
@@ -1828,26 +2151,33 @@ function updateTrendChart() {
     const ctx = document.getElementById('trendChart').getContext('2d');
     if(trendChart) trendChart.destroy();
 
+    const reinvestSet = getReinvestSet();
     const dailyNewMap = new Map(), dailyActiveMap = new Map();
     const dailyReinvestMap = new Map(), dailyRedeemMap = new Map();
 
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
         const amt = principalOf(r);
-        if(!dailyNewMap.has(ds)) dailyNewMap.set(ds, 0);
-        dailyNewMap.set(ds, dailyNewMap.get(ds) + amt);
-        if(r.isActive && r.unlockTime > 0) {
-            if(!dailyActiveMap.has(ds)) dailyActiveMap.set(ds, 0);
-            dailyActiveMap.set(ds, dailyActiveMap.get(ds) + amt);
+
+        // ✅ 新增 / 活跃 / 复投：全部按新单 stakeTime
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            dailyNewMap.set(ds, (dailyNewMap.get(ds) || 0) + amt);
+            if (r.isActive && r.unlockTime > 0) {
+                dailyActiveMap.set(ds, (dailyActiveMap.get(ds) || 0) + amt);
+            }
+            // ✅ 复投：复投新单，按新单 stakeTime
+            if (reinvestSet.has(r.orderId)) {
+                dailyReinvestMap.set(ds, (dailyReinvestMap.get(ds) || 0) + amt);
+            }
         }
-        if(r.status === 'restaked') {
-            if(!dailyReinvestMap.has(ds)) dailyReinvestMap.set(ds, 0);
-            dailyReinvestMap.set(ds, dailyReinvestMap.get(ds) + amt);
-        }
-        if(['redeemed','settled','expired'].includes(r.status)) {
-            if(!dailyRedeemMap.has(ds)) dailyRedeemMap.set(ds, 0);
-            dailyRedeemMap.set(ds, dailyRedeemMap.get(ds) + amt);
+
+        // ✅ 赎回：含被复投的旧单（restaked），本息口径
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                const ds = getDateStr(ts);
+                dailyRedeemMap.set(ds, (dailyRedeemMap.get(ds) || 0) + totalOf(r));
+            }
         }
     });
 
@@ -1867,6 +2197,7 @@ function updateTrendChart() {
         },
         options: {
             responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
                 y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
                 x: { ticks: { color: '#8899bb', maxRotation: 30 } }
@@ -2235,7 +2566,7 @@ function loadLastQuery() {
 }
 
 function resetQuery() {
-    if(confirm('确定重置所有数据吗？')) {
+    if(confirm('确定重置所有数据吗？\n（会同时清除事件同步位置，下次增量需要重新选起点）')) {
         queryResults = []; allStakeRecords = [];
         stats = {
             totalStaked: 0, activeStaked: 0,
@@ -2243,11 +2574,15 @@ function resetQuery() {
             unlock2d: 0, unlock7d: 0, unlock15d: 0,
             lpBalance: stats.lpBalance || 0, lpAngReserve: stats.lpAngReserve || 0,
             totalOrders: stats.totalOrders || 0,
-            protectionActive: stats.protectionActive, protectionRatio: stats.protectionRatio
+            protectionActive: stats.protectionActive, protectionRatio: stats.protectionRatio,
+            historicalHighReserve: stats.historicalHighReserve || 0,
+            triggerReserve: stats.triggerReserve || 0
         };
+        localStorage.removeItem('angLastSyncedBlock_v1');   // ← 新增
+        _refreshSyncBlockDisplay();                          // ← 新增
         updateStats(); applyFilters(); updateDailyStats(); updateAllCharts(); updateLeaderboard(); saveToStorage();
         renderCashflow(); renderRedeem(); renderReinvest(); renderExpired();
-        addLog('🔄 已重置所有数据', 'info');
+        addLog('🔄 已重置所有数据（含同步位置）', 'info');
         alert('✅ 已重置');
     }
 }
@@ -2279,19 +2614,27 @@ function exportCSV() {
 }
 
 function exportDailyStats() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
+        return dailyMap.get(ds);
+    }
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
         const p = principalOf(r);
-        d.stake += p;
-        if(r.isActive && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 'restaked') d.reinvest += p;
-        if(['redeemed','settled','expired'].includes(r.status)) d.redeem += p;
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            const d = ensureDay(ds);
+            d.stake += p;
+            if (r.isActive && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+            if (reinvestSet.has(r.orderId)) d.reinvest += p;
+        }
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
+        }
     });
     const sorted = Array.from(dailyMap.keys()).sort().reverse();
     const headers = ['日期', '新增质押', '活跃质押', '15天周期', '30天周期', '复投', '赎回'];
@@ -2372,25 +2715,42 @@ function loadDailyStart() {
 }
 
 function updateDailyStats() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
+    function ensureDay(ds) {
+        if (!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
+        return dailyMap.get(ds);
+    }
+
     allStakeRecords.forEach(r => {
-        if(r.stakeTime <= 0) return;
-        const ds = getDateStr(r.stakeTime);
-        if(!dailyMap.has(ds)) dailyMap.set(ds, { stake: 0, active: 0, p15: 0, p30: 0, reinvest: 0, redeem: 0 });
-        const d = dailyMap.get(ds);
         const p = principalOf(r);
-        d.stake += p;
-        if(r.isActive && r.unlockTime > 0) d.active += p;
-        if(r.product === 0) d.p15 += p;
-        if(r.product === 1) d.p30 += p;
-        if(r.status === 'restaked') d.reinvest += p;
-        if(['redeemed','settled','expired'].includes(r.status)) d.redeem += p;
+
+        // ✅ 质押类（新单，按 stakeTime）
+        if (r.stakeTime > 0) {
+            const ds = getDateStr(r.stakeTime);
+            const d = ensureDay(ds);
+            d.stake += p;
+            if (r.isActive && r.unlockTime > 0) d.active += p;
+            if (r.product === 0) d.p15 += p;
+            if (r.product === 1) d.p30 += p;
+            if (reinvestSet.has(r.orderId)) d.reinvest += p;  // ✅ 复投新单
+        }
+
+        // ✅ 赎回类（旧单，含被复投的，本息口径）
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
+            if (ts > 0) {
+                ensureDay(getDateStr(ts)).redeem += totalOf(r);
+            }
+        }
     });
 
     const sorted = Array.from(dailyMap.keys()).sort().reverse().slice(0, 30);
     const tbody = document.getElementById('dailyStatsBody');
-    if(!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
-
+    if (!sorted.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        return;
+    }
     tbody.innerHTML = sorted.map(d => {
         const v = dailyMap.get(d);
         return `<tr>
@@ -2420,11 +2780,14 @@ function renderCashflow() {
     const rangeSel = document.getElementById('cashflowRange');
     const range = rangeSel ? parseInt(rangeSel.value) : 30;
 
+    const reinvestSet = getReinvestSet();
+
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
             in: 0, inCount: 0,
             out: 0, outCount: 0,
+            redeemPrincipal: 0,
             reward: 0,
             reinvest: 0, reinvestCount: 0
         });
@@ -2432,40 +2795,38 @@ function renderCashflow() {
     }
 
     allStakeRecords.forEach(r => {
+        // ✅ 入金：所有新单，按 stakeTime
         if (r.stakeTime > 0) {
             const ds = getDateStr(r.stakeTime);
             const d = ensureDay(ds);
             d.in += principalOf(r);
             d.inCount += 1;
-        }
-        if (['redeemed','settled','expired'].includes(r.status)) {
-            const ts = r.unstakeTime || r.unlockTime;
-            if (ts > 0) {
-                const ds = getDateStr(ts);
-                const d = ensureDay(ds);
-                d.out += totalOf(r);
-                d.outCount += 1;
-                d.reward += profitOf(r);
-            }
-        }
-        if (r.status === 'restaked') {
-            const ts = r.unstakeTime || r.unlockTime;
-            if (ts > 0) {
-                const ds = getDateStr(ts);
-                const d = ensureDay(ds);
-                d.out += totalOf(r);
-                d.outCount += 1;
-                d.reward += profitOf(r);
+
+            // ✅ 复投：复投新单，按新单 stakeTime（和"入金"同一天，标记其中来自复投的部分）
+            if (reinvestSet.has(r.orderId)) {
                 d.reinvest += principalOf(r);
                 d.reinvestCount += 1;
+            }
+        }
+
+        // ✅ 出金：所有 closed 旧单（含 restaked），按旧单结束时间，本息
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = r.unstakeTime || r.unlockTime;
+            if (ts > 0) {
+                const ds = getDateStr(ts);
+                const d = ensureDay(ds);
+                const pr = principalOf(r);
+                const pf = profitOf(r);
+                d.out += pr + pf;
+                d.redeemPrincipal += pr;
+                d.reward += pf;
+                d.outCount += 1;
             }
         }
     });
 
     let dates = Array.from(dailyMap.keys()).sort();
-    if (range > 0) {
-        dates = dates.slice(-range);
-    }
+    if (range > 0) dates = dates.slice(-range);
 
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
@@ -2481,13 +2842,10 @@ function renderCashflow() {
         let totalInCount = 0, totalOutCount = 0, totalReinvestCount = 0;
         dates.forEach(ds => {
             const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
-            totalIn += d.in;
-            totalInCount += d.inCount;
-            totalOut += d.out;
-            totalOutCount += d.outCount;
+            totalIn += d.in; totalInCount += d.inCount;
+            totalOut += d.out; totalOutCount += d.outCount;
             totalReward += d.reward;
-            totalReinvest += d.reinvest;
-            totalReinvestCount += d.reinvestCount;
+            totalReinvest += d.reinvest; totalReinvestCount += d.reinvestCount;
         });
         document.getElementById('cfIn').innerText = totalIn.toFixed(2);
         document.getElementById('cfInSub').innerText = `质押 ${totalInCount} 笔`;
@@ -2501,12 +2859,12 @@ function renderCashflow() {
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
     dates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const d = dailyMap.get(ds) || { in:0, out:0, reward:0, reinvest:0 };
         const net = d.in - d.out;
         html += `<tr>
             <td>${ds}</td>
             <td class="amount-cell" style="color:#10b981;">${d.in.toFixed(2)}</td>
-            <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
+            <td class="amount-cell" style="color:#f97316;">${(d.redeemPrincipal||0).toFixed(2)}</td>
             <td class="amount-cell" style="color:#ef4444;">${d.reward.toFixed(2)}</td>
             <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
             <td class="amount-cell" style="color:${net>=0?'#10b981':'#ef4444'};">${net.toFixed(2)}</td>
@@ -2517,7 +2875,6 @@ function renderCashflow() {
 
     const canvas = document.getElementById('cashflowChart');
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (cashflowChart) cashflowChart.destroy();
 
@@ -2545,11 +2902,9 @@ function renderCashflow() {
             interaction: { mode: 'index', intersect: false },
             onClick: (e, activeElements) => {
                 if (activeElements && activeElements.length > 0) {
-                    const index = activeElements[0].index;
-                    const clickedDate = dates[index];
+                    const clickedDate = dates[activeElements[0].index];
                     if (clickedDate) {
-                        const dateInput = document.getElementById('cashflowDate');
-                        dateInput.value = clickedDate;
+                        document.getElementById('cashflowDate').value = clickedDate;
                         renderCashflow();
                     }
                 }
@@ -2567,10 +2922,12 @@ function renderCashflow() {
 }
 
 function exportCashflow() {
+    const reinvestSet = getReinvestSet();
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
-            in: 0, inCount: 0, out: 0, outCount: 0, reward: 0, reinvest: 0, reinvestCount: 0
+            in: 0, inCount: 0, out: 0, outCount: 0,
+            redeemPrincipal: 0, reward: 0, reinvest: 0, reinvestCount: 0
         });
         return dailyMap.get(ds);
     }
@@ -2578,31 +2935,29 @@ function exportCashflow() {
         if (r.stakeTime > 0) {
             const d = ensureDay(getDateStr(r.stakeTime));
             d.in += principalOf(r); d.inCount += 1;
-        }
-        if (['redeemed','settled','expired'].includes(r.status)) {
-            const ts = r.unstakeTime || r.unlockTime;
-            if (ts > 0) {
-                const d = ensureDay(getDateStr(ts));
-                d.out += totalOf(r); d.outCount += 1; d.reward += profitOf(r);
+            if (reinvestSet.has(r.orderId)) {
+                d.reinvest += principalOf(r); d.reinvestCount += 1;
             }
         }
-        if (r.status === 'restaked') {
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
             const ts = r.unstakeTime || r.unlockTime;
             if (ts > 0) {
                 const d = ensureDay(getDateStr(ts));
-                d.out += totalOf(r); d.outCount += 1; d.reward += profitOf(r);
-                d.reinvest += principalOf(r); d.reinvestCount += 1;
+                const pr = principalOf(r), pf = profitOf(r);
+                d.out += pr + pf; d.outCount += 1;
+                d.redeemPrincipal += pr;
+                d.reward += pf;
             }
         }
     });
     const dates = Array.from(dailyMap.keys()).sort();
-    const headers = ['日期', '实际入金', '入金笔数', '订单赎回', '赎回笔数', '奖励领取', '实际出金', '资金净额', '本金复投', '复投笔数'];
+    const headers = ['日期', '实际入金', '入金笔数', '订单赎回(本金)', '赎回笔数', '收益领取', '实际出金', '资金净额', '本金复投', '复投笔数'];
     const rows = dates.map(ds => {
         const d = dailyMap.get(ds);
         return [
             ds,
             d.in.toFixed(2), d.inCount,
-            d.out.toFixed(2), d.outCount,
+            d.redeemPrincipal.toFixed(2), d.outCount,
             d.reward.toFixed(2),
             d.out.toFixed(2),
             (d.in - d.out).toFixed(2),
@@ -2627,7 +2982,7 @@ function renderRedeem() {
     const dateVal = document.getElementById('redeemDate')?.value || '';
     const search = (document.getElementById('redeemSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(r => ['redeemed','settled','expired'].includes(r.status));
+    let list = allStakeRecords.filter(r => ['redeemed','settled','expired','restaked'].includes(r.status));
     if (dateVal) {
         list = list.filter(r => getDateStr(r.unstakeTime || r.unlockTime) === dateVal);
     }
@@ -2640,25 +2995,28 @@ function renderRedeem() {
         tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
         return;
     }
-    tbody.innerHTML = list.map((r, i) => `<tr>
-        <td>${i+1}</td>
-        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
-        <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${statusText(r.status)}</td>
-        <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
-    </tr>`).join('');
+    tbody.innerHTML = list.map((r, i) => {
+        const isRestaked = r.status === 'restaked';
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}${isRestaked ? ' <span style="font-size:0.55rem;color:#c084fc;border:1px solid #c084fc;border-radius:3px;padding:0 3px;">复投</span>' : ''}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
+            <td>${statusText(r.status)}</td>
+            <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function exportRedeem() {
-    const list = allStakeRecords.filter(r => ['redeemed','settled','expired'].includes(r.status));
+    const list = allStakeRecords.filter(r => ['redeemed','settled','expired','restaked'].includes(r.status));
     if (!list.length) { alert('没有数据可导出'); return; }
     const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '状态', '赎回时间'];
     const rows = list.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, statusText(r.status), formatTime(r.unstakeTime || r.unlockTime)
+        r.productText, r.status === 'restaked' ? '复投转出' : statusText(r.status), formatTime(r.unstakeTime || r.unlockTime)
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
@@ -2678,38 +3036,46 @@ function renderReinvest() {
     const dateVal = document.getElementById('reinvestDate')?.value || '';
     const search = (document.getElementById('reinvestSearch')?.value || '').toLowerCase().trim();
 
-    let list = allStakeRecords.filter(r => r.status === 'restaked');
-    if (dateVal) {
-        list = list.filter(r => getDateStr(r.unstakeTime || r.unlockTime) === dateVal);
-    }
-    if (search) {
-        list = list.filter(r => r.address.toLowerCase().includes(search));
-    }
-    list.sort((a, b) => (b.unstakeTime || b.unlockTime || 0) - (a.unstakeTime || a.unlockTime || 0));
+    const reinvestSet = getReinvestSet();
+    const reinvestMatch = getReinvestMatch();
+    // ✅ 对齐 DEV：只显示活跃中的复投新单
+    let list = queryResults.filter(r => reinvestSet.has(r.orderId));
+    if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
+    if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
+    list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
         return;
     }
-    tbody.innerHTML = list.map((r, i) => `<tr>
-        <td>${i+1}</td>
-        <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
-        <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-        <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
-        <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
-        <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
-    </tr>`).join('');
+    tbody.innerHTML = list.map((r, i) => {
+        const old = reinvestMatch.get(r.orderId);
+        return `<tr>
+            <td>${i+1}</td>
+            <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
+            <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
+            <td>${old ? ('#' + old.orderId) : '--'}</td>
+            <td>${formatTime(r.stakeTime)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function exportReinvest() {
-    const list = allStakeRecords.filter(r => r.status === 'restaked');
+    const reinvestSet = getReinvestSet();
+    const reinvestMatch = getReinvestMatch();
+    const list = queryResults.filter(r => reinvestSet.has(r.orderId));
     if (!list.length) { alert('没有数据可导出'); return; }
-    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '复投时间'];
-    const rows = list.map((r, i) => [
-        i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, formatTime(r.unstakeTime || r.unlockTime)
-    ]);
+    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '复投时间'];
+    const rows = list.map((r, i) => {
+        const old = reinvestMatch.get(r.orderId);
+        return [
+            i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
+            r.productText, old ? old.orderId : '', formatTime(r.stakeTime)
+        ];
+    });
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
     const a = document.createElement('a');
@@ -2808,65 +3174,51 @@ function updateReportData() {
     const startStr = document.getElementById('reportStartDate').value;
     const endStr = document.getElementById('reportEndDate').value;
     if (!startStr || !endStr) return;
+    if (startStr > endStr) { alert('⚠️ 开始日期不能大于结束日期'); return; }
 
-    if (startStr > endStr) {
-        alert('⚠️ 开始日期不能大于结束日期');
-        return;
-    }
-
-    // 按每日统计起始时间 dailyStartHour（北京时间）切分业务日
-    // 业务日 D 的区间 = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
     const [sy, sm, sd] = startStr.split('-').map(Number);
     const [ey, em, ed] = endStr.split('-').map(Number);
-
-    // 北京时间 D 日 00:00 的 UTC 时间戳 = Date.UTC(...) - 8h
     const startTs = Math.floor(Date.UTC(sy, sm - 1, sd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
-    const endTs   = Math.floor(Date.UTC(ey, em - 1, ed) / 1000) - 8 * 3600 + 86400 + dailyStartHour * 3600;
-
+    const endTs = Math.floor(Date.UTC(ey, em - 1, ed) / 1000) - 8 * 3600 + 86400 + dailyStartHour * 3600;
     const isSingleDay = (startStr === endStr);
     const titleDate = isSingleDay ? startStr : `${startStr} 至 ${endStr}`;
-
-    // 双时间显示
-    const bjStartDisplay  = fmtTsOffset(startTs, 8);
-    const bjEndDisplay    = fmtTsOffset(endTs, 8);
+    const bjStartDisplay = fmtTsOffset(startTs, 8);
+    const bjEndDisplay = fmtTsOffset(endTs, 8);
     const utcStartDisplay = fmtTsOffset(startTs, 0);
-    const utcEndDisplay   = fmtTsOffset(endTs, 0);
+    const utcEndDisplay = fmtTsOffset(endTs, 0);
 
-    let totalStakeAmt = 0;
-    let directCount = 0;
-    let reinvestCount = 0;
-    const stakeAddrs = new Set();
+    const reinvestSet = getReinvestSet();   // ✅ 统一调用
 
-    let p15Amt = 0, p15Count = 0;
-    const p15Addrs = new Set();
-    let p30Amt = 0, p30Count = 0;
-    const p30Addrs = new Set();
-
-    let totalRedeemAmt = 0;
-    let redeemCount = 0;
-    const redeemAddrs = new Set();
+    let totalStakeAmt = 0, stakeCount = 0; const stakeAddrs = new Set();
+    let firstStakeAmt = 0, firstStakeCount = 0; const firstStakeAddrs = new Set();
+    let reinvestAmt = 0, reinvestCount = 0; const reinvestAddrs = new Set();
+    let p15Amt = 0, p15Count = 0; const p15Addrs = new Set();
+    let p30Amt = 0, p30Count = 0; const p30Addrs = new Set();
+    let redeemAmt = 0, redeemCount = 0; const redeemAddrs = new Set();
 
     allStakeRecords.forEach(r => {
-        // 左闭右开
+        // 质押类（新单，按 stakeTime）
         if (r.stakeTime >= startTs && r.stakeTime < endTs) {
             const amt = principalOf(r);
             totalStakeAmt += amt;
+            stakeCount++;
             stakeAddrs.add(r.address);
 
-            if (r.previousOrderId > 0) reinvestCount++;
-            else directCount++;
-
-            if (r.product === 0) {
-                p15Amt += amt; p15Count++; p15Addrs.add(r.address);
-            } else if (r.product === 1) {
-                p30Amt += amt; p30Count++; p30Addrs.add(r.address);
+            if (reinvestSet.has(r.orderId)) {
+                reinvestAmt += amt; reinvestCount++; reinvestAddrs.add(r.address);
+            } else {
+                firstStakeAmt += amt; firstStakeCount++; firstStakeAddrs.add(r.address);
             }
+
+            if (r.product === 0) { p15Amt += amt; p15Count++; p15Addrs.add(r.address); }
+            else if (r.product === 1) { p30Amt += amt; p30Count++; p30Addrs.add(r.address); }
         }
 
-        if (r.status === 2 || r.status === 3) {
-            const ts = r.redeemedAt || r.unlockTime;
+        // 赎回类（旧单，按赎回时间）
+        if (['redeemed','settled','expired','restaked'].includes(r.status)) {
+            const ts = Number(r.unstakeTime || r.redeemedAt || r.unlockTime || 0);
             if (ts >= startTs && ts < endTs) {
-                totalRedeemAmt += totalOf(r);
+                redeemAmt += totalOf(r);
                 redeemCount++;
                 redeemAddrs.add(r.address);
             }
@@ -2876,34 +3228,48 @@ function updateReportData() {
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const p30Pct = totalStakeAmt > 0 ? (p30Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const firstPct = totalStakeAmt > 0 ? (firstStakeAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const reinvestPct = totalStakeAmt > 0 ? (reinvestAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
 
+    // ============================================================
+    // HTML / 文本输出（和之前一致）
+    // ============================================================
     const html = `
         <div style="font-family: sans-serif;">
-            <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">ANG 数据简报｜${titleDate}</div>
+            <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">ANG数据简报｜${titleDate}</div>
             <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 4px; line-height: 1.6;">⏰ 北京时间：${bjStartDisplay} → ${bjEndDisplay}</div>
             <div style="color: #8899bb; font-size: 0.72rem; margin-bottom: 16px; line-height: 1.6;">⛓️ 链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}</div>
 
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📥 质押金额：<span style="color: #10b981; font-size: 1.1rem;">${fmt(totalStakeAmt)} UUSD</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>直接质押</span><span>${directCount} 笔</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>复投质押</span><span>${reinvestCount} 笔</span></div>
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📥 质押金额：<span style="color: #10b981; font-size: 1.1rem;">${fmt(totalStakeAmt)} USDT</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>新增订单</span><span>${stakeCount} 笔</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押钱包（去重）</span><span>${stakeAddrs.size} 个</span></div>
+                <div style="border-top: 1px dashed #2a3a5a; margin-top: 8px; padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                        <span style="color: #8899bb;">├ 首次质押</span>
+                        <span><span style="color:#22c55e;font-weight:600;">${fmt(firstStakeAmt)}</span> USDT｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 钱包｜占 ${firstPct}%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 4px;">
+                        <span style="color: #8899bb;">└ 复投质押</span>
+                        <span><span style="color:#8b5cf6;font-weight:600;">${fmt(reinvestAmt)}</span> USDT｜${reinvestCount} 笔｜${reinvestAddrs.size} 钱包｜占 ${reinvestPct}%</span>
+                    </div>
+                </div>
             </div>
 
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 赎回金额：<span style="color: #f97316; font-size: 1.1rem;">${fmt(totalRedeemAmt)} UUSD</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回</span><span>${redeemCount} 笔</span></div>
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 赎回金额：<span style="color: #f97316; font-size: 1.1rem;">${fmt(redeemAmt)} USDT</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回（含本息）</span><span>${redeemCount} 笔</span></div>
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>赎回钱包（去重）</span><span>${redeemAddrs.size} 个</span></div>
             </div>
 
             <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px; font-size: 0.9rem;">📊 产品周期分布：</div>
             <div style="font-size: 0.8rem; line-height: 1.8; color: #8899bb;">
-                <div>🟦 15 天：<span style="color:#60a5fa;font-weight:600;">${fmt(p15Amt)} UUSD</span>｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包</div>
-                <div>🟪 30 天：<span style="color:#a78bfa;font-weight:600;">${fmt(p30Amt)} UUSD</span>｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包</div>
+                <div>🟦 15 天：<span style="color:#60a5fa;font-weight:600;">${fmt(p15Amt)} USDT</span>｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包</div>
+                <div>🟪 30 天：<span style="color:#a78bfa;font-weight:600;">${fmt(p30Amt)} USDT</span>｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包</div>
             </div>
 
             <div style="color: #64748b; font-size: 0.7rem; margin-top: 16px; text-align: center; border-top: 1px solid #2a3a5a; padding-top: 10px;">
-                注：同一钱包可参与多个周期，各周期钱包数不能相加。<br>
+                注：质押金额 = 首次质押 + 复投质押；周期分布含复投。<br>
                 详细数据：https://www.ganaweb3.top
             </div>
         </div>
@@ -2911,24 +3277,25 @@ function updateReportData() {
 
     document.getElementById('reportContent').innerHTML = html;
 
-    currentReportText = `ANG 数据简报｜${titleDate}
+    currentReportText = `ANG数据简报｜${titleDate}
 北京时间：${bjStartDisplay} → ${bjEndDisplay}
 链上时间(UTC)：${utcStartDisplay} → ${utcEndDisplay}
 
-质押金额：${fmt(totalStakeAmt)} UUSD
-直接质押：${directCount} 笔
-复投质押：${reinvestCount} 笔
+质押金额：${fmt(totalStakeAmt)} USDT
+新增订单：${stakeCount} 笔
 质押钱包（去重地址）：${stakeAddrs.size} 个
+├ 首次质押：${fmt(firstStakeAmt)} USDT｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 个钱包｜占 ${firstPct}%
+└ 复投质押：${fmt(reinvestAmt)} USDT｜${reinvestCount} 笔｜${reinvestAddrs.size} 个钱包｜占 ${reinvestPct}%
 
-赎回金额：${fmt(totalRedeemAmt)} UUSD
+赎回金额：${fmt(redeemAmt)} USDT
 订单赎回：${redeemCount} 笔
 赎回钱包（去重地址）：${redeemAddrs.size} 个
 
 产品周期分布：
-15 天：${fmt(p15Amt)} UUSD｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
-30 天：${fmt(p30Amt)} UUSD｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包
+15 天：${fmt(p15Amt)} USDT｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
+30 天：${fmt(p30Amt)} USDT｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包
 
-注：同一钱包可参与多个周期，各周期钱包数不能相加。
+注：质押金额 = 首次质押 + 复投质押；周期分布含复投。
 详细数据：https://www.ganaweb3.top`;
 }
 
