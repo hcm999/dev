@@ -83,6 +83,16 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .cashflow-net { color:#3b82f6; }
 .cashflow-reinvest { color:#8b5cf6; }
 
+/* ===== 熔断诊断面板 ===== */
+.diagnostic-box { background:#111827; border:1px solid #2a3a5a; border-radius:12px; padding:12px; margin-bottom:16px; font-size:0.75rem; }
+.diag-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #1a2332; }
+.diag-row:last-child { border-bottom:none; }
+.diag-label { color:#8899bb; }
+.diag-value { color:#e8edf5; font-family:monospace; }
+.diag-value.ok { color:#22c55e; }
+.diag-value.err { color:#f87171; }
+.diag-value.warn { color:#f59e0b; }
+
 /* ===== 登录遮罩 ===== */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.95); backdrop-filter:blur(10px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
 .login-dialog { background:linear-gradient(145deg,#1e293b,#0f172a); border:2px solid #3b82f6; border-radius:24px; padding:32px 24px; max-width:440px; width:100%; box-shadow:0 30px 60px rgba(0,0,0,0.8); }
@@ -207,6 +217,20 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
+    <!-- ===== 熔断模式诊断 ===== -->
+    <div class="diagnostic-box" id="protectionPanel" style="border-color:#f59e0b;">
+        <div style="font-weight:600;margin-bottom:6px;color:#f59e0b;">🛡️ 熔断模式诊断</div>
+        <div class="diag-row"><span class="diag-label">熔断模式激活</span><span class="diag-value" id="ppActive">--</span></div>
+        <div class="diag-row"><span class="diag-label">当前轮次</span><span class="diag-value" id="ppRound">--</span></div>
+        <div class="diag-row"><span class="diag-label">历史最高 LP USDT</span><span class="diag-value" id="ppHigh">--</span></div>
+        <div class="diag-row"><span class="diag-label">当前 LP USDT</span><span class="diag-value" id="ppCurrent">--</span></div>
+        <div class="diag-row"><span class="diag-label">触发阈值 (40%)</span><span class="diag-value" id="ppTrigger">--</span></div>
+        <div class="diag-row"><span class="diag-label">本轮赎回比率</span><span class="diag-value" id="ppRatio">--</span></div>
+        <div class="diag-row"><span class="diag-label">未付承诺 USDT</span><span class="diag-value" id="ppUnpaid">--</span></div>
+        <div class="diag-row"><span class="diag-label">已付 USDT</span><span class="diag-value" id="ppPaid">--</span></div>
+        <div class="diag-row"><span class="diag-label">手动抽底池模式</span><span class="diag-value" id="ppManual">--</span></div>
+    </div>
+
     <div class="stats-grid">
         <div class="stat-card"><div class="stat-title">💰 总质押(本金)</div><div class="stat-value" id="totalStaked">0.00</div><div class="stat-sub">USDT</div></div>
         <div class="stat-card"><div class="stat-title">📈 活跃质押(本金)</div><div class="stat-value" id="activeStaked">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="activePct">占LP --</span></div></div>
@@ -215,9 +239,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock2dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock7dPct">占LP --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock15dPct">占LP --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock2dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock7dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="unlock15dPct">占可兑付 --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
             <div class="stat-title">💰 LP池余额 <span class="refresh-icon">🔄</span></div>
             <div class="stat-value" id="lpBalance">0.00</div>
@@ -580,13 +604,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 // ================================================================
 const CONFIG = {
     API_BASE: '/api',
-    // 数据来源：ANG 项目
     DATA_PROJECT_ID: 'ang',
-    // 白名单 / 付费校验：沿用 DEV 的数据
     AUTH_PROJECT_ID: 'dev',
     ACCESS_PASSWORD: 'dev-2025',
-    STAKING_CONTRACT: '0x220cc4a150df778599f39c3de3825ffb3170908b',  // 新增
-    BSC_RPC: 'https://bsc-dataseed.binance.org/',                       // 新增
+    STAKING_CONTRACT: '0x220cc4a150df778599f39c3de3825ffb3170908b',
+    ANG_TOKEN: '0x87ca5fb0656a51a183e238d66fdec33ad64c2095',
+    BSC_RPC: 'https://bsc-dataseed.binance.org/',
 };
 
 let payInfo = {
@@ -603,8 +626,8 @@ let userAddress = null;
 let accessPassword = CONFIG.ACCESS_PASSWORD;
 let accessInfo = null;
 
-let allStakeRecords = [];      // 全部历史订单
-let activeRecords = [];        // 活跃订单（active / matured）
+let allStakeRecords = [];
+let activeRecords = [];
 let filteredResults = [];
 let currentReportText = '';
 
@@ -618,14 +641,25 @@ let stats = {
     staked15d: 0, staked30d: 0,
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
     lpBalance: 0, lpAngReserve: 0, totalOrders: 0,
-    triggerReserve: 0   // 新增
+    triggerReserve: 0
 };
 
 let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
-// 链上触发阈值缓存（5分钟）
+// 链上读取
 const PROTECTION_ABI = [
-    "function protectionInfo() view returns (bool active, uint256 round, uint256 highReserve, uint256 currentReserve, uint256 triggerReserve, uint256 eligiblePrincipal, uint256 ratioE18, uint256 userPayoutBps, uint256 backstopPayoutBps, uint256 firstCutoffOrderId)"
+    "function protectionInfo() view returns (bool active, uint256 round, uint256 highReserve, uint256 currentReserve, uint256 triggerReserve, uint256 eligiblePrincipal, uint256 ratioE18, uint256 userPayoutBps, uint256 backstopPayoutBps, uint256 firstCutoffOrderId)",
+    "function protectionActive() view returns (bool)",
+    "function protectionRound() view returns (uint256)",
+    "function historicalHighReserve() view returns (uint256)",
+    "function protectionRatioE18() view returns (uint256)",
+    "function protectionUnpaidUSDT() view returns (uint256)",
+    "function protectionPaidUSDT() view returns (uint256)",
+    "function manualBackstopMode() view returns (bool)"
+];
+const ANG_TOKEN_ABI = [
+    "function lpUsdtReserve() view returns (uint256)",
+    "function lpAngReserve() view returns (uint256)"
 ];
 let _triggerCache = { value: 0, ts: 0 };
 const TRIGGER_CACHE_MS = 5 * 60 * 1000;
@@ -670,7 +704,6 @@ function totalOf(r) {
     return principalOf(r) + profitOf(r);
 }
 
-// ===== ANG 状态判定（统一口径） =====
 function isActiveOf(r) { return !!r && (r.status === 'active' || r.status === 'matured'); }
 function isRestakedOf(r) { return !!r && r.status === 'restaked'; }
 function isSettledOf(r) { return !!r && ['redeemed','settled','expired'].includes(r.status); }
@@ -680,7 +713,6 @@ function statusText(s) {
 }
 function statusClass(s) { return (s === 'active' || s === 'expired') ? 'status-locked' : 'status-unlocked'; }
 
-// 数据规范化：兼容云端字段 + 实时刷新到期状态
 function normalizeRec(r) {
     r.address = (r.address || '').toLowerCase();
     r.amount = Number(r.amount) || 0;
@@ -691,14 +723,12 @@ function normalizeRec(r) {
     if (r.product == null) r.product = (String(r.productText || '').indexOf('15') >= 0) ? 0 : 1;
     if (!r.productText) r.productText = r.product === 0 ? '15天' : '30天';
     if (!r.status) r.status = (r.isActive ? 'active' : 'redeemed');
-    // 实时到期判定
     const now = Math.floor(Date.now() / 1000);
     if (r.status === 'active' && r.unlockTime > 0 && r.unlockTime <= now) r.status = 'matured';
     r.isActive = (r.status === 'active' || r.status === 'matured');
     return r;
 }
 
-// 从链上直读触发阈值（避免依赖脚本上传的 stats）
 async function fetchTriggerReserveFromChain() {
     if (_triggerCache.value > 0 && Date.now() - _triggerCache.ts < TRIGGER_CACHE_MS) {
         return _triggerCache.value;
@@ -722,7 +752,65 @@ async function fetchTriggerReserveFromChain() {
 }
 
 // ================================================================
-// 复投新单识别（与管理端一致：旧单 restaked + 7天窗口 + 5% 金额容差）
+// 熔断模式诊断（新增）
+// ================================================================
+async function renderProtectionPanel() {
+    const set = (id, txt, cls) => {
+        const el = $(id);
+        if (!el) return;
+        el.innerText = txt;
+        el.className = 'diag-value ' + (cls || '');
+    };
+    try {
+        const provider = new ethers.JsonRpcProvider(CONFIG.BSC_RPC, undefined, {
+            batchMaxCount: 1, staticNetwork: true
+        });
+        const sc = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
+        const ac = new ethers.Contract(CONFIG.ANG_TOKEN, ANG_TOKEN_ABI, provider);
+
+        const [active, round, high, ratio, unpaid, paid, manual, currentLp] = await Promise.all([
+            sc.protectionActive(),
+            sc.protectionRound(),
+            sc.historicalHighReserve(),
+            sc.protectionRatioE18(),
+            sc.protectionUnpaidUSDT(),
+            sc.protectionPaidUSDT(),
+            sc.manualBackstopMode(),
+            ac.lpUsdtReserve(),
+        ]);
+
+        const highNum    = parseFloat(ethers.formatUnits(high, 18));
+        const ratioNum   = parseFloat(ethers.formatUnits(ratio, 18));
+        const currentNum = parseFloat(ethers.formatUnits(currentLp, 18));
+        const triggerNum = highNum * 0.4;
+
+        // 同步更新全局 stats（供 updateStats 使用）
+        stats.lpBalance = currentNum;
+        stats.triggerReserve = triggerNum;
+
+        set('ppActive', active ? '⚠️ 是' : '✅ 否', active ? 'err' : 'ok');
+        set('ppRound', round.toString());
+        set('ppHigh', highNum.toFixed(2) + ' USDT');
+        set('ppCurrent', currentNum.toFixed(2) + ' USDT', currentNum <= triggerNum ? 'err' : 'ok');
+        set('ppTrigger', triggerNum.toFixed(2) + ' USDT');
+        set('ppRatio', (ratioNum * 100).toFixed(2) + '%', ratioNum < 1 ? 'warn' : 'ok');
+        set('ppUnpaid', parseFloat(ethers.formatUnits(unpaid, 18)).toFixed(2) + ' USDT');
+        set('ppPaid', parseFloat(ethers.formatUnits(paid, 18)).toFixed(2) + ' USDT');
+        set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
+
+        // 用最新数据刷新依赖项
+        updateStats();
+    } catch (e) {
+        console.warn('读取熔断诊断失败:', e);
+        ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual'].forEach(id => {
+            const el = $(id);
+            if (el) { el.innerText = '读取失败'; el.className = 'diag-value err'; }
+        });
+    }
+}
+
+// ================================================================
+// 复投新单识别
 // ================================================================
 const REINVEST_WINDOW = 7 * 86400;
 const REINVEST_AMOUNT_TOLERANCE = 0.05;
@@ -752,7 +840,6 @@ function buildReinvestNewOrderSet(allRecords) {
     const reinvestSet = new Set();
     const matchedOldByNew = new Map();
 
-    // 第 1 遍：严格金额匹配
     for (const no of newOrders) {
         const k = (no.address || '').toLowerCase();
         const candidates = restakedByAddr.get(k) || [];
@@ -777,8 +864,6 @@ function buildReinvestNewOrderSet(allRecords) {
             matchedOldByNew.set(no.orderId, best);
         }
     }
-
-    // 第 2 遍：兜底
     for (const no of newOrders) {
         if (reinvestSet.has(no.orderId)) continue;
         const k = (no.address || '').toLowerCase();
@@ -794,7 +879,6 @@ function buildReinvestNewOrderSet(allRecords) {
             break;
         }
     }
-
     return { reinvestSet, matchedOldByNew };
 }
 
@@ -816,7 +900,7 @@ function getReinvestMatch() {
 }
 
 // ================================================================
-// 卡片折叠
+// 折叠卡片
 // ================================================================
 function toggleCard(headerElement) {
     const card = headerElement.closest('.collapsible-card');
@@ -828,7 +912,7 @@ function toggleCard(headerElement) {
 }
 
 // ================================================================
-// 1. 登录流程（白名单使用 DEV 数据）
+// 1. 登录流程
 // ================================================================
 async function connectWallet() {
     if (!window.ethereum) { alert('请安装 MetaMask 或 TP 钱包'); return; }
@@ -878,7 +962,6 @@ async function verifyAccess() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                // 关键：白名单/付费沿用 DEV 项目的数据
                 projectId: CONFIG.AUTH_PROJECT_ID,
                 address: userAddress,
                 password: accessPassword,
@@ -1001,21 +1084,21 @@ async function loadCloudData() {
 
         allStakeRecords = raw.map(normalizeRec);
         rebuildActive();
-        rebuildReinvestSet();   // ← 加这一行
+        rebuildReinvestSet();
 
-        // LP / 合约统计（由管理端上传）
         const cs = cloudData.stats || {};
         stats.lpBalance = Number(cs.lpBalance || 0);
         stats.lpAngReserve = Number(cs.lpAngReserve || 0);
         stats.totalOrders = Number(cs.totalOrders || 0);
-        stats.triggerReserve = Number(cs.triggerReserve || 0);
 
-        // 优先用链上实时值（脚本增量上传不会带 triggerReserve）
+        // 优先链上实时值（已修复：不再被云端覆盖）
         const chainTrigger = await fetchTriggerReserveFromChain();
-        if (chainTrigger > 0) stats.triggerReserve = chainTrigger;
-        stats.triggerReserve = Number(cs.triggerReserve || 0);   // 新增
+        if (chainTrigger > 0) {
+            stats.triggerReserve = chainTrigger;
+        } else {
+            stats.triggerReserve = Number(cs.triggerReserve || 0);
+        }
 
-        // 结算口径
         const cloudStartHour = cs.dailyStartHour ?? cloudData.dailyStartHour;
         const localPref = localStorage.getItem('angSettleHour');
         if (localPref === null && cloudStartHour !== undefined && cloudStartHour !== null) {
@@ -1037,6 +1120,9 @@ async function loadCloudData() {
             renderReinvest();
             renderExpired();
         }, 100);
+
+        // 异步读取链上熔断诊断（会同步刷新 stats.lpBalance / triggerReserve + updateStats）
+        renderProtectionPanel();
     } catch (e) {
         console.error('加载数据失败:', e);
         alert('❌ 加载数据失败: ' + (e.message || e));
@@ -1077,6 +1163,19 @@ function calcStatsFromRecords() {
     });
 }
 
+function setUnlockPct(elId, val, payable) {
+    const el = $(elId);
+    if (!el) return;
+    if (payable <= 0) {
+        el.innerText = '占可兑付 --';
+        el.style.color = '#8899bb';
+        return;
+    }
+    const pct = val / payable * 100;
+    el.innerText = '占可兑付 ' + pct.toFixed(2) + '%';
+    el.style.color = pct > 100 ? '#f87171' : '#fbbf24';
+}
+
 function updateStats() {
     $('totalStaked').innerText = stats.totalStaked.toFixed(2);
     $('activeStaked').innerText = stats.activeStaked.toFixed(2);
@@ -1094,20 +1193,18 @@ function updateStats() {
     $('activePct').innerText = '占LP ' + (lp > 0 ? (active / lp * 100) : 0).toFixed(2) + '%';
     $('p15Pct').innerText = '占比 ' + (active > 0 ? (stats.staked15d / active * 100) : 0).toFixed(2) + '%';
     $('p30Pct').innerText = '占比 ' + (active > 0 ? (stats.staked30d / active * 100) : 0).toFixed(2) + '%';
-    $('unlock2dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock2d / lp * 100) : 0).toFixed(2) + '%';
-    $('unlock7dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock7d / lp * 100) : 0).toFixed(2) + '%';
-    $('unlock15dPct').innerText = '占LP ' + (lp > 0 ? (stats.unlock15d / lp * 100) : 0).toFixed(2) + '%';
 
     // 本金口径
     const bubble = lp > 0 ? active / lp : 0;
     $('bubbleValue').innerText = bubble.toFixed(2);
 
-    // 可兑付金额 = LP − 触发阈值
+    // 可兑付金额 = LP − 熔断阈值
     const trigger = Number(stats.triggerReserve || 0);
     const payEl = $('payableAmount');
+    let payable = 0;
     if (payEl) {
         if (trigger > 0) {
-            const payable = lp - trigger;
+            payable = lp - trigger;
             payEl.innerText = payable.toFixed(2);
             payEl.style.color = payable <= 0 ? '#f87171' : '#3b82f6';
         } else {
@@ -1115,6 +1212,11 @@ function updateStats() {
             payEl.style.color = '#8899bb';
         }
     }
+
+    // 到期占可兑付比例
+    setUnlockPct('unlock2dPct',  stats.unlock2d,  payable);
+    setUnlockPct('unlock7dPct',  stats.unlock7d,  payable);
+    setUnlockPct('unlock15dPct', stats.unlock15d, payable);
 
     // 含收益口径
     let activeWithProfit = 0;
@@ -1278,8 +1380,6 @@ function updateTrendChart() {
 
     allStakeRecords.forEach(r => {
         const amt = principalOf(r);
-
-        // ✅ 新增 / 活跃 / 复投：按新单 stakeTime
         if (r.stakeTime > 0) {
             const ds = getDateStr(r.stakeTime);
             dailyNewMap.set(ds, (dailyNewMap.get(ds) || 0) + amt);
@@ -1290,8 +1390,6 @@ function updateTrendChart() {
                 dailyReinvestMap.set(ds, (dailyReinvestMap.get(ds) || 0) + amt);
             }
         }
-
-        // ✅ 赎回：含被复投的旧单（restaked），按旧单结束时间，本息
         if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts > 0) {
@@ -1561,8 +1659,6 @@ function updateDailyStats() {
 
     allStakeRecords.forEach(r => {
         const p = principalOf(r);
-
-        // ✅ 质押类（新单，按 stakeTime）
         if (r.stakeTime > 0) {
             const d = ensureDay(getDateStr(r.stakeTime));
             d.stake += p;
@@ -1571,8 +1667,6 @@ function updateDailyStats() {
             if (r.product === 1) d.p30 += p;
             if (reinvestSet.has(r.orderId)) d.reinvest += p;
         }
-
-        // ✅ 赎回类（旧单，含被复投的，本息）
         if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
@@ -1647,7 +1741,6 @@ function renderTable() {
     const toRender = sorted.slice(0, MAX_RENDER);
 
     tbody.innerHTML = toRender.map((r, i) => {
-        // 本金颜色 / 标签：直 / 续 / 转
         let principalColor = '#38bdf8';
         let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
         if (r.status === 'restaked') {
@@ -1721,7 +1814,6 @@ function renderCashflow() {
     }
 
     allStakeRecords.forEach(r => {
-        // ✅ 入金 + 复投：都按新单 stakeTime
         if (r.stakeTime > 0) {
             const d = ensureDay(getDateStr(r.stakeTime));
             d.in += principalOf(r);
@@ -1731,7 +1823,6 @@ function renderCashflow() {
                 d.reinvestCount += 1;
             }
         }
-        // ✅ 出金：所有 closed 旧单（含 restaked 本息），按旧单结束时间
         const endTs = r.unstakeTime || r.unlockTime;
         if (isClosedOf(r) && endTs > 0) {
             const d = ensureDay(getDateStr(endTs));
@@ -1748,7 +1839,6 @@ function renderCashflow() {
     if (range > 0) dates = dates.slice(-range);
     const tableDates = [...dates].reverse();
 
-    // 顶部卡片 + 表格 + 图表（保持原逻辑不变）
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
         $('cfIn').innerText = d.in.toFixed(2);
@@ -1882,7 +1972,6 @@ function renderReinvest() {
 
     const reinvestSet = getReinvestSet();
     const reinvestMatch = getReinvestMatch();
-    // ✅ 对齐 DEV：只显示活跃中的复投新单
     let list = activeRecords.filter(r => reinvestSet.has(r.orderId));
     if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
     if (search) list = list.filter(r => r.address.includes(search));
@@ -1977,7 +2066,7 @@ function refreshAllBySettleHour() {
 }
 
 // ================================================================
-// 11. 数据简报（ANG 口径）
+// 11. 数据简报
 // ================================================================
 function openReportModal() {
     if (allStakeRecords.length === 0) {
@@ -2018,7 +2107,7 @@ function updateReportData() {
     const utcStartDisplay = fmtTsOffset(startTs, 0);
     const utcEndDisplay = fmtTsOffset(endTs, 0);
 
-    const reinvestSet = getReinvestSet();   // ✅ 修复：不再用 previousOrderId
+    const reinvestSet = getReinvestSet();
 
     let totalStakeAmt = 0, stakeCount = 0; const stakeAddrs = new Set();
     let firstStakeAmt = 0, firstStakeCount = 0; const firstStakeAddrs = new Set();
@@ -2044,7 +2133,7 @@ function updateReportData() {
             else if (r.product === 1) { p30Amt += amt; p30Count++; p30Addrs.add(r.address); }
         }
 
-        if (isClosedOf(r)) {   // 含 restaked / redeemed / settled / expired
+        if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts >= startTs && ts < endTs) {
                 redeemAmt += totalOf(r);
@@ -2060,7 +2149,6 @@ function updateReportData() {
     const firstPct = totalStakeAmt > 0 ? (firstStakeAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const reinvestPct = totalStakeAmt > 0 ? (reinvestAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
 
-    // 单位统一为 USDT
     const html = `
         <div style="font-family: sans-serif;">
             <div style="font-size: 1.1rem; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">ANG数据简报｜${titleDate}</div>
