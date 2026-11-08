@@ -609,7 +609,17 @@ const CONFIG = {
     ACCESS_PASSWORD: 'dev-2025',
     STAKING_CONTRACT: '0x220cc4a150df778599f39c3de3825ffb3170908b',
     ANG_TOKEN: '0x87ca5fb0656a51a183e238d66fdec33ad64c2095',
-    BSC_RPC: 'https://bsc-dataseed.binance.org/',
+    // 主节点换成 BNB Chain 官方最新节点
+    BSC_RPC: 'https://bsc-dataseed.bnbchain.org',
+    // 备用节点（按顺序重试）
+    BSC_RPC_FALLBACKS: [
+        'https://bsc-rpc.publicnode.com',
+        'https://bsc-dataseed.binance.org/',
+        'https://bsc-dataseed1.binance.org',
+        'https://bsc-dataseed1.defibit.io',
+        'https://bsc-dataseed1.ninicoin.io',
+        'https://rpc.ankr.com/bsc',
+    ],
 };
 
 let payInfo = {
@@ -648,13 +658,15 @@ let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
 // 链上读取
 const PROTECTION_ABI = [
-    "function protectionInfo() view returns (bool active, uint256 round, uint256 highReserve, uint256 currentReserve, uint256 triggerReserve, uint256 eligiblePrincipal, uint256 ratioE18, uint256 userPayoutBps, uint256 backstopPayoutBps, uint256 firstCutoffOrderId)",
     "function protectionActive() view returns (bool)",
     "function protectionRound() view returns (uint256)",
     "function historicalHighReserve() view returns (uint256)",
+    "function protectionSnapshotReserve() view returns (uint256)",
     "function protectionRatioE18() view returns (uint256)",
     "function protectionUnpaidUSDT() view returns (uint256)",
     "function protectionPaidUSDT() view returns (uint256)",
+    "function firstProtectionTriggered() view returns (bool)",
+    "function firstProtectionCutoffOrderId() view returns (uint256)",
     "function manualBackstopMode() view returns (bool)"
 ];
 const ANG_TOKEN_ABI = [
@@ -733,22 +745,24 @@ async function fetchTriggerReserveFromChain() {
     if (_triggerCache.value > 0 && Date.now() - _triggerCache.ts < TRIGGER_CACHE_MS) {
         return _triggerCache.value;
     }
-    try {
-        const provider = new ethers.JsonRpcProvider(CONFIG.BSC_RPC, undefined, {
-            batchMaxCount: 1, staticNetwork: true
-        });
-        const c = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
-        const info = await c.protectionInfo();
-        const triggerWei = info.triggerReserve ?? info[4];
-        const trigger = parseFloat(ethers.formatUnits(triggerWei, 18));
-        if (trigger > 0) {
-            _triggerCache = { value: trigger, ts: Date.now() };
+    const nodes = [CONFIG.BSC_RPC, ...(CONFIG.BSC_RPC_FALLBACKS || [])];
+    for (const node of nodes) {
+        try {
+            const provider = new ethers.JsonRpcProvider(node, undefined, {
+                batchMaxCount: 1, staticNetwork: true
+            });
+            const c = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
+            const high = await c.historicalHighReserve();
+            const trigger = parseFloat(ethers.formatUnits(high, 18)) * 0.4;
+            if (trigger > 0) {
+                _triggerCache = { value: trigger, ts: Date.now() };
+                return trigger;
+            }
+        } catch (e) {
+            console.warn(`[trigger] 节点失败 ${node}:`, e.message);
         }
-        return trigger;
-    } catch (e) {
-        console.warn('读取链上触发阈值失败:', e);
-        return 0;
     }
+    return 0;
 }
 
 // ================================================================
@@ -761,52 +775,92 @@ async function renderProtectionPanel() {
         el.innerText = txt;
         el.className = 'diag-value ' + (cls || '');
     };
-    try {
-        const provider = new ethers.JsonRpcProvider(CONFIG.BSC_RPC, undefined, {
-            batchMaxCount: 1, staticNetwork: true
-        });
-        const sc = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
-        const ac = new ethers.Contract(CONFIG.ANG_TOKEN, ANG_TOKEN_ABI, provider);
 
-        const [active, round, high, ratio, unpaid, paid, manual, currentLp] = await Promise.all([
-            sc.protectionActive(),
-            sc.protectionRound(),
-            sc.historicalHighReserve(),
-            sc.protectionRatioE18(),
-            sc.protectionUnpaidUSDT(),
-            sc.protectionPaidUSDT(),
-            sc.manualBackstopMode(),
-            ac.lpUsdtReserve(),
-        ]);
-
-        const highNum    = parseFloat(ethers.formatUnits(high, 18));
-        const ratioNum   = parseFloat(ethers.formatUnits(ratio, 18));
-        const currentNum = parseFloat(ethers.formatUnits(currentLp, 18));
-        const triggerNum = highNum * 0.4;
-
-        // 同步更新全局 stats（供 updateStats 使用）
-        stats.lpBalance = currentNum;
-        stats.triggerReserve = triggerNum;
-
-        set('ppActive', active ? '⚠️ 是' : '✅ 否', active ? 'err' : 'ok');
-        set('ppRound', round.toString());
-        set('ppHigh', highNum.toFixed(2) + ' USDT');
-        set('ppCurrent', currentNum.toFixed(2) + ' USDT', currentNum <= triggerNum ? 'err' : 'ok');
-        set('ppTrigger', triggerNum.toFixed(2) + ' USDT');
-        set('ppRatio', (ratioNum * 100).toFixed(2) + '%', ratioNum < 1 ? 'warn' : 'ok');
-        set('ppUnpaid', parseFloat(ethers.formatUnits(unpaid, 18)).toFixed(2) + ' USDT');
-        set('ppPaid', parseFloat(ethers.formatUnits(paid, 18)).toFixed(2) + ' USDT');
-        set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
-
-        // 用最新数据刷新依赖项
-        updateStats();
-    } catch (e) {
-        console.warn('读取熔断诊断失败:', e);
-        ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual'].forEach(id => {
-            const el = $(id);
-            if (el) { el.innerText = '读取失败'; el.className = 'diag-value err'; }
-        });
+    // 1. 多节点重试
+    const nodes = [CONFIG.BSC_RPC, ...(CONFIG.BSC_RPC_FALLBACKS || [])];
+    let sc = null, ac = null;
+    for (const node of nodes) {
+        try {
+            const provider = new ethers.JsonRpcProvider(node, undefined, {
+                batchMaxCount: 1, staticNetwork: true
+            });
+            await provider.getBlockNumber();
+            sc = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
+            ac = new ethers.Contract(CONFIG.ANG_TOKEN, ANG_TOKEN_ABI, provider);
+            break;
+        } catch (e) {
+            console.warn(`[protectionPanel] 节点失败 ${node}:`, e.message);
+            sc = null; ac = null;
+        }
     }
+    if (!sc) {
+        ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual']
+            .forEach(id => set(id, 'RPC 节点连接失败', 'err'));
+        return;
+    }
+
+    // 2. 逐项容错：任何一个失败不影响其他
+    const safe = async (fn) => {
+        try { return await fn(); } catch (e) {
+            console.warn('[protectionPanel] 单项失败:', e.message);
+            return null;
+        }
+    };
+
+    const [active, round, high, ratio, unpaid, paid, manual, currentLp] = await Promise.all([
+        safe(() => sc.protectionActive()),
+        safe(() => sc.protectionRound()),
+        safe(() => sc.historicalHighReserve()),
+        safe(() => sc.protectionRatioE18()),
+        safe(() => sc.protectionUnpaidUSDT()),
+        safe(() => sc.protectionPaidUSDT()),
+        safe(() => sc.manualBackstopMode()),
+        safe(() => ac.lpUsdtReserve()),
+    ]);
+
+    // 3. 数值解包
+    const highNum    = high     !== null ? parseFloat(ethers.formatUnits(high, 18))      : null;
+    const ratioNum   = ratio    !== null ? parseFloat(ethers.formatUnits(ratio, 18))     : null;
+    const currentNum = currentLp!== null ? parseFloat(ethers.formatUnits(currentLp, 18)) : null;
+    const triggerNum = highNum  !== null ? highNum * 0.4 : null;
+
+    // 4. 同步全局 stats（供 updateStats 计算可兑付金额）
+    if (currentNum !== null) stats.lpBalance = currentNum;
+    if (triggerNum !== null) stats.triggerReserve = triggerNum;
+
+    // 5. 渲染（单项失败只显示该行"读取失败"）
+    set('ppActive',
+        active === null ? '读取失败' : (active ? '⚠️ 是' : '✅ 否'),
+        active === null ? 'err' : (active ? 'err' : 'ok'));
+    set('ppRound', round === null ? '读取失败' : String(round), round === null ? 'err' : '');
+    set('ppHigh',
+        highNum === null ? '读取失败' : highNum.toFixed(2) + ' USDT',
+        highNum === null ? 'err' : '');
+    if (currentNum === null) {
+        set('ppCurrent', '读取失败', 'err');
+    } else if (triggerNum !== null) {
+        set('ppCurrent', currentNum.toFixed(2) + ' USDT', currentNum <= triggerNum ? 'err' : 'ok');
+    } else {
+        set('ppCurrent', currentNum.toFixed(2) + ' USDT', '');
+    }
+    set('ppTrigger',
+        triggerNum === null ? '读取失败' : triggerNum.toFixed(2) + ' USDT',
+        triggerNum === null ? 'err' : '');
+    set('ppRatio',
+        ratioNum === null ? '读取失败' : (ratioNum * 100).toFixed(2) + '%',
+        ratioNum === null ? 'err' : (ratioNum < 1 ? 'warn' : 'ok'));
+    set('ppUnpaid',
+        unpaid === null ? '读取失败' : parseFloat(ethers.formatUnits(unpaid, 18)).toFixed(2) + ' USDT',
+        unpaid === null ? 'err' : '');
+    set('ppPaid',
+        paid === null ? '读取失败' : parseFloat(ethers.formatUnits(paid, 18)).toFixed(2) + ' USDT',
+        paid === null ? 'err' : '');
+    set('ppManual',
+        manual === null ? '读取失败' : (manual ? '⚠️ 已激活' : '✅ 否'),
+        manual === null ? 'err' : (manual ? 'err' : 'ok'));
+
+    // 6. 用最新 LP / 阈值刷新统计卡片
+    updateStats();
 }
 
 // ================================================================
