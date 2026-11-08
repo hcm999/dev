@@ -272,7 +272,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🫧 含收益泡沫</div><div class="stat-value" id="bubbleWithProfit">0.00</div><div class="stat-sub">(活跃本金+收益) / LP</div></div>
         <div class="stat-card"><div class="stat-title">📊 含收益覆盖率</div><div class="stat-value" id="coverageWithProfit">0.00%</div><div class="stat-sub">LP / (活跃本金+收益)</div></div>
         <div class="stat-card"><div class="stat-title">🫧 本金泡沫</div><div class="stat-value" id="bubbleValue">0.00</div><div class="stat-sub">活跃质押 / LP</div></div>
-        <div class="stat-card"><div class="stat-title">📊 本金覆盖率</div><div class="stat-value" id="coverageRate">0.00%</div><div class="stat-sub">LP / 活跃质押</div></div>
+        <div class="stat-card"><div class="stat-title">💵 可兑付金额</div><div class="stat-value" id="payableAmount">--</div><div class="stat-sub">LP − 熔断阈值 (USDT)</div></div>
     </div>
 
     <div class="data-tabs">
@@ -588,6 +588,7 @@ let stats = {
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
     lpBalance: 0, lpAngReserve: 0, totalOrders: 0,
     protectionActive: false, protectionRatio: 1,
+    historicalHighReserve: 0, triggerReserve: 0,   // 新增
 };
 let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
 
@@ -1347,6 +1348,8 @@ async function renderProtectionPanel() {
 
         stats.protectionActive = active;
         stats.protectionRatio = ratioNum;
+        stats.historicalHighReserve = highNum;
+        stats.triggerReserve = trigger;
 
         const set = (id, txt, cls) => {
             const el = document.getElementById(id);
@@ -1363,6 +1366,7 @@ async function renderProtectionPanel() {
         set('ppUnpaid', parseFloat(ethers.formatUnits(unpaid,18)).toFixed(2) + ' USDT');
         set('ppPaid', parseFloat(ethers.formatUnits(paid,18)).toFixed(2) + ' USDT');
         set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
+        updateStats();   // ← 新增：用刚读到的阈值刷新可兑付金额
     } catch (e) {
         addLog('保护面板读取失败: ' + e.message, 'err');
     }
@@ -1514,8 +1518,20 @@ function updateStats() {
     // 本金口径
     const bubble = lp > 0 ? active / lp : 0;
     document.getElementById('bubbleValue').innerText = bubble.toFixed(2);
-    const coverage = active > 0 ? lp / active * 100 : 0;
-    document.getElementById('coverageRate').innerText = coverage.toFixed(2) + '%';
+
+    // 可兑付金额 = LP − 触发阈值
+    const trigger = Number(stats.triggerReserve || 0);
+    const payEl = document.getElementById('payableAmount');
+    if (payEl) {
+        if (trigger > 0) {
+            const payable = lp - trigger;
+            payEl.innerText = payable.toFixed(2);
+            payEl.style.color = payable <= 0 ? '#f87171' : '#3b82f6';
+        } else {
+            payEl.innerText = '--';
+            payEl.style.color = '#8899bb';
+        }
+    }
 
     // 含收益口径（活跃本金 + 名义收益）
     let activeWithProfit = 0;
@@ -2558,7 +2574,9 @@ function resetQuery() {
             unlock2d: 0, unlock7d: 0, unlock15d: 0,
             lpBalance: stats.lpBalance || 0, lpAngReserve: stats.lpAngReserve || 0,
             totalOrders: stats.totalOrders || 0,
-            protectionActive: stats.protectionActive, protectionRatio: stats.protectionRatio
+            protectionActive: stats.protectionActive, protectionRatio: stats.protectionRatio,
+            historicalHighReserve: stats.historicalHighReserve || 0,
+            triggerReserve: stats.triggerReserve || 0
         };
         localStorage.removeItem('angLastSyncedBlock_v1');   // ← 新增
         _refreshSyncBlockDisplay();                          // ← 新增
