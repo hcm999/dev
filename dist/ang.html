@@ -1294,12 +1294,12 @@ function setUnlockPct(elId, val, payable) {
     const el = $(elId);
     if (!el) return;
     if (payable <= 0) {
-        el.innerText = '占可兑付 --';
+        el.innerText = '占兑付 --';
         el.style.color = '#8899bb';
         return;
     }
     const pct = val / payable * 100;
-    el.innerText = '占可兑付 ' + pct.toFixed(2) + '%';
+    el.innerText = '占兑付 ' + pct.toFixed(2) + '%';
     el.style.color = pct > 100 ? '#f87171' : '#fbbf24';
 }
 
