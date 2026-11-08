@@ -229,6 +229,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="diag-row"><span class="diag-label">未付承诺 USDT</span><span class="diag-value" id="ppUnpaid">--</span></div>
         <div class="diag-row"><span class="diag-label">已付 USDT</span><span class="diag-value" id="ppPaid">--</span></div>
         <div class="diag-row"><span class="diag-label">手动抽底池模式</span><span class="diag-value" id="ppManual">--</span></div>
+        <!-- 👇 新增这一行 -->
+        <div class="diag-row" style="border-top:1px dashed #2a3a5a;margin-top:4px;padding-top:6px;">
+            <span class="diag-label">调试信息</span>
+            <span class="diag-value" id="ppDebug" style="font-size:0.65rem;color:#64748b;">--</span>
     </div>
 
     <div class="stats-grid">
@@ -775,91 +779,160 @@ async function renderProtectionPanel() {
         el.innerText = txt;
         el.className = 'diag-value ' + (cls || '');
     };
+    const setDebug = (txt) => {
+        const el = $('ppDebug');
+        if (el) el.innerText = txt;
+    };
 
-    // 1. 多节点重试
-    const nodes = [CONFIG.BSC_RPC, ...(CONFIG.BSC_RPC_FALLBACKS || [])];
-    let sc = null, ac = null;
+    // 清零
+    ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual']
+        .forEach(id => set(id, '读取中...', 'warn'));
+    setDebug('连接节点中...');
+
+    // 与管理端一致的节点顺序（管理端已验证 publicnode 可用）
+    const nodes = [
+        'https://bsc-rpc.publicnode.com',
+        'https://bsc-dataseed.bnbchain.org',
+        'https://bsc-dataseed.binance.org',
+        'https://bsc-dataseed1.binance.org',
+        'https://bsc-dataseed1.defibit.io',
+        'https://bsc-dataseed1.ninicoin.io',
+        'https://rpc.ankr.com/bsc',
+    ];
+
+    let provider = null, usedNode = '';
     for (const node of nodes) {
         try {
-            const provider = new ethers.JsonRpcProvider(node, undefined, {
-                batchMaxCount: 1, staticNetwork: true
+            const p = new ethers.JsonRpcProvider(node, 56, {
+                batchMaxCount: 20,
+                batchStallTime: 20
             });
-            await provider.getBlockNumber();
-            sc = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
-            ac = new ethers.Contract(CONFIG.ANG_TOKEN, ANG_TOKEN_ABI, provider);
+            await Promise.race([
+                p.getBlockNumber(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+            ]);
+            provider = p;
+            usedNode = node;
+            setDebug(`✅ ${node}`);
+            console.log('[protection] 使用节点:', node);
             break;
         } catch (e) {
-            console.warn(`[protectionPanel] 节点失败 ${node}:`, e.message);
-            sc = null; ac = null;
+            console.warn('[protection] 节点失败:', node, e.message);
+            setDebug(`❌ ${node} - ${e.message}`);
         }
     }
-    if (!sc) {
+
+    if (!provider) {
         ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual']
-            .forEach(id => set(id, 'RPC 节点连接失败', 'err'));
+            .forEach(id => set(id, 'RPC节点全部失败', 'err'));
+        setDebug('❌ 所有节点连接失败，请检查网络');
         return;
     }
 
-    // 2. 逐项容错：任何一个失败不影响其他
-    const safe = async (fn) => {
-        try { return await fn(); } catch (e) {
-            console.warn('[protectionPanel] 单项失败:', e.message);
-            return null;
+    const sc = new ethers.Contract(CONFIG.STAKING_CONTRACT, PROTECTION_ABI, provider);
+    const ac = new ethers.Contract(CONFIG.ANG_TOKEN, ANG_TOKEN_ABI, provider);
+
+    // 单个调用：超时 8s，失败返回 {__err: msg}
+    const call = async (name, fn) => {
+        try {
+            return await Promise.race([
+                fn(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+            ]);
+        } catch (e) {
+            console.warn(`[protection] 调用 ${name} 失败:`, e.message);
+            return { __err: e.message };
         }
     };
+    const isErr = v => v && v.__err;
 
-    const [active, round, high, ratio, unpaid, paid, manual, currentLp] = await Promise.all([
-        safe(() => sc.protectionActive()),
-        safe(() => sc.protectionRound()),
-        safe(() => sc.historicalHighReserve()),
-        safe(() => sc.protectionRatioE18()),
-        safe(() => sc.protectionUnpaidUSDT()),
-        safe(() => sc.protectionPaidUSDT()),
-        safe(() => sc.manualBackstopMode()),
-        safe(() => ac.lpUsdtReserve()),
-    ]);
+    // 顺序调用（避免公共节点并发限流）
+    setDebug(`✅ ${usedNode} · 读取合约中...`);
+    const active     = await call('protectionActive',      () => sc.protectionActive());
+    const round      = await call('protectionRound',       () => sc.protectionRound());
+    const high       = await call('historicalHighReserve', () => sc.historicalHighReserve());
+    const ratio      = await call('protectionRatioE18',    () => sc.protectionRatioE18());
+    const unpaid     = await call('protectionUnpaidUSDT',  () => sc.protectionUnpaidUSDT());
+    const paid       = await call('protectionPaidUSDT',    () => sc.protectionPaidUSDT());
+    const manual     = await call('manualBackstopMode',     () => sc.manualBackstopMode());
+    const currentLp  = await call('lpUsdtReserve',          () => ac.lpUsdtReserve());
 
-    // 3. 数值解包
-    const highNum    = high     !== null ? parseFloat(ethers.formatUnits(high, 18))      : null;
-    const ratioNum   = ratio    !== null ? parseFloat(ethers.formatUnits(ratio, 18))     : null;
-    const currentNum = currentLp!== null ? parseFloat(ethers.formatUnits(currentLp, 18)) : null;
-    const triggerNum = highNum  !== null ? highNum * 0.4 : null;
+    // ===== 渲染 =====
+    // active
+    if (isErr(active)) set('ppActive', '读取失败', 'err');
+    else set('ppActive', active ? '⚠️ 是' : '✅ 否', active ? 'err' : 'ok');
 
-    // 4. 同步全局 stats（供 updateStats 计算可兑付金额）
+    // round
+    if (isErr(round)) set('ppRound', '读取失败', 'err');
+    else set('ppRound', String(round), '');
+
+    // high + trigger
+    let highNum = null, triggerNum = null, currentNum = null;
+    if (isErr(high)) {
+        set('ppHigh', '读取失败', 'err');
+    } else {
+        highNum = parseFloat(ethers.formatUnits(high, 18));
+        triggerNum = highNum * 0.4;
+        set('ppHigh', highNum.toFixed(2) + ' USDT', '');
+    }
+
+    // current LP
+    if (isErr(currentLp)) {
+        set('ppCurrent', '读取失败', 'err');
+    } else {
+        currentNum = parseFloat(ethers.formatUnits(currentLp, 18));
+        set('ppCurrent', currentNum.toFixed(2) + ' USDT',
+            triggerNum !== null ? (currentNum <= triggerNum ? 'err' : 'ok') : '');
+    }
+
+    // trigger
+    if (triggerNum !== null) set('ppTrigger', triggerNum.toFixed(2) + ' USDT', '');
+    else if (isErr(high)) set('ppTrigger', '读取失败', 'err');
+    else set('ppTrigger', '--', '');
+
+    // ratio
+    if (isErr(ratio)) set('ppRatio', '读取失败', 'err');
+    else {
+        const r = parseFloat(ethers.formatUnits(ratio, 18));
+        set('ppRatio', (r * 100).toFixed(2) + '%', r < 1 ? 'warn' : 'ok');
+    }
+
+    // unpaid
+    if (isErr(unpaid)) set('ppUnpaid', '读取失败', 'err');
+    else set('ppUnpaid', parseFloat(ethers.formatUnits(unpaid, 18)).toFixed(2) + ' USDT', '');
+
+    // paid
+    if (isErr(paid)) set('ppPaid', '读取失败', 'err');
+    else set('ppPaid', parseFloat(ethers.formatUnits(paid, 18)).toFixed(2) + ' USDT', '');
+
+    // manual
+    if (isErr(manual)) set('ppManual', '读取失败', 'err');
+    else set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
+
+    // ===== 同步 stats =====
     if (currentNum !== null) stats.lpBalance = currentNum;
     if (triggerNum !== null) stats.triggerReserve = triggerNum;
 
-    // 5. 渲染（单项失败只显示该行"读取失败"）
-    set('ppActive',
-        active === null ? '读取失败' : (active ? '⚠️ 是' : '✅ 否'),
-        active === null ? 'err' : (active ? 'err' : 'ok'));
-    set('ppRound', round === null ? '读取失败' : String(round), round === null ? 'err' : '');
-    set('ppHigh',
-        highNum === null ? '读取失败' : highNum.toFixed(2) + ' USDT',
-        highNum === null ? 'err' : '');
-    if (currentNum === null) {
-        set('ppCurrent', '读取失败', 'err');
-    } else if (triggerNum !== null) {
-        set('ppCurrent', currentNum.toFixed(2) + ' USDT', currentNum <= triggerNum ? 'err' : 'ok');
-    } else {
-        set('ppCurrent', currentNum.toFixed(2) + ' USDT', '');
-    }
-    set('ppTrigger',
-        triggerNum === null ? '读取失败' : triggerNum.toFixed(2) + ' USDT',
-        triggerNum === null ? 'err' : '');
-    set('ppRatio',
-        ratioNum === null ? '读取失败' : (ratioNum * 100).toFixed(2) + '%',
-        ratioNum === null ? 'err' : (ratioNum < 1 ? 'warn' : 'ok'));
-    set('ppUnpaid',
-        unpaid === null ? '读取失败' : parseFloat(ethers.formatUnits(unpaid, 18)).toFixed(2) + ' USDT',
-        unpaid === null ? 'err' : '');
-    set('ppPaid',
-        paid === null ? '读取失败' : parseFloat(ethers.formatUnits(paid, 18)).toFixed(2) + ' USDT',
-        paid === null ? 'err' : '');
-    set('ppManual',
-        manual === null ? '读取失败' : (manual ? '⚠️ 已激活' : '✅ 否'),
-        manual === null ? 'err' : (manual ? 'err' : 'ok'));
+    // 收集错误项，显示到 debug 行
+    const errs = [];
+    if (isErr(active))     errs.push(`active:${active.__err}`);
+    if (isErr(round))      errs.push(`round:${round.__err}`);
+    if (isErr(high))       errs.push(`high:${high.__err}`);
+    if (isErr(ratio))      errs.push(`ratio:${ratio.__err}`);
+    if (isErr(unpaid))     errs.push(`unpaid:${unpaid.__err}`);
+    if (isErr(paid))       errs.push(`paid:${paid.__err}`);
+    if (isErr(manual))     errs.push(`manual:${manual.__err}`);
+    if (isErr(currentLp))  errs.push(`lp:${currentLp.__err}`);
 
-    // 6. 用最新 LP / 阈值刷新统计卡片
+    if (errs.length === 0) {
+        setDebug(`✅ ${usedNode}`);
+    } else if (errs.length >= 8) {
+        setDebug(`❌ ${usedNode} · 全部失败: ${errs[0].slice(0, 40)}`);
+    } else {
+        setDebug(`⚠️ ${usedNode} · ${errs.length}项失败: ${errs[0].slice(0, 40)}`);
+    }
+
+    // 用最新 LP / 阈值刷新统计卡片（含可兑付金额）
     updateStats();
 }
 
