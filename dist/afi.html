@@ -261,6 +261,20 @@ body {
   .app-container { padding:0 24px 16px; }
   .bottom-nav { border-radius:20px 20px 0 0; }
 }
+.protection-diag { display:flex; flex-direction:column; gap:2px; font-size:12px; }
+.protection-diag .diag-row {
+  display:flex; justify-content:space-between; gap:12px;
+  padding:7px 0; border-bottom:1px solid var(--border-color);
+}
+.protection-diag .diag-row:last-child { border-bottom:none; }
+.protection-diag .diag-label { color:var(--text-secondary); }
+.protection-diag .diag-value {
+  color:var(--text-primary); font-weight:600; font-family:monospace;
+  text-align:right;
+}
+.protection-diag .diag-value.ok { color:var(--green); }
+.protection-diag .diag-value.err { color:var(--red); }
+.protection-diag .diag-value.warn { color:var(--gold); }
 </style>
 </head>
 <body>
@@ -305,6 +319,21 @@ body {
         LP储备: <span class="val" id="statusLp">--</span>
       </div>
     </div>
+
+   <div class="card" id="protectionDiagnosisCard">
+     <div class="card-title">🛡️ 熔断模式诊断</div>
+     <div class="protection-diag">
+       <div class="diag-row"><span class="diag-label">熔断模式激活</span><span class="diag-value" id="ppActive">--</span></div>
+       <div class="diag-row"><span class="diag-label">当前轮次</span><span class="diag-value" id="ppRound">--</span></div>
+       <div class="diag-row"><span class="diag-label">历史最高 LP USDT</span><span class="diag-value" id="ppHigh">--</span></div>
+       <div class="diag-row"><span class="diag-label">当前 LP USDT</span><span class="diag-value" id="ppCurrent">--</span></div>
+       <div class="diag-row"><span class="diag-label">触发阈值</span><span class="diag-value" id="ppTrigger">--</span></div>
+       <div class="diag-row"><span class="diag-label">本轮赎回比率</span><span class="diag-value" id="ppRatio">--</span></div>
+       <div class="diag-row"><span class="diag-label">未付承诺 USDT</span><span class="diag-value" id="ppUnpaid">--</span></div>
+       <div class="diag-row"><span class="diag-label">已付 USDT</span><span class="diag-value" id="ppPaid">--</span></div>
+       <div class="diag-row"><span class="diag-label">手动抽底池模式</span><span class="diag-value" id="ppManual">--</span></div>
+     </div>
+   </div>
 
     <div class="hero-stats">
       <div class="stat-item">
@@ -630,6 +659,10 @@ const STAKING_ABI = [
   "function protectionActive() view returns (bool)",
   "function protectionRound() view returns (uint256)",
   "function protectionInfo() view returns (bool active, uint256 round, uint256 highReserve, uint256 currentReserve, uint256 triggerReserve, uint256 eligiblePrincipal, uint256 ratioE18, uint256 userPayoutBps, uint256 backstopPayoutBps, uint256 firstCutoffOrderId)",
+  "function historicalHighReserve() view returns (uint256)",
+  "function protectionUnpaidUSDT() view returns (uint256)",
+  "function protectionPaidUSDT() view returns (uint256)",
+  "function manualBackstopMode() view returns (bool)",
   // 核心操作
   "function stake(uint160 amount, uint8 periodDays, uint256 amountOutMin)",
   "function unstake(uint256 index) returns (uint256 userPaidPrincipal)",
@@ -892,6 +925,9 @@ function disconnectWallet(silent = false) {
 }
 
 function resetUI() {
+  $('statusDot').className = 'dot-green';
+  $('statusText').textContent = '未连接';
+
   $('homeNextOrderId').textContent = '--';
   $('homeTotalActive').textContent = '--';
   $('homeMyComp').textContent = '--';
@@ -908,6 +944,13 @@ function resetUI() {
   $('stakeRecords').innerHTML = `<div class="empty-state"><i class="fas fa-inbox"></i>请连接钱包</div>`;
   $('stakeRecordCount').textContent = '0';
   $('orderCountBadge').textContent = '0 笔';
+
+  // 清空熔断诊断字段
+  ['ppActive','ppRound','ppHigh','ppCurrent','ppTrigger','ppRatio','ppUnpaid','ppPaid','ppManual']
+    .forEach(id => {
+      const el = $(id);
+      if (el) { el.textContent = '--'; el.className = 'diag-value'; }
+    });
 }
 
 // ================================================================
@@ -967,6 +1010,53 @@ async function fetchProtectionState() {
   } catch (e) {
     console.warn('读取保护状态失败:', e);
     return null;
+  }
+}
+
+async function renderProtectionDiagnosis() {
+  if (!stakingContract) return;
+  try {
+    const info = await stakingContract.protectionInfo();
+    const active = info.active ?? info[0];
+    const round = info.round ?? info[1];
+    const highReserve = info.highReserve ?? info[2];
+    const currentReserve = info.currentReserve ?? info[3];
+    const triggerReserve = info.triggerReserve ?? info[4];
+    const ratioE18 = info.ratioE18 ?? info[6];
+
+    const [unpaid, paid, manual] = await Promise.all([
+      stakingContract.protectionUnpaidUSDT().catch(() => 0n),
+      stakingContract.protectionPaidUSDT().catch(() => 0n),
+      stakingContract.manualBackstopMode().catch(() => false),
+    ]);
+
+    const highNum = parseFloat(ethers.formatUnits(highReserve, 18));
+    const currentNum = parseFloat(ethers.formatUnits(currentReserve, 18));
+    const triggerNum = parseFloat(ethers.formatUnits(triggerReserve, 18));
+    const ratioNum = parseFloat(ethers.formatUnits(ratioE18, 18)); // 1 = 100%
+    const unpaidNum = parseFloat(ethers.formatUnits(unpaid, 18));
+    const paidNum = parseFloat(ethers.formatUnits(paid, 18));
+
+    const set = (id, text, cls = '') => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'diag-value ' + cls;
+    };
+
+    set('ppActive', active ? '⚠️ 是' : '✅ 否', active ? 'err' : 'ok');
+    set('ppRound', String(round));
+    set('ppHigh', highNum.toFixed(2) + ' USDT');
+    set('ppCurrent', currentNum.toFixed(2) + ' USDT',
+      currentNum <= triggerNum ? 'err' : 'ok');
+    set('ppTrigger', triggerNum.toFixed(2) + ' USDT');
+    set('ppRatio', (ratioNum * 100).toFixed(2) + '%',
+      ratioNum < 1 ? 'warn' : 'ok');
+    set('ppUnpaid', unpaidNum.toFixed(2) + ' USDT');
+    set('ppPaid', paidNum.toFixed(2) + ' USDT');
+    set('ppManual', manual ? '⚠️ 已激活' : '✅ 否', manual ? 'err' : 'ok');
+  } catch (e) {
+    console.warn('读取熔断诊断失败:', e);
   }
 }
 
@@ -1060,13 +1150,15 @@ async function loadAllData() {
         $('statusProtection').textContent = '未触发';
         $('stakeProtection').textContent = '✅ 安全';
       }
-      if (prot.currentReserve) {
+      if (prot.currentReserve != null) {
         $('statusLp').textContent = formatUnits(prot.currentReserve, 18, 0) + ' USDT';
       }
     } else {
       $('statusProtection').textContent = '--';
       $('statusLp').textContent = '--';
     }
+
+    await renderProtectionDiagnosis();
 
     await loadOrders();
     updateProfileData();
