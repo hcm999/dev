@@ -413,8 +413,11 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <option value="all">全部</option>
                     <option value="product0">15天</option>
                     <option value="product1">30天</option>
-                    <option value="stake">活跃中</option>
+                    <option value="active">锁仓中</option>
                     <option value="matured">可赎回</option>
+                    <option value="restaked">已复投</option>
+                    <option value="settled">已赎回</option>
+                    <option value="expired">已过期</option>
                 </select>
                 <input type="date" id="filterDate" class="filter-select" style="width:auto;" onchange="applyFilters()">
                 <input type="text" id="searchAddress" class="search-input" placeholder="搜索地址..." oninput="applyFilters()">
@@ -2443,18 +2446,22 @@ function applyFilters() {
         dateEnd = dateStart + 86400;
     }
 
-    filteredResults = queryResults.filter(r => {
+    // ✅ 数据源改为全部历史记录（与展示端一致），不再只看活跃
+    filteredResults = allStakeRecords.filter(r => {
         if (type === 'product0' && r.product !== 0) return false;
         if (type === 'product1' && r.product !== 1) return false;
-        if (type === 'stake' && r.status !== 'active') return false;
+        if (type === 'active' && r.status !== 'active') return false;
         if (type === 'matured' && r.status !== 'matured') return false;
+        if (type === 'restaked' && r.status !== 'restaked') return false;
+        if (type === 'settled' && !['redeemed','settled'].includes(r.status)) return false;
+        if (type === 'expired' && r.status !== 'expired') return false;
         if (dateStart && (r.stakeTime < dateStart || r.stakeTime >= dateEnd)) return false;
         if (search && !r.address.toLowerCase().includes(search)) return false;
         return true;
     });
 
     renderTable();
-    document.getElementById('filterStats').innerText = `显示 ${filteredResults.length}/${queryResults.length}`;
+    document.getElementById('filterStats').innerText = `显示 ${filteredResults.length}/${allStakeRecords.length}`;
 }
 
 function renderTable() {
@@ -2463,7 +2470,9 @@ function renderTable() {
     const now = Math.floor(Date.now() / 1000);
     const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
-    tbody.innerHTML = sorted.map((r, i) => {
+    const MAX_RENDER = 1000;                    // ✅ 新增
+    const toRender = sorted.slice(0, MAX_RENDER);
+    tbody.innerHTML = toRender.map((r, i) => {
         let principalColor = '#38bdf8';
         let tagHtml = '<span style="font-size:0.55rem;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:4px;margin-left:5px;border:1px solid #38bdf8;">直</span>';
 
@@ -2500,6 +2509,12 @@ function renderTable() {
             <td class="${cls}">${statusText(r.status)}</td>
         </tr>`;
     }).join('');
+
+    if (sorted.length > MAX_RENDER) {           // ✅ 新增截断提示
+        tbody.innerHTML += `<tr><td colspan="10" class="empty-state" style="color:#fbbf24;">
+            ⚠️ 仅显示前 ${MAX_RENDER} 条，共 ${sorted.length} 条，请缩小筛选范围
+        </td></tr>`;
+    }
 }
 
 function clearFilters() {
@@ -2596,9 +2611,10 @@ async function refreshLPPool() {
 }
 
 function exportCSV() {
-    if(!queryResults.length) { alert('没有数据可导出'); return; }
+    if(!filteredResults.length) { alert('没有数据可导出'); return; }
     const headers = ['序号', '地址', '本金', '收益', '本金+收益', '产品', '质押时间', '解锁时间', '剩余', '状态'];
-    const rows = queryResults.map((r, i) => [
+    const sorted = [...filteredResults].sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
+    const rows = sorted.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
         r.productText || '--', formatTime(r.stakeTime), formatTime(r.unlockTime),
         timeRemain(r.unlockTime - Math.floor(Date.now()/1000)),
@@ -2858,7 +2874,8 @@ function renderCashflow() {
 
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
-    dates.forEach(ds => {
+    const tableDates = [...dates].reverse();     // ✅ 新增：表格倒序（最新在上）
+    tableDates.forEach(ds => {                    // ✅ 改为遍历 tableDates
         const d = dailyMap.get(ds) || { in:0, out:0, reward:0, reinvest:0 };
         const net = d.in - d.out;
         html += `<tr>
