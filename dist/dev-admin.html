@@ -340,9 +340,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <span style="color:#8899bb;">👥 每日地址趋势 (活跃/新增)</span>
                     <span id="totalActiveAddresses" style="color:#3b82f6;font-weight:700;font-size:0.85rem;">🟢 当前活跃: 0</span>
                     <div>
-                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(15, this)">15天</span>
-                        <span class="range-btn address-range-btn active" onclick="event.stopPropagation(); setAddressTrendRange(30, this)">30天</span>
+                        <span class="range-btn address-range-btn active" onclick="event.stopPropagation(); setAddressTrendRange(15, this)">15天</span>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(30, this)">30天</span>
                         <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(90, this)">90天</span>
+                        <span class="range-btn address-range-btn" onclick="event.stopPropagation(); setAddressTrendRange(90, this)">120天</span>
                     </div>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -357,9 +358,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
                     <span style="color:#8899bb;">📈 每日趋势 (新增/活跃/复投/赎回)</span>
                     <div>
-                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(30, this)">30天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setTrendRange(15, this)">15天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setTrendRange(30, this)">30天</span>
                         <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(90, this)">90天</span>
-                        <span class="range-btn active" onclick="event.stopPropagation(); setTrendRange(120, this)">120天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setTrendRange(120, this)">120天</span>
                     </div>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -396,8 +398,8 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <span style="color:#8899bb;">📊 未来每日到期本金 + 收益</span>
                     <div>
                         <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(7, this)">7天</span>
-                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
-                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
                     </div>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -708,10 +710,10 @@ let isQuerying = false, failedAddresses = [];
 let lastScannedOrderId = 0;
 let queryResults = [], allStakeRecords = [];
 let filteredResults = [];
-let dailyStartHour = 8;
-let trendRange = 120;
-let expiryRange = 15;
-let addressTrendRange = 30;
+let dailyStartHour = 8;   // 结算口径：8=北京8点(UTC0)，0=北京0点(UTC16)
+let trendRange = 15;           // 每日趋势默认 15 天
+let expiryRange = 30;          // 未来每日到期默认 30 天
+let addressTrendRange = 15;    // 每日地址趋势默认 15 天
 let stats = {
     totalStaked: 0, activeStaked: 0,
     staked15d: 0, staked30d: 0,
