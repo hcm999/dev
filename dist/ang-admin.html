@@ -258,9 +258,15 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card"><div class="stat-title">🟪 30天周期(本金)</div><div class="stat-value" id="staked30d">0.00</div><div class="stat-sub">USDT<span class="stat-pct" id="p30Pct">占比 --</span></div></div>
     </div>
     <div class="stats-grid">
-        <div class="stat-card"><div class="stat-title">⏳ 2天内到期</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock2dPct">占可兑付 --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 7天内到期</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock7dPct">占可兑付 --</span></div></div>
-        <div class="stat-card"><div class="stat-title">⏳ 15天内到期</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock15dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 2天到期本金</div><div class="stat-value" id="unlock2dP">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock2dPPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天到期本金</div><div class="stat-value" id="unlock7dP">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock7dPPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天到期本金</div><div class="stat-value" id="unlock15dP">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock15dPPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 30天到期本金</div><div class="stat-value" id="unlock30dP">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock30dPPct">占可兑付 --</span></div></div>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-title">⏳ 2天到期本息</div><div class="stat-value" id="unlock2d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock2dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 7天到期本息</div><div class="stat-value" id="unlock7d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock7dPct">占可兑付 --</span></div></div>
+        <div class="stat-card"><div class="stat-title">⏳ 15天到期本息</div><div class="stat-value" id="unlock15d">0.00</div><div class="stat-sub">USD<span class="stat-pct" id="unlock15dPct">占可兑付 --</span></div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="refreshLPPool()" title="点击刷新LP池余额">
             <div class="stat-title">💰 LP池余额 <span style="font-size:0.7rem;color:#60a5fa;">🔄</span></div>
             <div class="stat-value" id="lpBalance">0.00</div>
@@ -494,7 +500,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
             <div class="table-responsive" style="max-height:600px;">
                 <table class="table">
-                    <thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>复投时间</th></tr></thead>
+                    <thead><tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>原订单周期</th><th>复投时间</th></tr></thead>
                     <tbody id="reinvestTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
             </div>
@@ -589,6 +595,7 @@ let stats = {
     totalStaked: 0, activeStaked: 0,
     staked15d: 0, staked30d: 0,
     unlock2d: 0, unlock7d: 0, unlock15d: 0,
+    unlock2dP: 0, unlock7dP: 0, unlock15dP: 0, unlock30dP: 0,   // ← 新增：本金口径
     lpBalance: 0, lpAngReserve: 0, totalOrders: 0,
     protectionActive: false, protectionRatio: 1,
     historicalHighReserve: 0, triggerReserve: 0,   // 新增
@@ -722,6 +729,8 @@ function buildReinvestNewOrderSet(allRecords) {
             amountWithProfit: Number(r.amountWithProfit || (r.amount || 0) + (r.profit || 0)),
             unstakeTime: ts,
             used: false,
+            product: r.product,          // ← 新增：原订单周期 0=15天 / 1=30天
+            productText: r.productText,  // ← 新增：原订单周期文本
         });
     });
     restakedByAddr.forEach(list => list.sort((a, b) => a.unstakeTime - b.unstakeTime));
@@ -1475,6 +1484,7 @@ function calcStatsFromRecords() {
     stats.totalStaked = 0; stats.activeStaked = 0;
     stats.staked15d = 0; stats.staked30d = 0;
     stats.unlock2d = 0; stats.unlock7d = 0; stats.unlock15d = 0;
+    stats.unlock2dP = 0; stats.unlock7dP = 0; stats.unlock15dP = 0; stats.unlock30dP = 0;   // ← 新增
 
     allStakeRecords.forEach(r => { stats.totalStaked += principalOf(r); });
 
@@ -1484,6 +1494,13 @@ function calcStatsFromRecords() {
         stats.activeStaked += p;
         if (r.product === 0) stats.staked15d += p;
         else if (r.product === 1) stats.staked30d += p;
+
+        // ← 新增：本金口径到期统计
+        const remainP = r.unlockTime - now;
+        if (remainP <= DURATION_2)  stats.unlock2dP  += p;
+        if (remainP <= DURATION_7)  stats.unlock7dP  += p;
+        if (remainP <= DURATION_15) stats.unlock15dP += p;
+        if (remainP <= DURATION_30) stats.unlock30dP += p;
     });
 
     queryResults.forEach(r => {
@@ -1518,6 +1535,10 @@ function updateStats() {
     document.getElementById('unlock2d').innerText = stats.unlock2d.toFixed(2);
     document.getElementById('unlock7d').innerText = stats.unlock7d.toFixed(2);
     document.getElementById('unlock15d').innerText = stats.unlock15d.toFixed(2);
+    document.getElementById('unlock2dP').innerText = stats.unlock2dP.toFixed(2);    // ← 新增
+    document.getElementById('unlock7dP').innerText = stats.unlock7dP.toFixed(2);    // ← 新增
+    document.getElementById('unlock15dP').innerText = stats.unlock15dP.toFixed(2);  // ← 新增
+    document.getElementById('unlock30dP').innerText = stats.unlock30dP.toFixed(2);  // ← 新增
     document.getElementById('lpBalance').innerText = stats.lpBalance.toFixed(2);
     document.getElementById('resultCount').innerText = queryResults.length;
 
@@ -1548,6 +1569,10 @@ function updateStats() {
     setUnlockPct('unlock2dPct',  stats.unlock2d,  payable);
     setUnlockPct('unlock7dPct',  stats.unlock7d,  payable);
     setUnlockPct('unlock15dPct', stats.unlock15d, payable);
+    setUnlockPct('unlock2dPPct',  stats.unlock2dP,  payable);   // ← 新增
+    setUnlockPct('unlock7dPPct',  stats.unlock7dP,  payable);   // ← 新增
+    setUnlockPct('unlock15dPPct', stats.unlock15dP, payable);   // ← 新增
+    setUnlockPct('unlock30dPPct', stats.unlock30dP, payable);   // ← 新增
 
     // 本金泡沫 = 活跃质押 / 可兑付
     const bubbleEl = document.getElementById('bubbleValue');
@@ -2621,6 +2646,7 @@ function resetQuery() {
             totalStaked: 0, activeStaked: 0,
             staked15d: 0, staked30d: 0,
             unlock2d: 0, unlock7d: 0, unlock15d: 0,
+            unlock2dP: 0, unlock7dP: 0, unlock15dP: 0, unlock30dP: 0,   // ← 新增
             lpBalance: stats.lpBalance || 0, lpAngReserve: stats.lpAngReserve || 0,
             totalOrders: stats.totalOrders || 0,
             protectionActive: stats.protectionActive, protectionRatio: stats.protectionRatio,
@@ -3096,11 +3122,12 @@ function renderReinvest() {
     list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
 
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无数据</td></tr>';
         return;
     }
     tbody.innerHTML = list.map((r, i) => {
         const old = reinvestMatch.get(r.orderId);
+        const oldProductCls = old && old.product === 0 ? 'p15' : 'p30';
         return `<tr>
             <td>${i+1}</td>
             <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}</td>
@@ -3109,6 +3136,7 @@ function renderReinvest() {
             <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
             <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
             <td>${old ? ('#' + old.orderId) : '--'}</td>
+            <td>${old ? `<span class="badge-duration ${oldProductCls}">${old.productText || '--'}</span>` : '--'}</td>
             <td>${formatTime(r.stakeTime)}</td>
         </tr>`;
     }).join('');
@@ -3119,12 +3147,12 @@ function exportReinvest() {
     const reinvestMatch = getReinvestMatch();
     const list = queryResults.filter(r => reinvestSet.has(r.orderId));
     if (!list.length) { alert('没有数据可导出'); return; }
-    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '复投时间'];
+    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '原订单周期', '复投时间'];
     const rows = list.map((r, i) => {
         const old = reinvestMatch.get(r.orderId);
         return [
             i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-            r.productText, old ? old.orderId : '', formatTime(r.stakeTime)
+            r.productText, old ? old.orderId : '', old ? (old.productText || '') : '', formatTime(r.stakeTime)
         ];
     });
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
