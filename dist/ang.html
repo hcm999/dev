@@ -421,7 +421,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive">
                 <table class="table">
                     <thead>
-                        <tr><th>日期</th><th>新增质押</th><th>活跃质押</th><th>15天周期</th><th>30天周期</th><th>复投</th><th>赎回</th></tr>
+                        <tr><th>日期</th><th>新增质押</th><th>活跃质押</th><th>15天周期</th><th>30天周期</th><th>复投</th><th>实际出金</th></tr>
                     </thead>
                     <tbody id="dailyStatsBody"><tr><td colspan="7" class="empty-state">加载中...</td></tr></tbody>
                 </table>
@@ -1025,15 +1025,47 @@ function rebuildReinvestSet() {
     const r = buildReinvestNewOrderSet(allStakeRecords);
     _reinvestSet = r.reinvestSet;
     _reinvestMatch = r.matchedOldByNew;
+    _restakedToNewMap = null;
+    _recordByIdMap = null;
     return _reinvestSet;
 }
+
 function getReinvestSet() {
     if (_reinvestSet === null) rebuildReinvestSet();
     return _reinvestSet;
 }
+
 function getReinvestMatch() {
     if (_reinvestMatch === null) rebuildReinvestSet();
     return _reinvestMatch;
+}
+
+// ===== 复投领取相关辅助（与管理端一致）=====
+let _restakedToNewMap = null;
+let _recordByIdMap = null;
+
+function getRestakedToNewMap() {
+    if (_restakedToNewMap) return _restakedToNewMap;
+    const m = new Map();
+    for (const [newId, old] of getReinvestMatch()) m.set(old.orderId, newId);
+    _restakedToNewMap = m;
+    return m;
+}
+
+function getRecordByIdMap() {
+    if (_recordByIdMap) return _recordByIdMap;
+    const m = new Map();
+    allStakeRecords.forEach(r => m.set(r.orderId, r));
+    _recordByIdMap = m;
+    return m;
+}
+
+function getProfitClaimTs(r) {
+    if (!r || r.status !== 'restaked') return null;
+    const newId = getRestakedToNewMap().get(r.orderId);
+    if (!newId) return null;
+    const newOrder = getRecordByIdMap().get(newId);
+    return (newOrder && newOrder.stakeTime > 0) ? newOrder.stakeTime : null;
 }
 
 // ================================================================
@@ -1559,12 +1591,18 @@ function updateTrendChart() {
                 dailyReinvestMap.set(ds, (dailyReinvestMap.get(ds) || 0) + amt);
             }
         }
+        // 实际出金 = 本金赎回（按赎回日）+ 收益领取（仅 restaked，按复投日）
         if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts > 0) {
                 const ds = getDateStr(ts);
-                dailyRedeemMap.set(ds, (dailyRedeemMap.get(ds) || 0) + totalOf(r));
+                dailyRedeemMap.set(ds, (dailyRedeemMap.get(ds) || 0) + principalOf(r));
             }
+        }
+        const claimTs = getProfitClaimTs(r);
+        if (claimTs) {
+            const ds = getDateStr(claimTs);
+            dailyRedeemMap.set(ds, (dailyRedeemMap.get(ds) || 0) + profitOf(r));
         }
     });
 
@@ -1580,7 +1618,7 @@ function updateTrendChart() {
                 { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
                 { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
                 { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
-                { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+                { label: '实际出金', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
             ]
         },
         options: {
@@ -1598,7 +1636,7 @@ function updateTrendChart() {
                         footer: items => {
                             if (!items.length) return '';
                             const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
-                            const net = get('新增质押') - get('赎回本息');
+                            const net = get('新增质押') - get('实际出金');
                             return '净流入: ' + net.toFixed(2) + ' USDT';
                         }
                     }
@@ -1838,8 +1876,10 @@ function updateDailyStats() {
         }
         if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
-            if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
+            if (ts > 0) ensureDay(getDateStr(ts)).redeem += principalOf(r);
         }
+        const claimTs = getProfitClaimTs(r);
+        if (claimTs) ensureDay(getDateStr(claimTs)).redeem += profitOf(r);
     });
 
     const sorted = Array.from(map.keys()).sort().reverse().slice(0, 30);
@@ -1974,9 +2014,9 @@ function renderCashflow() {
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
             in: 0, inCount: 0,
-            out: 0, outCount: 0,
-            redeemPrincipal: 0,
-            reward: 0,
+            out: 0,
+            redeemPrincipal: 0, redeemCount: 0,
+            reward: 0, rewardCount: 0,
             reinvest: 0, reinvestCount: 0
         });
         return dailyMap.get(ds);
@@ -1992,15 +2032,21 @@ function renderCashflow() {
                 d.reinvestCount += 1;
             }
         }
+        // 本金赎回：按赎回日
         const endTs = r.unstakeTime || r.unlockTime;
         if (isClosedOf(r) && endTs > 0) {
             const d = ensureDay(getDateStr(endTs));
-            const pr = principalOf(r);
-            const pf = profitOf(r);
-            d.out += pr + pf;
-            d.redeemPrincipal += pr;
-            d.reward += pf;
-            d.outCount += 1;
+            d.out += principalOf(r);
+            d.redeemPrincipal += principalOf(r);
+            d.redeemCount += 1;
+        }
+        // 收益领取：仅 restaked，按复投新单 stakeTime
+        const claimTs = getProfitClaimTs(r);
+        if (claimTs) {
+            const d = ensureDay(getDateStr(claimTs));
+            d.reward += profitOf(r);
+            d.out += profitOf(r);
+            d.rewardCount += 1;
         }
     });
 
@@ -2009,27 +2055,28 @@ function renderCashflow() {
     const tableDates = [...dates].reverse();
 
     if (dateInput && dateInput.value) {
-        const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+        const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, redeemCount:0, reward:0, rewardCount:0, reinvest:0, reinvestCount:0 };
         $('cfIn').innerText = d.in.toFixed(2);
         $('cfInSub').innerText = `质押 ${d.inCount} 笔`;
         $('cfOut').innerText = d.out.toFixed(2);
-        $('cfOutSub').innerText = `赎回 ${d.outCount} 笔 · 收益 ${d.reward.toFixed(2)}`;
+        $('cfOutSub').innerText = `赎回 ${d.redeemCount} 笔 · 领取 ${d.reward.toFixed(2)}（${d.rewardCount} 笔）`;
         $('cfNet').innerText = (d.in - d.out).toFixed(2);
         $('cfReinvest').innerText = d.reinvest.toFixed(2);
         $('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
     } else {
-        let tIn=0,tOut=0,tReward=0,tReinvest=0,tInC=0,tOutC=0,tReC=0;
+        let tIn=0,tOut=0,tReward=0,tReinvest=0,tInC=0,tRedeemC=0,tRewardC=0,tReC=0;
         dates.forEach(ds => {
-            const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, reward:0, reinvest:0, reinvestCount:0 };
+            const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, redeemCount:0, reward:0, rewardCount:0, reinvest:0, reinvestCount:0 };
             tIn += d.in; tInC += d.inCount;
-            tOut += d.out; tOutC += d.outCount;
+            tOut += d.out; tRedeemC += d.redeemCount;
             tReward += d.reward;
+            tRewardC += d.rewardCount;
             tReinvest += d.reinvest; tReC += d.reinvestCount;
         });
         $('cfIn').innerText = tIn.toFixed(2);
         $('cfInSub').innerText = `质押 ${tInC} 笔`;
         $('cfOut').innerText = tOut.toFixed(2);
-        $('cfOutSub').innerText = `赎回 ${tOutC} 笔 · 收益 ${tReward.toFixed(2)}`;
+        $('cfOutSub').innerText = `赎回 ${tRedeemC} 笔 · 领取 ${tReward.toFixed(2)}（${tRewardC} 笔）`;
         $('cfNet').innerText = (tIn - tOut).toFixed(2);
         $('cfReinvest').innerText = tReinvest.toFixed(2);
         $('cfReinvestSub').innerText = `复投 ${tReC} 笔`;
@@ -2038,7 +2085,7 @@ function renderCashflow() {
     const tbody = $('cashflowTableBody');
     let html = '';
     tableDates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, out:0, reward:0, reinvest:0 };
+        const d = dailyMap.get(ds) || { in:0, out:0, redeemPrincipal:0, reward:0, reinvest:0 };
         const net = d.in - d.out;
         html += `<tr>
             <td>${ds}</td>
@@ -2120,12 +2167,14 @@ function renderRedeem() {
     }
     tbody.innerHTML = list.map((r, i) => {
         const isRestaked = r.status === 'restaked';
+        const profitDisplay = isRestaked ? profitOf(r).toFixed(2) : '--';
+        const totalDisplay  = isRestaked ? totalOf(r).toFixed(2)  : principalOf(r).toFixed(2);
         return `<tr>
             <td>${i+1}</td>
             <td class="address-cell" onclick="copyAddress('${r.address}')">${shorten(r.address)}${isRestaked ? ' <span style="font-size:0.55rem;color:#c084fc;border:1px solid #c084fc;border-radius:3px;padding:0 3px;">复投</span>' : ''}</td>
             <td class="amount-cell">${principalOf(r).toFixed(2)}</td>
-            <td class="amount-cell" style="color:#ef4444;">${profitOf(r).toFixed(2)}</td>
-            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
+            <td class="amount-cell" style="color:#ef4444;">${profitDisplay}</td>
+            <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalDisplay}</td>
             <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
             <td>${statusText(r.status)}</td>
             <td>${formatTime(r.unstakeTime || r.unlockTime)}</td>
@@ -2288,6 +2337,8 @@ function updateReportData() {
     let reinvestAmt = 0, reinvestCount = 0; const reinvestAddrs = new Set();
     let p15Amt = 0, p15Count = 0; const p15Addrs = new Set();
     let p30Amt = 0, p30Count = 0; const p30Addrs = new Set();
+    let redeemPrincipalAmt = 0, redeemPrincipalCount = 0; const redeemPrincipalAddrs = new Set();
+    let rewardClaimAmt = 0, rewardClaimCount = 0; const rewardClaimAddrs = new Set();
     let redeemAmt = 0, redeemCount = 0; const redeemAddrs = new Set();
 
     allStakeRecords.forEach(r => {
@@ -2307,15 +2358,30 @@ function updateReportData() {
             else if (r.product === 1) { p30Amt += amt; p30Count++; p30Addrs.add(r.address); }
         }
 
+        // 本金赎回（按赎回时间）
         if (isClosedOf(r)) {
             const ts = r.unstakeTime || r.redeemedAt || r.unlockTime;
             if (ts >= startTs && ts < endTs) {
-                redeemAmt += totalOf(r);
-                redeemCount++;
-                redeemAddrs.add(r.address);
+                redeemPrincipalAmt += principalOf(r);
+                redeemPrincipalCount++;
+                redeemPrincipalAddrs.add(r.address);
             }
         }
+        // 收益领取（仅 restaked，按复投新单 stakeTime）
+        const claimTs = getProfitClaimTs(r);
+        if (claimTs && claimTs >= startTs && claimTs < endTs) {
+            rewardClaimAmt += profitOf(r);
+            rewardClaimCount++;
+            rewardClaimAddrs.add(r.address);
+        }
     });
+
+    // 实际出金 = 本金赎回 + 复投领取收益
+    redeemAmt = redeemPrincipalAmt + rewardClaimAmt;
+    redeemCount = redeemPrincipalCount + rewardClaimCount;
+    redeemAddrs.clear();
+    redeemPrincipalAddrs.forEach(a => redeemAddrs.add(a));
+    rewardClaimAddrs.forEach(a => redeemAddrs.add(a));
 
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
@@ -2346,9 +2412,9 @@ function updateReportData() {
             </div>
 
             <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 赎回金额：<span style="color: #f97316; font-size: 1.1rem;">${fmt(redeemAmt)} USDT</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>订单赎回（含本息）</span><span>${redeemCount} 笔</span></div>
-                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>赎回钱包（去重）</span><span>${redeemAddrs.size} 个</span></div>
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">📤 实际出金：<span style="color: #f97316; font-size: 1.1rem;">${fmt(redeemAmt)} USDT</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem; margin-bottom: 4px;"><span>├ 本金赎回</span><span><span style="color:#f97316;font-weight:600;">${fmt(redeemPrincipalAmt)}</span> USDT｜${redeemPrincipalCount} 笔｜${redeemPrincipalAddrs.size} 钱包</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>└ 复投领取收益</span><span><span style="color:#fbbf24;font-weight:600;">${fmt(rewardClaimAmt)}</span> USDT｜${rewardClaimCount} 笔｜${rewardClaimAddrs.size} 钱包</span></div>
             </div>
 
             <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px; font-size: 0.9rem;">📊 产品周期分布：</div>
@@ -2375,9 +2441,9 @@ function updateReportData() {
 ├ 首次质押：${fmt(firstStakeAmt)} USDT｜${firstStakeCount} 笔｜${firstStakeAddrs.size} 个钱包｜占 ${firstPct}%
 └ 复投质押：${fmt(reinvestAmt)} USDT｜${reinvestCount} 笔｜${reinvestAddrs.size} 个钱包｜占 ${reinvestPct}%
 
-赎回金额：${fmt(redeemAmt)} USDT
-订单赎回：${redeemCount} 笔
-赎回钱包（去重地址）：${redeemAddrs.size} 个
+实际出金：${fmt(redeemAmt)} USDT
+├ 本金赎回：${fmt(redeemPrincipalAmt)} USDT｜${redeemPrincipalCount} 笔｜${redeemPrincipalAddrs.size} 个钱包
+└ 复投领取收益：${fmt(rewardClaimAmt)} USDT｜${rewardClaimCount} 笔｜${rewardClaimAddrs.size} 个钱包
 
 产品周期分布：
 15 天：${fmt(p15Amt)} USDT｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
