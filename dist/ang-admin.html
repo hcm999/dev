@@ -65,7 +65,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .toggle-btn { background:#111827; border:1px solid #2a3a5a; color:#e8edf5; padding:6px 14px; border-radius:30px; font-size:0.8rem; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all 0.3s ease; }
 .toggle-btn:hover { background:#3b82f6; border-color:#60a5fa; }
 .toggle-btn .toggle-icon { display:inline-block; transition:transform 0.3s ease; font-size:12px; }
-.toggle-btn.collapsed .toggle-icon { transform:rotate(-90deg); }
+.toggle-btn.collapsed .toggle-icon { transform:rotate(0deg); }
 .btn-cloud { background:linear-gradient(135deg,#10b981,#059669); border:1px solid #34d399; padding:6px 16px; border-radius:30px; color:white; font-weight:600; font-size:0.75rem; cursor:pointer; }
 .query-mode { padding:2px 10px; border-radius:20px; font-size:0.65rem; margin-left:8px; background:#10b981; color:white; }
 .range-btn { background:#1a2332; border:1px solid #2a3a5a; color:#8899bb; padding:2px 12px; border-radius:20px; font-size:0.7rem; cursor:pointer; }
@@ -177,11 +177,11 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     </div>
 
     <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;">
-        <button class="toggle-btn" onclick="togglePanel('config-panel', this)"><span class="toggle-icon">▼</span> 起始时间</button>
-        <button class="toggle-btn" onclick="togglePanel('address-input', this)"><span class="toggle-icon">▼</span> 查询面板</button>
+        <button class="toggle-btn collapsed" onclick="togglePanel('config-panel', this)"><span class="toggle-icon">▶</span> 起始时间</button>
+        <button class="toggle-btn collapsed" onclick="togglePanel('address-input', this)"><span class="toggle-icon">▶</span> 查询面板</button>
     </div>
 
-    <div class="address-input-area" id="config-panel">
+    <div class="address-input-area collapsed" id="config-panel">
         <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
             <span style="color:#8899bb;font-size:0.85rem;">📅 每日统计起始：</span>
             <select id="dailyStartTime" class="filter-select" onchange="updateDailyStart()">
@@ -192,7 +192,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
-    <div class="address-input-area" id="address-input">
+    <div class="address-input-area collapsed" id="address-input">
         <div class="toolbar">
             <span class="example-tag" onclick="openBscScanDownload()" style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white;">🌐 获取质押地址</span>
             <span class="example-tag" onclick="clearAddresses()">🗑️ 清空地址</span>
@@ -218,7 +218,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
     </div>
 
-    <div class="chart-card collapsible-card" style="border:2px solid #22c55e;">
+    <div class="chart-card collapsible-card collapsed" style="border:2px solid #22c55e;">
         <div class="card-header" onclick="toggleCard(this)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;flex:1;">
                 <span style="font-size:1.1rem;font-weight:700;color:#22c55e;">🔐 白名单 & 付费管理</span>
@@ -289,7 +289,6 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <span class="data-tab" onclick="switchTab('redeem')" id="tab-redeem">💸 赎回记录</span>
         <span class="data-tab" onclick="switchTab('reinvest')" id="tab-reinvest">🔁 复投记录</span>
         <span class="data-tab" onclick="switchTab('expired')" id="tab-expired">⚠️ 到期未赎回</span>
-        <div class="logo">ANG<a href="https://www.ganaweb3.top/afi/#/?code=SSWY38" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">质押工具</a></div>
     </div>
 
     <div id="panel-charts" class="data-panel active">
