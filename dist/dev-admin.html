@@ -331,6 +331,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <span class="data-tab" onclick="switchTab('redeem')" id="tab-redeem">💸 赎回记录</span>
         <span class="data-tab" onclick="switchTab('reinvest')" id="tab-reinvest">🔁 复投记录</span>
         <span class="data-tab" onclick="switchTab('expired')" id="tab-expired">⚠️ 到期未赎回</span>
+        <div class="logo">DEV<a href="https://www.ganaweb3.top/devdao/#/?code=SSWY38" target="_blank" style="font-weight:300;-webkit-text-fill-color:#4f8cff;color:#4f8cff;font-size:14px;text-decoration:none;">质押工具</a></div>
     </div>
     
     <div id="panel-charts" class="data-panel active">
@@ -399,7 +400,8 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <div>
                         <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(7, this)">7天</span>
                         <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
-                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(31, this)">31天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(40, this)">40天</span>
                     </div>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -412,7 +414,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
-                    <span style="color:#8899bb;">📋 未来30天每日到期记录</span>
+                    <span style="color:#8899bb;" id="expiryTableTitle">📋 未来30天每日到期记录</span>
                     <button class="btn-query" style="flex:0;padding:4px 16px;font-size:0.7rem;" onclick="event.stopPropagation(); exportExpiryTable()">📥 导出</button>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -461,7 +463,12 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="table-container">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
                 <h5 style="color:#e8edf5;">📅 每日统计</h5>
-                <button class="btn-query" style="flex:0;padding:4px 16px;" onclick="exportDailyStats()">📥 导出</button>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span class="range-btn daily-stats-range-btn active" onclick="setDailyStatsRange(30, this)">30天</span>
+                    <span class="range-btn daily-stats-range-btn" onclick="setDailyStatsRange(90, this)">90天</span>
+                    <span class="range-btn daily-stats-range-btn" onclick="setDailyStatsRange(0, this)">全部</span>
+                    <button class="btn-query" style="flex:0;padding:4px 16px;" onclick="exportDailyStats()">📥 导出</button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table">
@@ -712,8 +719,9 @@ let queryResults = [], allStakeRecords = [];
 let filteredResults = [];
 let dailyStartHour = 8;   // 结算口径：8=北京8点(UTC0)，0=北京0点(UTC16)
 let trendRange = 15;           // 每日趋势默认 15 天
-let expiryRange = 30;          // 未来每日到期默认 30 天
+let expiryRange = 31;          // 未来每日到期默认 30 天
 let addressTrendRange = 15;    // 每日地址趋势默认 15 天
+let dailyStatsRange = 30;      // 每日统计显示范围：30/90/0=全部
 let stats = {
     totalStaked: 0, activeStaked: 0,
     staked15d: 0, staked30d: 0,
@@ -2382,7 +2390,8 @@ function updateExpiryChart() {
     const [yy, mm, dd] = todayDs.split('-').map(Number);
     const baseUtc = Date.UTC(yy, mm - 1, dd);
 
-    for(let i = 0; i < 30; i++) {
+    const totalDays = Math.max(expiryRange, 30);
+    for(let i = 0; i < totalDays; i++) {
         const utcMs = baseUtc + i * 86400 * 1000;
         const dUtc = new Date(utcMs);
         const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
@@ -2401,7 +2410,7 @@ function updateExpiryChart() {
     const tbody = document.getElementById('expiryTableBody');
     let html = '';
     let cumSum = 0;
-    for(let i = 0; i < 30; i++) {
+    for(let i = 0; i < totalDays; i++) {
         const total = totalArr[i];
         cumSum += total;
         html += `<tr>
@@ -2416,6 +2425,8 @@ function updateExpiryChart() {
     }
     tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
 
+    const titleEl = document.getElementById('expiryTableTitle');
+    if (titleEl) titleEl.innerText = `📋 未来${totalDays}天每日到期记录`;
     const tP15 = p15Arr.reduce((a,b)=>a+b,0);
     const tY15 = y15Arr.reduce((a,b)=>a+b,0);
     const tP30 = p30Arr.reduce((a,b)=>a+b,0);
@@ -2493,7 +2504,8 @@ function exportExpiryTable() {
     const [yy, mm, dd] = todayDs.split('-').map(Number);
     const baseUtc = Date.UTC(yy, mm - 1, dd);
 
-    for(let i = 0; i < 30; i++) {
+    const totalDays = Math.max(expiryRange, 30);
+    for(let i = 0; i < totalDays; i++) {
         const utcMs = baseUtc + i * 86400 * 1000;
         const dUtc = new Date(utcMs);
         const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
@@ -2863,7 +2875,8 @@ function updateDailyStats() {
         }
     });
 
-    const sorted = Array.from(dailyMap.keys()).sort().reverse().slice(0, 30);
+    const allSorted = Array.from(dailyMap.keys()).sort().reverse();
+    const sorted = dailyStatsRange > 0 ? allSorted.slice(0, dailyStatsRange) : allSorted;
     const tbody = document.getElementById('dailyStatsBody');
     if (!sorted.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
@@ -2881,6 +2894,14 @@ function updateDailyStats() {
             <td class="amount-cell" style="color:#f59e0b;">${v.redeem.toFixed(2)}</td>
         </tr>`;
     }).join('');
+}
+
+function setDailyStatsRange(days, btn) {
+    dailyStatsRange = days;
+    document.querySelectorAll('.daily-stats-range-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    updateDailyStats();
+    addLog(`📅 每日统计显示：${days > 0 ? days + ' 天' : '全部'}`, 'info');
 }
 
 function updateAllCharts() {
@@ -3488,6 +3509,7 @@ window.exportExpiryTable = exportExpiryTable;
 window.exportLeaderboard = exportLeaderboard;
 window.setTrendRange = setTrendRange;
 window.setExpiryRange = setExpiryRange;
+window.setDailyStatsRange = setDailyStatsRange;
 window.setAddressTrendRange = setAddressTrendRange;
 window.switchTab = switchTab;
 window.togglePanel = togglePanel;
