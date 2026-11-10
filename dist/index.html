@@ -343,7 +343,8 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                     <div>
                         <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(7, this)">7天</span>
                         <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(15, this)">15天</span>
-                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(30, this)">30天</span>
+                        <span class="range-btn active" onclick="event.stopPropagation(); setExpiryRange(31, this)">31天</span>
+                        <span class="range-btn" onclick="event.stopPropagation(); setExpiryRange(40, this)">40天</span>
                     </div>
                 </div>
                 <span class="collapse-icon">▼</span>
@@ -356,7 +357,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="chart-card collapsible-card">
             <div class="card-header" onclick="toggleCard(this)">
                 <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;flex:1;gap:8px;">
-                    <span style="color:#8899bb;">📋 未来30天每日到期记录</span>
+                    <span style="color:#8899bb;" id="expiryTableTitle">📋 未来30天每日到期记录</span>
                 </div>
                 <span class="collapse-icon">▼</span>
             </div>
@@ -402,7 +403,14 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
     <!-- 每日统计 -->
     <div id="panel-daily" class="data-panel">
         <div class="table-container">
-            <h5 style="color:#e8edf5;margin-bottom:12px;">📅 每日统计（本金）</h5>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <h5 style="color:#e8edf5;">📅 每日统计（本金）</h5>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span class="range-btn daily-stats-range-btn active" onclick="setDailyStatsRange(30, this)">30天</span>
+                    <span class="range-btn daily-stats-range-btn" onclick="setDailyStatsRange(90, this)">90天</span>
+                    <span class="range-btn daily-stats-range-btn" onclick="setDailyStatsRange(0, this)">全部</span>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="table">
                     <thead>
@@ -618,8 +626,9 @@ let queryResults = [];
 let allStakeRecords = [];
 let filteredResults = [];
 let trendRange = 15;           // 每日趋势默认 15 天
-let expiryRange = 30;          // 未来每日到期默认 30 天
+let expiryRange = 31;          // 未来每日到期默认 30 天
 let addressTrendRange = 15;    // 每日地址趋势默认 15 天
+let dailyStatsRange = 30;      // 每日统计显示范围：30/90/0=全部
 let dailyStartHour = 8;   // 结算口径：8=北京8点(UTC0)，0=北京0点(UTC16)
 let stats = {
     totalStaked: 0, activeStaked: 0,
@@ -1339,7 +1348,8 @@ function updateExpiryChart() {
     const [yy, mm, dd] = todayDs.split('-').map(Number);
     const baseUtc = Date.UTC(yy, mm - 1, dd);
 
-    for (let i = 0; i < 30; i++) {
+    const totalDays = Math.max(expiryRange, 30);
+    for (let i = 0; i < totalDays; i++) {
         const utcMs = baseUtc + i * 86400 * 1000;
         const dUtc = new Date(utcMs);
         const ds = `${dUtc.getUTCFullYear()}-${String(dUtc.getUTCMonth()+1).padStart(2,'0')}-${String(dUtc.getUTCDate()).padStart(2,'0')}`;
@@ -1352,7 +1362,7 @@ function updateExpiryChart() {
     }
 
     let html = '', cum = 0;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < totalDays; i++) {
         cum += totA[i];
         html += `<tr>
             <td>${labels[i]}</td>
@@ -1365,6 +1375,9 @@ function updateExpiryChart() {
         </tr>`;
     }
     $('expiryTableBody').innerHTML = html;
+
+    const titleEl = document.getElementById('expiryTableTitle');
+    if (titleEl) titleEl.innerText = `📋 未来${totalDays}天每日到期记录`;
 
     const tP15 = p15A.reduce((a,b)=>a+b,0), tY15 = y15A.reduce((a,b)=>a+b,0);
     const tP30 = p30A.reduce((a,b)=>a+b,0), tY30 = y30A.reduce((a,b)=>a+b,0);
@@ -1463,7 +1476,8 @@ function updateDailyStats() {
             if (ts > 0) ensureDay(getDateStr(ts)).redeem += totalOf(r);
         }
     });
-    const sorted = Array.from(map.keys()).sort().reverse().slice(0, 30);
+    const allSorted = Array.from(map.keys()).sort().reverse();
+    const sorted = dailyStatsRange > 0 ? allSorted.slice(0, dailyStatsRange) : allSorted;
     const tbody = $('dailyStatsBody');
     if (!sorted.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>'; return; }
     tbody.innerHTML = sorted.map(d => {
@@ -1619,6 +1633,13 @@ function setExpiryRange(d, btn) {
         btn.classList.add('active');
     }
     updateExpiryChart();
+}
+
+function setDailyStatsRange(days, btn) {
+    dailyStatsRange = days;
+    document.querySelectorAll('.daily-stats-range-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    updateDailyStats();
 }
 
 function updateAllCharts() {
@@ -2094,6 +2115,7 @@ window.logout = logout;
 window.switchTab = switchTab;
 window.setTrendRange = setTrendRange;
 window.setExpiryRange = setExpiryRange;
+window.setDailyStatsRange = setDailyStatsRange;
 window.setAddressTrendRange = setAddressTrendRange;
 window.applyFilters = applyFilters;
 window.toggleCard = toggleCard;
