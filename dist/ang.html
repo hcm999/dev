@@ -481,7 +481,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <input type="date" id="cashflowDate" class="filter-select" style="width:auto;" onchange="renderCashflow()" title="仅控制上方统计卡片">
                     <select id="cashflowRange" class="filter-select" onchange="renderCashflow()" title="控制下方图表和表格">
+                        <option value="15">最近15天</option>
                         <option value="30">最近30天</option>
+                        <option value="60">最近60天</option>
                         <option value="90">最近90天</option>
                         <option value="0">全部</option>
                     </select>
