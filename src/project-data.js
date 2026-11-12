@@ -19,7 +19,7 @@ export async function handleProjectData(request, env) {
   if (!projectId) return json({ success: false, error: '缺少projectId参数' }, 400);
   if (!CONFIG.PROJECTS.includes(projectId)) return json({ success: false, error: '无效的项目ID' }, 400);
 
-  if (projectId === 'dev' || projectId === 'ang') {
+  if (projectId === 'dev' || projectId === 'ang' || projectId === 'good') {
       const adminToken = request.headers.get('x-admin-token');
       const isAdmin = adminToken === CONFIG.ADMIN_TOKEN || adminToken === CONFIG.ANG_ADMIN_TOKEN;
     
