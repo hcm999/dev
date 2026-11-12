@@ -3057,7 +3057,17 @@ function renderCashflow() {
             },
             plugins: {
                 legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                        footer: items => {
+                            if (!items.length) return '';
+                            const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
+                            const net = get('入金') - get('出金');
+                            return '净流入: ' + net.toFixed(2) + ' UUSD';
+                        }
+                    }
+                }
             }
         }
     });
@@ -3383,6 +3393,7 @@ function updateReportData() {
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const p30Pct = totalStakeAmt > 0 ? (p30Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
+    const netAmt = totalStakeAmt - redeemAmt;   // 资金净额 = 质押金额 - 赎回金额
     const firstPct = totalStakeAmt > 0 ? (firstStakeAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
     const reinvestPct = totalStakeAmt > 0 ? (reinvestAmt / totalStakeAmt * 100).toFixed(2) : '0.00';
 
@@ -3416,6 +3427,12 @@ function updateReportData() {
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>赎回钱包（去重）</span><span>${redeemAddrs.size} 个</span></div>
             </div>
 
+            <!-- 资金净额 -->
+            <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">💵 资金净额：<span style="color: ${netAmt >= 0 ? '#22c55e' : '#f87171'}; font-size: 1.1rem;">${netAmt >= 0 ? '+' : ''}${fmt(netAmt)} UUSD</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押金额 − 赎回金额</span><span>${fmt(totalStakeAmt)} − ${fmt(redeemAmt)}</span></div>
+            </div>
+
             <!-- 周期分布 -->
             <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px; font-size: 0.9rem;">📊 产品周期分布：</div>
             <div style="font-size: 0.8rem; line-height: 1.8; color: #8899bb;">
@@ -3445,6 +3462,8 @@ function updateReportData() {
 赎回金额：${fmt(redeemAmt)} UUSD
 订单赎回：${redeemCount} 笔
 赎回钱包（去重地址）：${redeemAddrs.size} 个
+
+资金净额：${fmt(netAmt)} UUSD（质押金额 − 赎回金额 = ${fmt(totalStakeAmt)} − ${fmt(redeemAmt)}）
 
 产品周期分布：
 15 天：${fmt(p15Amt)} UUSD｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
