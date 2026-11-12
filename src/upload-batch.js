@@ -176,7 +176,13 @@ for (const r of (changed || [])) {
 
   // 3. 组装并排序
   const records = Array.from(activeMap.values()).filter(isActiveRecord);
-  const allRecords = Array.from(allMap.values()).sort((a, b) => (a.orderId || 0) - (b.orderId || 0));
+  const allRecords = Array.from(allMap.values()).sort((a, b) => {
+      // GOOD 的 orderId 是 "0x..._3" 字符串，走 stakeTime 排；ANG/DEV 走数字 orderId
+      if (typeof a.orderId === 'number' && typeof b.orderId === 'number') {
+          return (a.orderId || 0) - (b.orderId || 0);
+      }
+      return (a.stakeTime || 0) - (b.stakeTime || 0);
+  });
 
   const saveData = {
     stats: stats || existing.stats,
