@@ -3073,7 +3073,17 @@ function renderCashflow() {
             },
             plugins: {
                 legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}` } }
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                        footer: items => {
+                            if (!items.length) return '';
+                            const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
+                            const net = get('入金') - get('出金');
+                            return '净流入: ' + net.toFixed(2) + ' USDT';
+                        }
+                    }
+                }
             }
         }
     });
@@ -3403,6 +3413,8 @@ function updateReportData() {
     redeemAddrs.clear();
     redeemPrincipalAddrs.forEach(a => redeemAddrs.add(a));
     rewardClaimAddrs.forEach(a => redeemAddrs.add(a));
+    // 资金净额 = 质押金额 - 实际出金
+    const netAmt = totalStakeAmt - redeemAmt;
 
     const fmt = num => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const p15Pct = totalStakeAmt > 0 ? (p15Amt / totalStakeAmt * 100).toFixed(2) : '0.00';
@@ -3441,6 +3453,11 @@ function updateReportData() {
                 <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>└ 复投领取收益</span><span><span style="color:#fbbf24;font-weight:600;">${fmt(rewardClaimAmt)}</span> USDT｜${rewardClaimCount} 笔｜${rewardClaimAddrs.size} 钱包</span></div>
             </div>
 
+            <div style="background: #111827; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px;">💵 资金净额：<span style="color: ${netAmt >= 0 ? '#22c55e' : '#f87171'}; font-size: 1.1rem;">${netAmt >= 0 ? '+' : ''}${fmt(netAmt)} USDT</span></div>
+                <div style="display: flex; justify-content: space-between; color: #8899bb; font-size: 0.8rem;"><span>质押金额 − 实际出金</span><span>${fmt(totalStakeAmt)} − ${fmt(redeemAmt)}</span></div>
+            </div>
+
             <div style="font-weight: 600; color: #e8edf5; margin-bottom: 8px; font-size: 0.9rem;">📊 产品周期分布：</div>
             <div style="font-size: 0.8rem; line-height: 1.8; color: #8899bb;">
                 <div>🟦 15 天：<span style="color:#60a5fa;font-weight:600;">${fmt(p15Amt)} USDT</span>｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包</div>
@@ -3449,7 +3466,7 @@ function updateReportData() {
 
             <div style="color: #64748b; font-size: 0.7rem; margin-top: 16px; text-align: center; border-top: 1px solid #2a3a5a; padding-top: 10px;">
                 注：质押金额 = 首次质押 + 复投质押；周期分布含复投。<br>
-                详细数据：https://www.ganaweb3.top
+                详细数据：https://www.ganaweb3.top/ang
             </div>
         </div>
     `;
@@ -3470,12 +3487,14 @@ function updateReportData() {
 ├ 本金赎回：${fmt(redeemPrincipalAmt)} USDT｜${redeemPrincipalCount} 笔｜${redeemPrincipalAddrs.size} 个钱包
 └ 复投领取收益：${fmt(rewardClaimAmt)} USDT｜${rewardClaimCount} 笔｜${rewardClaimAddrs.size} 个钱包
 
+资金净额：${fmt(netAmt)} USDT（质押金额 − 实际出金 = ${fmt(totalStakeAmt)} − ${fmt(redeemAmt)}）
+
 产品周期分布：
 15 天：${fmt(p15Amt)} USDT｜占 ${p15Pct}%｜${p15Count} 笔｜${p15Addrs.size} 个钱包
 30 天：${fmt(p30Amt)} USDT｜占 ${p30Pct}%｜${p30Count} 笔｜${p30Addrs.size} 个钱包
 
 注：质押金额 = 首次质押 + 复投质押；周期分布含复投。
-详细数据：https://www.ganaweb3.top`;
+详细数据：https://www.ganaweb3.top/ang`;
 }
 
 function copyReportText() {
