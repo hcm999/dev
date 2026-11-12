@@ -137,8 +137,11 @@ async function handleFinalize(env, projectId, data) {
 // 兼容 DEV(数字 status) 和 ANG(字符串 status + isActive) 两种语义
 function isActiveRecord(r) {
     if (!r) return false;
-    if (typeof r.isActive === 'boolean') return r.isActive;   // ANG 走这条
-    return r.status === 1;                                      // DEV 走这条
+    if (typeof r.isActive === 'boolean') return r.isActive;   // ANG/GOOD 走这条
+    if (typeof r.status === 'string') {                        // GOOD 兜底
+        return r.status === 'active' || r.status === 'matured';
+    }
+    return r.status === 1;                                     // DEV
 }
 // ==========================================
 // 4. 全新：增量上传（精准合并 + 极低写入）
