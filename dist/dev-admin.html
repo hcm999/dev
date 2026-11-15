@@ -1359,7 +1359,7 @@ async function incrementalQuery() {
 
     isQuerying = true;
     document.getElementById('progressContainer').style.display = 'block';
-    addLog(`🔄 开始极速增量更新 (到期/近24h核对 + 溯源复投 + 拉取新单)...`, 'info');
+    addLog(`🔄 开始极速增量更新 (到期/复投核对 + 溯源复投 + 拉取新单)...`, 'info');
 
     try {
         const now = Math.floor(Date.now() / 1000);
