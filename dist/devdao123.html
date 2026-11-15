@@ -1925,7 +1925,8 @@ async function uploadToCloud() {
         const nowActiveIds = new Set();
         for (const r of allStakeRecords) {
             if (r.status === 1) nowActiveIds.add(r.orderId);
-            if (uploadedActiveIds.has(r.orderId) && r.status !== 1) {
+            // 🎯 修复：只要订单已经不是活跃状态，且不是刚刚新增的单，就作为状态变更传给云端
+            if (r.status !== 1 && (r.orderId || 0) <= uploadedMaxId) {
                 changed.push(r);
             }
         }
@@ -1948,7 +1949,8 @@ async function uploadToCloud() {
             action: 'incremental',
             projectId: CONFIG.PROJECT_ID,
             newActive: newActive.map(mapRec),
-            newAll: newAll.map(mapRec),
+            // 👇 直接覆盖，把状态有变动的旧单混进 newAll 逼云端更新
+            newAll: [...newAll.map(mapRec), ...changed.map(mapRec)], 
             changed: changed.map(mapRec),
             stats,
             dailyStartHour,   // ← 新增
