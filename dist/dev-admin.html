@@ -1395,7 +1395,7 @@ async function incrementalQuery() {
         }
         
         if (idsToUpdateSet.size > 0) {
-            addLog(`🔍 准备核对 ${idsToUpdateSet.size} 个旧单状态 (含到期/近24h)...`, 'info');
+            addLog(`🔍 准备核对 ${idsToUpdateSet.size} 个到期旧单状态...`, 'info');
         }
 
         document.getElementById('progressText').innerHTML = `正在同步 ${idsToUpdate.length} 个订单状态...`;
