@@ -1363,21 +1363,13 @@ async function incrementalQuery() {
 
     try {
         const now = Math.floor(Date.now() / 1000);
-        const DURATION_24 = 24 * 3600;
 
         // 1. 建立需要复查的订单 ID 集合（使用 Set 自动去重）
         const idsToUpdateSet = new Set();
 
-        // ① 核对所有已到期的活跃单（原逻辑）
+        // 🎯 核心：只要到期了，不管它是活跃(1)还是刚赎回(2)，全部拉出来复查
         queryResults.forEach(r => {
-            if (r.isActive && r.unlockTime <= now) {
-                idsToUpdateSet.add(r.orderId);
-            }
-        });
-
-        // ② 核对最近 24 小时内创建的活跃单（防止时间差导致的漏抓）
-        queryResults.forEach(r => {
-            if (r.isActive && r.stakeTime >= (now - DURATION_24)) {
+            if (r.unlockTime <= now) {
                 idsToUpdateSet.add(r.orderId);
             }
         });
@@ -1925,7 +1917,8 @@ async function uploadToCloud() {
         const nowActiveIds = new Set();
         for (const r of allStakeRecords) {
             if (r.status === 1) nowActiveIds.add(r.orderId);
-            if (uploadedActiveIds.has(r.orderId) && r.status !== 1) {
+            // 🎯 修复：只要订单已经不是活跃状态，且不是刚刚新增的单，就作为状态变更传给云端
+            if (r.status !== 1 && (r.orderId || 0) <= uploadedMaxId) {
                 changed.push(r);
             }
         }
@@ -1948,7 +1941,8 @@ async function uploadToCloud() {
             action: 'incremental',
             projectId: CONFIG.PROJECT_ID,
             newActive: newActive.map(mapRec),
-            newAll: newAll.map(mapRec),
+            // 🎯 核心修复：把 changed 强行合并进 newAll，逼迫云端覆盖旧状态
+            newAll: [...newAll.map(mapRec), ...changed.map(mapRec)],
             changed: changed.map(mapRec),
             stats,
             dailyStartHour,   // ← 新增
