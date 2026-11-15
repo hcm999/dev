@@ -1359,54 +1359,94 @@ async function incrementalQuery() {
 
     isQuerying = true;
     document.getElementById('progressContainer').style.display = 'block';
-    addLog(`🔄 开始极速增量更新 (到期核对 + 拉取新单)...`, 'info');
+    addLog(`🔄 开始极速增量更新 (到期/近24h核对 + 溯源复投 + 拉取新单)...`, 'info');
 
     try {
         const now = Math.floor(Date.now() / 1000);
+        const DURATION_24 = 24 * 3600;
 
-        // 【修复】把所有本地还在活跃中（status=1）的旧单，全部拿去链上核对一次最新状态
-        // 这样即使用户提前操作了复投或赎回，也能立刻被抓到
-        const expiredActiveIds = queryResults
-            .filter(r => r.isActive)
-            .map(r => r.orderId);
+        // 1. 建立需要复查的订单 ID 集合（使用 Set 自动去重）
+        const idsToUpdateSet = new Set();
 
+        // ① 核对所有已到期的活跃单（原逻辑）
+        queryResults.forEach(r => {
+            if (r.isActive && r.unlockTime <= now) {
+                idsToUpdateSet.add(r.orderId);
+            }
+        });
+
+        // ② 核对最近 24 小时内创建的活跃单（防止时间差导致的漏抓）
+        queryResults.forEach(r => {
+            if (r.isActive && r.stakeTime >= (now - DURATION_24)) {
+                idsToUpdateSet.add(r.orderId);
+            }
+        });
+
+        // 2. 获取链上最新订单总数并找出新增订单
         const nextId = Number(await stakingContract.nextOrderId());
         const startId = lastScannedOrderId + 1;
         const newTotal = nextId - startId;
 
-        if (expiredActiveIds.length === 0 && newTotal <= 0) {
-            addLog('✅ 没有到期的旧单，也没有新单，无需更新。', 'ok');
-            alert('✅ 当前已是最新，没有新订单或到期订单。');
+        if (idsToUpdateSet.size === 0 && newTotal <= 0) {
+            addLog('✅ 没有需要核对状态的旧单，也没有新单，无需更新。', 'ok');
+            alert('✅ 当前已是最新，没有新订单或需核对的旧订单。');
             isQuerying = false;
             document.getElementById('progressContainer').style.display = 'none';
             return;
         }
 
-        const idsToUpdate = [...expiredActiveIds];
+        // 收集本次需要更新的所有 ID
+        const idsToUpdate = Array.from(idsToUpdateSet);
         if (newTotal > 0) {
             addLog(`🔍 发现新订单 ${newTotal} 单 (#${startId} ~ #${nextId - 1})`, 'info');
             for (let i = startId; i < nextId; i++) idsToUpdate.push(i);
         }
-        if (expiredActiveIds.length > 0) {
-            addLog(`🔍 发现 ${expiredActiveIds.length} 个已到期的旧单，核对状态...`, 'info');
+        
+        if (idsToUpdateSet.size > 0) {
+            addLog(`🔍 准备核对 ${idsToUpdateSet.size} 个旧单状态 (含到期/近24h)...`, 'info');
         }
 
         document.getElementById('progressText').innerHTML = `正在同步 ${idsToUpdate.length} 个订单状态...`;
 
+        // 3. 从链上拉取这些订单的最新状态
         const updatedOrders = await batchGetOrders(idsToUpdate);
         
+        // ================================================================
+        // 🎯 核心新增：精准溯源 —— 如果发现是复投，把它的源头旧单也强制拉取一遍
+        // ================================================================
+        const reinvestSourceIds = [];
+        updatedOrders.forEach(o => {
+            // 如果新单有 previousOrderId，且这个旧单不在刚才的更新列表里
+            if (o.previousOrderId > 0 && !idsToUpdateSet.has(o.previousOrderId)) {
+                reinvestSourceIds.push(o.previousOrderId);
+                idsToUpdateSet.add(o.previousOrderId); // 加进去防止重复
+            }
+        });
+
+        let finalUpdatedOrders = [...updatedOrders];
+        if (reinvestSourceIds.length > 0) {
+            addLog(`🔍 发现 ${reinvestSourceIds.length} 笔复投来源旧单，强制拉取最新状态...`, 'info');
+            document.getElementById('progressText').innerHTML = `溯源复投旧单...`;
+            const sourceOrders = await batchGetOrders(reinvestSourceIds);
+            finalUpdatedOrders.push(...sourceOrders);
+        }
+        // ================================================================
+
+        // 4. 更新本地数据 Map
         const updateMap = new Map();
-        updatedOrders.forEach(o => updateMap.set(o.id, o));
+        finalUpdatedOrders.forEach(o => updateMap.set(o.id, o));
 
         let newActiveCount = 0;
         const newQueryResults = [];
         
+        // 更新活跃列表
         for (const r of queryResults) {
             const latest = updateMap.get(r.orderId);
             if (latest) {
                 if (latest.status === 1) {
                     newQueryResults.push(orderToRecord(latest));
                 }
+                // 如果状态变成 2(已赎回) 或 3(已复投)，就不会 push 进新列表，自动被剔除
             } else {
                 newQueryResults.push(r);
             }
@@ -1423,6 +1463,7 @@ async function incrementalQuery() {
         }
         queryResults = newQueryResults;
 
+        // 更新历史全量列表
         const newAllStakeRecords = [];
         const aSeen = new Set();
         for (const r of allStakeRecords) {
@@ -1449,6 +1490,7 @@ async function incrementalQuery() {
             lastScannedOrderId = nextId - 1;
         }
 
+        // 5. 刷新界面统计和图表
         calcStatsFromRecords();
         document.getElementById('diagRecordCount').innerText = queryResults.length;
         updateStats();
@@ -1463,7 +1505,7 @@ async function incrementalQuery() {
         renderExpired();
         await fetchLPBalance();
 
-        addLog(`✅ 增量完成：核对 ${expiredActiveIds.length} 个到期旧单，新增 ${newActiveCount} 个活跃新单`, 'ok');
+        addLog(`✅ 增量完成：核对并更新了 ${finalUpdatedOrders.length} 个订单状态，新增活跃 ${newActiveCount} 单`, 'ok');
         document.getElementById('progressText').innerHTML = `✅ 更新完成！活跃 ${queryResults.length} 单`;
         document.getElementById('progressText').style.color = '#22c55e';
 
