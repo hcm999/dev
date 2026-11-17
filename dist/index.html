@@ -250,7 +250,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card">
             <div class="stat-title">🔁 复投质押</div>
             <div class="stat-value" id="reinvestedStaked">0.00</div>
-            <div class="stat-sub">本金 · 来自复投<span class="stat-pct" id="reinvestRate">复投率 --</span></div>
+            <div class="stat-sub">复投<span class="stat-pct" id="reinvestRate">复投率 --</span></div>
         </div>
         <div class="stat-card">
             <div class="stat-title">🫧 本金泡沫</div>
@@ -1010,7 +1010,6 @@ function updateStats() {
             ` · 覆盖率: <b style="color:${c2}">${coverageWithProfit.toFixed(2)}%</b>` +
             `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
     }
-}
 
     // ===== 总复投率：复投新单本金 / 赎回旧单本金 =====
     let cumReinvest = 0;   // 分子：previousOrderId>0 的复投新单本金
