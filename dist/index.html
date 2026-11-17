@@ -1012,22 +1012,25 @@ function updateStats() {
     }
 }
 
-// ===== 总复投率：复投新单本金 / 赎回旧单本金 =====
-let cumReinvest = 0;   // 分子：previousOrderId>0 的复投新单本金
-let cumRedeem   = 0;   // 分母：status 2/3 的赎回旧单本金
-allStakeRecords.forEach(r => {
-    if (r.previousOrderId > 0) cumReinvest += principalOf(r);
-    if (r.status === 2 || r.status === 3) cumRedeem += principalOf(r);
-});
-const rrEl = document.getElementById('reinvestRate');
-if (rrEl) {
-    if (cumRedeem > 0) {
-        const cumRate = cumReinvest / cumRedeem * 100;
-        rrEl.innerText = '复投率 ' + cumRate.toFixed(2) + '%';
-        rrEl.style.color = cumRate >= 50 ? '#22c55e' : '#fbbf24';
-        rrEl.title = `复投 ${cumReinvest.toFixed(2)} / 赎回本金 ${cumRedeem.toFixed(2)} UUSD`;
-    } else {
-        rrEl.innerText = '复投率 --';
+    // ===== 总复投率：复投新单本金 / 赎回旧单本金 =====
+    let cumReinvest = 0;   // 分子：previousOrderId>0 的复投新单本金
+    let cumRedeem   = 0;   // 分母：status 2/3 的赎回旧单本金
+    allStakeRecords.forEach(r => {
+        if (r.previousOrderId > 0) cumReinvest += principalOf(r);
+        if (r.status === 2 || r.status === 3) cumRedeem += principalOf(r);
+    });
+    const rrEl = document.getElementById('reinvestRate');
+    if (rrEl) {
+        if (cumRedeem > 0) {
+            const cumRate = cumReinvest / cumRedeem * 100;
+            rrEl.innerText = '复投率 ' + cumRate.toFixed(2) + '%';
+            rrEl.style.color = cumRate >= 50 ? '#22c55e' : '#fbbf24';
+            rrEl.title = `复投 ${cumReinvest.toFixed(2)} / 赎回本金 ${cumRedeem.toFixed(2)} UUSD`;
+        } else {
+            rrEl.innerText = '复投率 --';
+            rrEl.style.color = '#fbbf24';
+            rrEl.title = '';
+        }
     }
 }
 
