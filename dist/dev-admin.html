@@ -3125,7 +3125,7 @@ function renderCashflow() {
             <td>${rateHtml(d.reinvest, d.redeemPrincipal)}</td>
         </tr>`;
     });
-    tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
 
     // 图表保持不变（入金/出金/复投）
     const canvas = document.getElementById('cashflowChart');
