@@ -2608,8 +2608,9 @@ function applyFilters() {
 
     let dateStart = null, dateEnd = null;
     if (date) {
-        const d = new Date(date + 'T00:00:00');
-        dateStart = d.getTime() / 1000;
+        // 业务日 D = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
+        const [fy, fm, fd] = date.split('-').map(Number);
+        dateStart = Math.floor(Date.UTC(fy, fm - 1, fd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
         dateEnd = dateStart + 86400;
     }
 
@@ -2889,6 +2890,7 @@ function updateDailyStart() {
     if (allStakeRecords.length > 0 || queryResults.length > 0) {
         calcStatsFromRecords();
         updateStats(); updateDailyStats(); updateAllCharts(); updateLeaderboard();
+        applyFilters(); renderCashflow(); renderRedeem(); renderReinvest(); renderExpired();
         saveToStorage();
         addLog(`📅 起始时间已切换至 ${tzMap[dailyStartHour] || `UTC+${dailyStartHour}`}`, 'ok');
         // 若简报弹窗已打开，则同步刷新
