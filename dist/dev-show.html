@@ -250,7 +250,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card">
             <div class="stat-title">🔁 复投质押</div>
             <div class="stat-value" id="reinvestedStaked">0.00</div>
-            <div class="stat-sub">本金 · 来自复投</div>
+            <div class="stat-sub">本金 · 来自复投<span class="stat-pct" id="reinvestRate">复投率 --</span></div>
         </div>
         <div class="stat-card">
             <div class="stat-title">🫧 本金泡沫</div>
@@ -485,7 +485,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                 <div class="cashflow-card">
                     <div class="cashflow-title">本金复投</div>
                     <div class="cashflow-value cashflow-reinvest" id="cfReinvest">0.00</div>
-                    <div class="cashflow-sub" id="cfReinvestSub">复投 0 笔</div>
+                    <div class="cashflow-sub" style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
+                    <span id="cfReinvestSub">复投 0 笔</span>
+                    <span id="cfReinvestRate" style="color:#8b5cf6;">复投率 --</span></div>
                 </div>
             </div>
 
@@ -504,9 +506,10 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
                             <th>实际出金</th>
                             <th>资金净额</th>
                             <th>本金复投</th>
+                            <th>复投率</th>   <!-- 新增 -->
                         </tr>
                     </thead>
-                    <tbody id="cashflowTableBody"><tr><td colspan="7" class="empty-state">暂无数据</td></tr></tbody>
+                    <tbody id="cashflowTableBody"><tr><td colspan="8" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -992,21 +995,43 @@ function updateStats() {
     let activeWithProfit = 0;
     queryResults.forEach(r => {
         if (r.status !== 1) return;
-        activeWithProfit += totalOf(r);
+        activeWithProfit += totalOf(r);   // totalOf 已兼容 amountWithProfit
     });
     const bubbleWithProfit   = lp > 0 ? activeWithProfit / lp : 0;
     const coverageWithProfit = activeWithProfit > 0 ? lp / activeWithProfit * 100 : 0;
 
     const hintEl = document.getElementById('bubbleCoverageHint');
     if (hintEl) {
-        const danger = bubbleWithProfit >= 1;
-        const c = danger ? '#f87171' : '#22c55e';
+        const danger = bubbleWithProfit >= 1;   // 泡沫≥1 说明LP不够兑付全部
+        const c1 = danger ? '#f87171' : '#22c55e';
+        const c2 = danger ? '#f87171' : '#22c55e';
         hintEl.innerHTML =
-            `💡 含收益泡沫: <b style="color:${c}">${bubbleWithProfit.toFixed(2)}</b>` +
-            ` · 覆盖率: <b style="color:${c}">${coverageWithProfit.toFixed(2)}%</b>` +
+            `💡 含收益泡沫: <b style="color:${c1}">${bubbleWithProfit.toFixed(2)}</b>` +
+            ` · 覆盖率: <b style="color:${c2}">${coverageWithProfit.toFixed(2)}%</b>` +
             `<span style="color:#4a5a7a;margin-left:6px;">（活跃本金+收益 / LP）</span>`;
     }
-}
+
+    // ===== 总复投率：复投新单本金 / 赎回旧单本金 =====
+    let cumReinvest = 0;   // 分子：previousOrderId>0 的复投新单本金
+    let cumRedeem   = 0;   // 分母：status 2/3 的赎回旧单本金
+    allStakeRecords.forEach(r => {
+        if (r.previousOrderId > 0) cumReinvest += principalOf(r);
+        if (r.status === 2 || r.status === 3) cumRedeem += principalOf(r);
+    });
+    const rrEl = document.getElementById('reinvestRate');
+    if (rrEl) {
+        if (cumRedeem > 0) {
+            const cumRate = cumReinvest / cumRedeem * 100;
+            rrEl.innerText = '复投率 ' + cumRate.toFixed(2) + '%';
+            rrEl.style.color = cumRate >= 50 ? '#22c55e' : '#fbbf24';
+            rrEl.title = `复投 ${cumReinvest.toFixed(2)} / 赎回本金 ${cumRedeem.toFixed(2)} UUSD`;
+        } else {
+            rrEl.innerText = '复投率 --';
+            rrEl.style.color = '#fbbf24';
+            rrEl.title = '';
+        }
+    }
+}   // ← updateStats() 的闭合大括号，挪到最后
 
 // ===== 每日地址趋势 =====
 function updateAddressTrendChart() {
@@ -1239,17 +1264,24 @@ function updateTrendChart() {
     const dates = Array.from(dailyNewMap.keys()).sort().slice(-trendRange);
     if (!dates.length) return;
 
+    // 【每日趋势折线/柱子调整】
     trendChart = new Chart(ctx, {
-        type: 'line',
+    // 【折线版】    type: 'line',
+        type: 'bar',     // 【柱子版】
         data: {
             labels: dates,
             datasets: [
-                { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
-                { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
-                { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
-                { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+    // 【折线版】            { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
+                { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), backgroundColor: '#3b82f6', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+    // 【折线版】            { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
+                { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), backgroundColor: '#22c55e', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+     // 【折线版】           { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
+                { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), backgroundColor: '#8b5cf6', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+     // 【折线版】           { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+                { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), backgroundColor: '#f59e0b', borderRadius: 3, maxBarThickness: 18 }    // 【柱子版】
             ]
         },
+
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },   // ← 关键：按当天索引显示全部
@@ -1504,8 +1536,9 @@ function applyFilters() {
 
     let dateStart = null, dateEnd = null;
     if (date) {
-        const d = new Date(date + 'T00:00:00');
-        dateStart = d.getTime() / 1000;
+        // 业务日 D = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
+        const [fy, fm, fd] = date.split('-').map(Number);
+        dateStart = Math.floor(Date.UTC(fy, fm - 1, fd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
         dateEnd = dateStart + 86400;
     }
 
@@ -1705,6 +1738,19 @@ function renderCashflow() {
     // 表格用倒序（最新日期在上），图表仍用正序
     const tableDates = [...dates].reverse();
 
+    // ===== 复投率渲染小工具：>100% 橙色提示，除零显示 -- =====
+    function rateHtml(reinvest, redeem, fontSize) {
+        if (!redeem || redeem <= 0) {
+            return `<span style="color:#4a5a7a;">--</span>`;
+        }
+        const rate = reinvest / redeem * 100;
+        const color = rate > 100 ? '#f59e0b' : '#8b5cf6';
+        const weight = rate > 100 ? '600' : '500';
+        const size = fontSize ? `font-size:${fontSize};` : '';
+        return `<span style="color:${color};font-weight:${weight};${size}"
+                    title="复投 ${reinvest.toFixed(2)} / 赎回本金 ${redeem.toFixed(2)}">${rate.toFixed(2)}%</span>`;
+    }
+
     // 顶部 4 张卡片
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
@@ -1715,15 +1761,32 @@ function renderCashflow() {
         document.getElementById('cfNet').innerText = (d.in - d.out).toFixed(2);
         document.getElementById('cfReinvest').innerText = d.reinvest.toFixed(2);
         document.getElementById('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
+
+        // 【新增】卡片复投率
+        const crEl = document.getElementById('cfReinvestRate');
+        if (crEl) {
+            if (d.redeemPrincipal > 0) {
+                const rate = d.reinvest / d.redeemPrincipal * 100;
+                crEl.innerText = '复投率 ' + rate.toFixed(2) + '%';
+                crEl.style.color = rate > 100 ? '#f59e0b' : '#8b5cf6';
+                crEl.title = `复投 ${d.reinvest.toFixed(2)} / 赎回本金 ${d.redeemPrincipal.toFixed(2)} UUSD`;
+            } else {
+                crEl.innerText = '复投率 --';
+                crEl.style.color = '#8b5cf6';
+                crEl.title = '';
+            }
+        }
     } else {
         let totalIn = 0, totalOut = 0, totalReward = 0, totalReinvest = 0;
         let totalInCount = 0, totalOutCount = 0, totalReinvestCount = 0;
+        let totalRedeemPrincipal = 0;   // 【新增】总计口径的分母
         dates.forEach(ds => {
             const d = dailyMap.get(ds) || { in:0, inCount:0, out:0, outCount:0, redeemPrincipal:0, reward:0, reinvest:0, reinvestCount:0 };
             totalIn += d.in; totalInCount += d.inCount;
             totalOut += d.out; totalOutCount += d.outCount;
             totalReward += d.reward;
             totalReinvest += d.reinvest; totalReinvestCount += d.reinvestCount;
+            totalRedeemPrincipal += d.redeemPrincipal;   // 【新增】
         });
         document.getElementById('cfIn').innerText = totalIn.toFixed(2);
         document.getElementById('cfInSub').innerText = `质押 ${totalInCount} 笔`;
@@ -1732,6 +1795,21 @@ function renderCashflow() {
         document.getElementById('cfNet').innerText = (totalIn - totalOut).toFixed(2);
         document.getElementById('cfReinvest').innerText = totalReinvest.toFixed(2);
         document.getElementById('cfReinvestSub').innerText = `复投 ${totalReinvestCount} 笔`;
+
+        // 【新增】总计区间复投率
+        const crEl = document.getElementById('cfReinvestRate');
+        if (crEl) {
+            if (totalRedeemPrincipal > 0) {
+                const rate = totalReinvest / totalRedeemPrincipal * 100;
+                crEl.innerText = '复投率 ' + rate.toFixed(2) + '%';
+                crEl.style.color = rate > 100 ? '#f59e0b' : '#8b5cf6';
+                crEl.title = `复投 ${totalReinvest.toFixed(2)} / 赎回本金 ${totalRedeemPrincipal.toFixed(2)} UUSD`;
+            } else {
+                crEl.innerText = '复投率 --';
+                crEl.style.color = '#8b5cf6';
+                crEl.title = '';
+            }
+        }
     }
 
     // 表格：订单赎回列 → 显示本金
@@ -1748,9 +1826,10 @@ function renderCashflow() {
             <td class="amount-cell" style="color:#f97316;">${d.out.toFixed(2)}</td>
             <td class="amount-cell" style="color:${net>=0?'#10b981':'#ef4444'};">${net.toFixed(2)}</td>
             <td class="amount-cell" style="color:#8b5cf6;">${d.reinvest.toFixed(2)}</td>
+            <td>${rateHtml(d.reinvest, d.redeemPrincipal)}</td>
         </tr>`;
     });
-    tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="8" class="empty-state">暂无数据</td></tr>';
 
     // 图表保持不变（入金/出金/复投）
     const canvas = document.getElementById('cashflowChart');
@@ -2164,6 +2243,7 @@ function refreshAllBySettleHour() {
     updateDailyStats();
     updateAllCharts();
     updateLeaderboard();
+    applyFilters();     // ← 质押记录跟随口径
     renderCashflow();
     renderRedeem();
     renderReinvest();
