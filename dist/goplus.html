@@ -337,6 +337,7 @@ body {
           <h2>👑 合约权限 / 后门</h2>
           <div class="kv-list">
             <div class="kv"><span>合约创建者</span><code id="info-creator">-</code></div>
+            <div class="kv"><span>当前 Owner / 治理地址</span><code id="info-ownerAddr">-</code></div>
             <div class="kv"><span>创建者持币占比</span><b id="info-creatorPercent">-</b></div>
             <div class="kv"><span>账户数</span><b id="info-holders">-</b></div>
             <div class="kv"><span>总供应量</span><b id="info-totalSupply">-</b></div>
@@ -395,6 +396,8 @@ body {
             <div class="kv"><span>是否可升级代理</span><b id="g-proxy">-</b></div>
             <div class="kv"><span>实现合约地址</span><code id="g-impl">-</code></div>
             <div class="kv"><span>代理管理员</span><code id="g-admin">-</code></div>
+            <div class="kv"><span>当前 Owner / 管理地址</span><code id="g-ownerAddr">-</code></div>
+            <div class="kv"><span>可读管理员接口</span><b id="g-permCount">-</b></div>
             <div class="kv"><span>是否最小代理(EIP-1167)</span><b id="g-minimal">-</b></div>
             <div class="kv"><span>含 DELEGATECALL</span><b id="g-delegatecall">-</b></div>
             <div class="kv"><span>含 SELFDESTRUCT</span><b id="g-selfdestruct">-</b></div>
@@ -861,7 +864,7 @@ function evaluateGeneric(g, abiNames, audit) {
   // 隐藏所有者 / 硬编码地址
   if (g.hidden) {
     const getters = g.hidden.rows.filter((r) => r.source.startsWith("接口"));
-    const active = getters.filter((r) => !r.renounced);
+    const active = getters.filter((r) => !r.renounced && !r.isToken);
     const undeclared = active.filter((r) => r.declared === false);
 
     const declaredAddrCount = g.hidden.declaredAddrNames ? g.hidden.declaredAddrNames.size : 0;
@@ -878,8 +881,10 @@ function evaluateGeneric(g, abiNames, audit) {
           ? `探测到 ${active.length} 个有效权限接口，均已在 ABI 中声明`
           : `探测到 ${active.length} 个有效权限接口（未提供 ABI，无法判断是否隐藏）`,
         "ok", hasAbi ? "无隐藏" : "待 ABI 确认");
-    } else if (getters.length) {
+    } else if (getters.some((r) => r.renounced)) {
       add("隐藏所有者", "owner / admin 等权限地址已转入零地址或黑洞，视为已放弃权限", "ok", "已放弃");
+    } else if (getters.some((r) => r.isToken)) {
+      add("隐藏所有者", "探测到的地址接口均为代币 / 资产合约，不构成管理员权限", "ok", "无管理员接口");
     } else {
       add("隐藏所有者", "未探测到非常规权限接口（不排除使用自定义命名）", "ok", "未发现");
     }
@@ -966,7 +971,7 @@ function evaluateToken(gp, ownerProbe) {
 
   if (flag(gp.hidden_owner)) {
     const probe = ownerProbe || [];
-    const readable = probe.filter((p) => !p.renounced);
+    const readable = probe.filter((p) => !p.renounced && !p.isToken);
     if (readable.length) {
       add("隐藏所有者",
         `检测引擎按标准 owner() 判定为隐藏；实际权限地址可公开读取：${readable.slice(0, 3).map((p) => `${p.name}() → ${shortAddr(p.addr)}`).join("、")}（非标准命名，非隐藏）`,
@@ -1103,7 +1108,19 @@ function renderTokenDetail(gp, ownerProbe) {
   $("info-openSource").innerHTML = boolTag(gp.is_open_source, "未开源", "已开源", "bad", "ok");
   $("info-proxy").innerHTML = boolTag(gp.is_proxy, "否", "是", "warn");
   $("info-mintable").innerHTML = boolTag(gp.is_mintable, "不可", "可增发");
-  const readableOwner = (ownerProbe || []).filter((p) => !p.renounced);
+  const readableOwner = (ownerProbe || []).filter((p) => !p.renounced && !p.isToken);
+  const firstOwner = readableOwner[0];
+  const ownerEl = $("info-ownerAddr");
+  if (ownerEl) {
+    if (firstOwner) {
+      ownerEl.textContent = `${firstOwner.name}() → ${firstOwner.addr}`
+        + (firstOwner.type ? `（${firstOwner.type.text}）` : "");
+    } else if ((ownerProbe || []).some((p) => p.renounced)) {
+      ownerEl.textContent = "已放弃（零地址 / 黑洞）";
+    } else {
+      ownerEl.textContent = "未暴露（未实现常见 owner 接口）";
+    }
+  }
   $("info-hiddenOwner").innerHTML = flag(gp.hidden_owner) && readableOwner.length
     ? tag("ok", `非标准命名（${readableOwner[0].name}() 可读）`)
     : boolTag(gp.hidden_owner, "无", "有隐藏 owner");
@@ -1308,8 +1325,7 @@ async function runCheck() {
   }
 }
 
-async function runTokenMode(address, gp) {
-  $("tokenHeadCard").classList.remove("hidden");
+async function runTokenMode(address, gp) {  $("tokenHeadCard").classList.remove("hidden");
   $("contractHeadCard").classList.add("hidden");
   $("tokenSections").classList.remove("hidden");
   $("genericSections").classList.add("hidden");
@@ -1328,12 +1344,16 @@ async function runTokenMode(address, gp) {
 
   renderHead(gp, chain, address);
 
-  // 交叉验证 GoPlus 的 hidden_owner：能读到真实权限地址就不是隐藏
+  // 读取真实权限地址（owner / funder 等），用于展示与隐藏判定交叉核验
   let ownerProbe = [];
-  if (flag(gp.hidden_owner)) {
-    setStatus("正在核验隐藏所有者（读取常见权限接口）…", "info");
-    try { ownerProbe = await probeHiddenGetters(address, null); } catch {}
-  }
+  setStatus("正在读取合约 Owner / 治理地址…", "info");
+  try {
+    ownerProbe = await probeHiddenGetters(address, null, OWNER_LOOKUP);
+    for (const p of ownerProbe) {
+      p.isToken = await looksLikeToken(p.addr);
+      p.type = p.isToken ? { text: "代币/资产合约", kind: "neutral" } : await classifyAddressType(p.addr);
+    }
+  } catch {}
 
   const result = evaluateToken(gp, ownerProbe);
   renderSafety(result);
@@ -1434,6 +1454,18 @@ async function runGenericMode(address) {
     hidden = await buildHiddenReport(address, g, declaredNames, audit?.roles || [], declaredAddrNames);
     g.hidden = hidden;
     renderHidden(hidden, !!declaredNames, g.opcodes.caller);
+
+    // 体检卡片：当前 Owner / 管理地址（仅认 owner / funder / admin）
+    const getterRows = hidden.rows.filter((r) => r.source.startsWith("接口"));
+    const nameOf = (r) => r.source.replace("接口 ", "").replace("()", "");
+    const activeRows = getterRows.filter((r) => !r.renounced && !r.isToken);
+    const strong = OWNER_LOOKUP.map((n) => activeRows.find((r) => nameOf(r) === n)).filter(Boolean);
+    const primary = strong[0];
+    $("g-ownerAddr").textContent = primary
+      ? `${nameOf(primary)}() → ${primary.addr}${primary.type ? "（" + primary.type.text + "）" : ""}`
+      : getterRows.some((r) => r.renounced) ? "已放弃（零地址 / 黑洞）"
+        : "未暴露（未实现 owner / funder / admin 接口）";
+    $("g-permCount").textContent = `${strong.length} 个`;
   } catch (e) {
     console.warn("hidden probe failed", e);
   }
@@ -1461,8 +1493,13 @@ const HIDDEN_GETTERS = [
   "wallet", "root", "master", "superOwner", "pendingOwner",
 ];
 
-async function probeHiddenGetters(address, declaredNames) {
-  const results = await Promise.all(HIDDEN_GETTERS.map(async (name) => {
+const OWNER_LOOKUP = [
+  "owner", "_owner", "getOwner", "funder", "getFunder",
+  "admin", "_admin", "getAdmin", "proxyAdmin",
+];
+
+async function probeHiddenGetters(address, declaredNames, names) {
+  const results = await Promise.all((names || HIDDEN_GETTERS).map(async (name) => {
     try {
       const sel = ethers.id(name + "()").slice(0, 10);
       const res = await rpc("eth_call", [{ to: address, data: sel }, "latest"]);
@@ -1496,6 +1533,16 @@ async function classifyAddressType(addr) {
   }
 }
 
+/* 判断地址是否为代币/资产合约（能返回 symbol 即为代币或 LP） */
+async function looksLikeToken(addr) {
+  try {
+    const sel = ethers.id("symbol()").slice(0, 10);
+    const res = await rpc("eth_call", [{ to: addr, data: sel }, "latest"]);
+    if (!res || res === "0x" || res.length < 66) return false;
+    return !/^0x0{64}$/.test(res);
+  } catch { return false; }
+}
+
 async function buildHiddenReport(address, g, declaredNames, roles, declaredAddrNames) {
   const getters = await probeHiddenGetters(address, declaredNames);
 
@@ -1525,8 +1572,11 @@ async function buildHiddenReport(address, g, declaredNames, roles, declaredAddrN
 
   const rows = [];
   for (const gt of getters) {
-    const ty = await classifyAddressType(gt.addr);
-    rows.push({ source: `接口 ${gt.name}()`, addr: gt.addr, type: ty, declared: gt.declared });
+    const isTok = await looksLikeToken(gt.addr);
+    const ty = isTok
+      ? { text: "代币/资产合约", kind: "neutral" }
+      : await classifyAddressType(gt.addr);
+    rows.push({ source: `接口 ${gt.name}()`, addr: gt.addr, type: ty, declared: gt.declared, isToken: isTok });
   }
   for (const a of hardcoded) {
     const ty = await classifyAddressType(a);
@@ -1542,14 +1592,16 @@ async function buildHiddenReport(address, g, declaredNames, roles, declaredAddrN
 
 function renderHidden(rep, hasAbi, callerCount) {
   const getters = rep.rows.filter((r) => r.source.startsWith("接口"));
-  const active = getters.filter((r) => !r.renounced);
+  const active = getters.filter((r) => !r.renounced && !r.isToken);
   const undeclared = active.filter((r) => r.declared === false);
   const declaredAddrCount = rep.declaredAddrNames ? rep.declaredAddrNames.size : 0;
+  const renouncedCount = getters.filter((r) => r.renounced).length;
+  const tokenCount = getters.filter((r) => r.isToken && !r.renounced).length;
 
   $("g-hidden").innerHTML = [
     ["探测到的地址接口", `${getters.length} 个`],
-    ["已放弃（零地址/黑洞）", getters.length - active.length
-      ? tag("ok", (getters.length - active.length) + " 个") : "0 个"],
+    ["已放弃（零地址/黑洞）", renouncedCount ? tag("ok", renouncedCount + " 个") : "0 个"],
+    ["代币/资产地址（非权限）", tokenCount ? tag("neutral", tokenCount + " 个") : "0 个"],
     ["ABI 已公开的地址接口", hasAbi ? `${declaredAddrCount} 个` : tag("neutral", "未提供 ABI")],
     ["ABI 未声明的有效接口", undeclared.length
       ? (declaredAddrCount > 0 ? tag("warn", undeclared.length + " 个") : tag("bad", undeclared.length + " 个（疑似隐藏 owner）"))
