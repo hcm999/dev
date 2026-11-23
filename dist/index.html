@@ -250,7 +250,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         <div class="stat-card">
             <div class="stat-title">🔁 复投质押</div>
             <div class="stat-value" id="reinvestedStaked">0.00</div>
-            <div class="stat-sub">总<span class="stat-pct" id="reinvestRate">复投率 --</span></div>
+            <div class="stat-sub">本金 · 来自复投<span class="stat-pct" id="reinvestRate">复投率 --</span></div>
         </div>
         <div class="stat-card">
             <div class="stat-title">🫧 本金泡沫</div>
@@ -1031,7 +1031,7 @@ function updateStats() {
             rrEl.title = '';
         }
     }
-}
+}   // ← updateStats() 的闭合大括号，挪到最后
 
 // ===== 每日地址趋势 =====
 function updateAddressTrendChart() {
@@ -1536,8 +1536,9 @@ function applyFilters() {
 
     let dateStart = null, dateEnd = null;
     if (date) {
-        const d = new Date(date + 'T00:00:00');
-        dateStart = d.getTime() / 1000;
+        // 业务日 D = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
+        const [fy, fm, fd] = date.split('-').map(Number);
+        dateStart = Math.floor(Date.UTC(fy, fm - 1, fd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
         dateEnd = dateStart + 86400;
     }
 
@@ -2242,6 +2243,7 @@ function refreshAllBySettleHour() {
     updateDailyStats();
     updateAllCharts();
     updateLeaderboard();
+    applyFilters();     // ← 质押记录跟随口径
     renderCashflow();
     renderRedeem();
     renderReinvest();
