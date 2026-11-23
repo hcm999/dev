@@ -1,0 +1,2067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSC 合约安全检测</title>
+  <style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1222;
+  --bg2: #1a1e3a;
+  --card: #222750;
+  --border: #2f3466;
+  --text: #e8eaf2;
+  --muted: #8a8fb8;
+  --primary: #f3ba2f;
+  --success: #22c55e;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+}
+
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: radial-gradient(ellipse at top, #1a1e3a 0%, #0f1222 70%);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+.app { max-width: 880px; margin: 0 auto; padding: 32px 20px 60px; }
+
+.hero { text-align: center; margin-bottom: 28px; }
+.hero h1 { font-size: 28px; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
+.hero p { color: var(--muted); font-size: 14px; }
+
+.search-box {
+  display: flex; gap: 10px; margin-bottom: 20px;
+  background: var(--bg2); padding: 10px; border-radius: 14px;
+  border: 1px solid var(--border);
+}
+.search-box input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; color: var(--text);
+  font-size: 14px; font-family: "SF Mono", Consolas, monospace;
+  outline: none; transition: border-color 0.2s;
+}
+.search-box input:focus { border-color: var(--primary); }
+.search-box button {
+  background: var(--primary); color: #111; border: none;
+  border-radius: 10px; padding: 0 28px; font-size: 15px;
+  font-weight: 700; cursor: pointer; transition: transform 0.15s, opacity 0.2s; white-space: nowrap;
+}
+.search-box button:hover { opacity: 0.9; }
+.search-box button:active { transform: scale(0.97); }
+.search-box button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.status-bar { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; text-align: center; }
+.status-bar.info { background: #1e2a5a; color: #93c5fd; }
+.status-bar.error { background: #3f1d1d; color: #fca5a5; }
+.status-bar.hidden { display: none; }
+
+.result { display: flex; flex-direction: column; gap: 16px; }
+.result.hidden { display: none; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+.card h2 { font-size: 16px; margin-bottom: 14px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+
+.safety-overview { display: flex; align-items: center; gap: 24px; background: linear-gradient(135deg, var(--card) 0%, #2a2f5e 100%); }
+.safety-score-wrap { text-align: center; min-width: 120px; }
+.safety-score {
+  width: 110px; height: 110px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; font-weight: 800; background: var(--bg);
+  border: 4px solid var(--muted); margin: 0 auto;
+}
+.safety-score.safe { border-color: var(--success); color: var(--success); }
+.safety-score.warn { border-color: var(--warn); color: var(--warn); }
+.safety-score.danger { border-color: var(--danger); color: var(--danger); }
+.safety-label { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.safety-tips { flex: 1; font-size: 14px; color: var(--text); }
+.safety-tips ul { padding-left: 20px; }
+.safety-tips li { margin-bottom: 4px; }
+
+/* 代币头部 */
+.token-head { display: flex; align-items: center; gap: 16px; }
+.token-avatar {
+  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), #e08b00);
+  color: #111; display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 18px;
+}
+.token-head-main { flex: 1; min-width: 0; }
+.token-title { font-size: 20px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.token-title .muted { font-size: 13px; font-weight: 400; }
+.token-addr { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.token-addr code { font-size: 12px; color: var(--muted); font-family: "SF Mono", Consolas, monospace; word-break: break-all; }
+.mini-btn {
+  background: var(--bg2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;
+}
+.mini-btn:hover { color: var(--primary); border-color: var(--primary); }
+.badge-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* 统计计数 */
+.safety-counts { display: flex; gap: 10px; flex-wrap: wrap; }
+.count-box {
+  flex: 1; min-width: 72px; text-align: center; padding: 12px 8px;
+  background: var(--bg); border-radius: 10px; border: 1px solid var(--border);
+}
+.count-box b { display: block; font-size: 24px; font-weight: 800; }
+.count-box span { font-size: 12px; color: var(--muted); }
+.count-box.bad b { color: var(--danger); }
+.count-box.warn b { color: var(--warn); }
+.count-box.ok b { color: var(--success); }
+
+/* 检测清单补充 */
+.check-main { flex: 1; min-width: 0; padding-right: 12px; }
+.check-title { font-weight: 600; font-size: 14px; }
+.check-item .tag { flex-shrink: 0; }
+
+/* 持有者分布条 */
+.holder-bar {
+  display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+  margin-bottom: 16px; background: var(--bg);
+}
+.bar-seg { height: 100%; }
+
+/* 数据表格 */
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; padding: 8px 10px; color: var(--muted);
+  font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border);
+}
+.data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table code { font-family: "SF Mono", Consolas, monospace; font-size: 12px; word-break: break-all; }
+.data-table .tag { font-size: 11px; padding: 1px 6px; }
+
+/* 通用合约模式 */
+.section-group { display: contents; }
+.section-group.hidden { display: none; }
+.hidden { display: none !important; }
+.contract-head.hidden { display: none; }
+#g-risks .kv { align-items: flex-start; }
+#g-risks .kv span { flex: 1; min-width: 0; }
+#g-risks small { font-size: 11px; }
+#fnHint { margin-bottom: 10px; }
+
+/* ABI 输入 */
+.abi-box {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 16px; margin-bottom: 18px; font-size: 13px;
+}
+.abi-box summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.abi-box summary:hover { color: var(--primary); }
+.abi-box textarea {
+  width: 100%; min-height: 120px; margin-top: 10px; padding: 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+  resize: vertical; outline: none;
+}
+.abi-box textarea:focus { border-color: var(--primary); }
+.abi-box p { margin-top: 8px; }
+
+/* 质押专项 */
+.sub-title {
+  margin: 18px 0 10px; font-size: 13px; font-weight: 600;
+  color: var(--muted); padding-left: 8px; border-left: 3px solid var(--primary);
+}
+#stakeCard .data-table { margin-bottom: 4px; }
+
+/* 源码审计 */
+.src-box { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.src-box summary { cursor: pointer; color: var(--muted); }
+.src-box summary:hover { color: var(--primary); }
+.src-box textarea { min-height: 160px; }
+#srcFindings .check-item .snippet {
+  margin-top: 6px; padding: 6px 8px; background: var(--bg);
+  border-radius: 6px; font-family: "SF Mono", Consolas, monospace;
+  font-size: 11px; color: var(--muted); overflow-x: auto; white-space: pre;
+}
+
+.kv-list { display: grid; gap: 10px; }
+.kv {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 14px;
+}
+.kv:last-child { border-bottom: none; }
+.kv span { color: var(--muted); }
+.kv b { color: var(--text); font-weight: 600; max-width: 60%; text-align: right; word-break: break-all; }
+.kv code {
+  background: var(--bg); padding: 3px 8px; border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+  max-width: 60%; text-align: right; word-break: break-all;
+}
+
+.tag { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.tag.ok { background: rgba(34,197,94,0.15); color: var(--success); }
+.tag.warn { background: rgba(245,158,11,0.15); color: var(--warn); }
+.tag.bad { background: rgba(239,68,68,0.15); color: var(--danger); }
+.tag.neutral { background: rgba(138,143,184,0.15); color: var(--muted); }
+
+.checklist { display: grid; gap: 8px; }
+.check-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: var(--bg); border-radius: 8px;
+  border-left: 3px solid var(--muted); font-size: 14px;
+}
+.check-item.ok { border-left-color: var(--success); }
+.check-item.warn { border-left-color: var(--warn); }
+.check-item.bad { border-left-color: var(--danger); }
+.check-item .desc { color: var(--muted); font-size: 12px; }
+
+.muted { color: var(--muted); font-size: 13px; }
+
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.actions a {
+  flex: 1; min-width: 160px; text-align: center; padding: 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--primary); text-decoration: none; font-weight: 600; font-size: 14px; transition: background 0.2s;
+}
+.actions a:hover { background: var(--bg); }
+
+.footer { text-align: center; margin-top: 32px; font-size: 12px; color: var(--muted); }
+.footer p { margin-bottom: 4px; }
+
+@media (max-width: 600px) {
+  .hero h1 { font-size: 22px; }
+  .safety-overview { flex-direction: column; text-align: center; }
+  .kv { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .kv b, .kv code { max-width: 100%; text-align: left; }
+  .search-box { flex-direction: column; }
+  .search-box button { padding: 12px; }
+  .token-head { align-items: flex-start; }
+}
+
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <h1>🛡️ BSC 合约安全检测</h1>
+      <p>支持代币合约与通用合约（质押 / 挖矿 / 自定义）· 自动识别类型</p>
+    </header>
+
+    <section class="search-box">
+      <input id="addressInput" type="text" placeholder="输入 BSC 合约地址（0x...），代币或质押合约都可以" autocomplete="off" />
+      <button id="checkBtn">检测</button>
+    </section>
+
+    <details class="abi-box">
+      <summary>高级：粘贴合约 ABI（可选，开启参数级深度审查）</summary>
+      <textarea id="abiInput" spellcheck="false" placeholder='粘贴 ABI JSON 数组，例如：&#10;[{"inputs":[],"name":"uusd","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"}]'></textarea>
+      <p class="muted">未配置 BscScan API Key 时，粘贴官方 ABI 即可读取真实参数：收益率、特权地址、储备授权、合约余额等</p>
+
+      <details class="src-box">
+        <summary>源码静态审计：粘贴 Solidity 源码（可选）</summary>
+        <textarea id="sourceInput" spellcheck="false" placeholder='// 直接粘贴 .sol 源码全文，例如：&#10;// SPDX-License-Identifier: MIT&#10;pragma solidity ^0.8.20;&#10;contract Demo { ... }'></textarea>
+        <p class="muted">按规则扫描常见漏洞模式：tx.origin、未检查低层调用、重入顺序、缺失权限修饰、无限增发、可预测随机数、无限授权等</p>
+      </details>
+    </details>
+
+    <div id="statusBar" class="status-bar hidden"></div>
+
+    <main id="resultArea" class="result hidden">
+      <!-- 代币头部（仅代币模式） -->
+      <section class="card token-head" id="tokenHeadCard">
+        <div class="token-avatar" id="tokenAvatar">?</div>
+        <div class="token-head-main">
+          <div class="token-title">
+            <span id="headSymbol">-</span>
+            <span class="muted" id="headName">-</span>
+          </div>
+          <div class="token-addr">
+            <code id="info-address">-</code>
+            <button id="copyBtn" class="mini-btn">复制</button>
+          </div>
+          <div class="badge-row" id="headBadges"></div>
+        </div>
+      </section>
+
+      <!-- 通用合约头部（仅通用模式） -->
+      <section class="card contract-head hidden" id="contractHeadCard">
+        <div class="token-avatar" id="contractAvatar">C</div>
+        <div class="token-head-main">
+          <div class="token-title">
+            <span id="contractTitle">自定义合约</span>
+            <span class="tag neutral" id="contractType">通用</span>
+          </div>
+          <div class="token-addr">
+            <code id="generic-address">-</code>
+            <button id="copyBtn2" class="mini-btn">复制</button>
+          </div>
+          <div class="badge-row" id="contractBadges"></div>
+        </div>
+      </section>
+
+      <!-- 安全总览（共用） -->
+      <section class="card safety-overview">
+        <div class="safety-score-wrap">
+          <div id="safetyScore" class="safety-score">--</div>
+          <div id="safetyLabel" class="safety-label">等待检测</div>
+        </div>
+        <div class="safety-counts" id="safetyCounts">
+          <div class="count-box bad"><b id="cntBad">0</b><span>高危</span></div>
+          <div class="count-box warn"><b id="cntWarn">0</b><span>注意</span></div>
+          <div class="count-box ok"><b id="cntOk">0</b><span>通过</span></div>
+        </div>
+      </section>
+
+      <!-- 合约安全检测（共用） -->
+      <section class="card">
+        <h2>🔒 合约安全检测</h2>
+        <div class="checklist" id="safetyChecklist"><p class="muted">检测中…</p></div>
+      </section>
+
+      <!-- ========== 代币模式 ========== -->
+      <div id="tokenSections" class="section-group">
+        <section class="card">
+          <h2>💰 交易与税率</h2>
+          <div class="kv-list">
+            <div class="kv"><span>买入税</span><b id="info-buyTax">-</b></div>
+            <div class="kv"><span>卖出税</span><b id="info-sellTax">-</b></div>
+            <div class="kv"><span>转账税</span><b id="info-transferTax">-</b></div>
+            <div class="kv"><span>能否买入</span><b id="info-cannotBuy">-</b></div>
+            <div class="kv"><span>交易冷却机制</span><b id="info-cooldown">-</b></div>
+            <div class="kv"><span>反鲸鱼机制</span><b id="info-antiWhale">-</b></div>
+            <div class="kv"><span>滑点可修改</span><b id="info-slippage">-</b></div>
+            <div class="kv"><span>是否已上 DEX</span><b id="info-inDex">-</b></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>👑 合约权限 / 后门</h2>
+          <div class="kv-list">
+            <div class="kv"><span>合约创建者</span><code id="info-creator">-</code></div>
+            <div class="kv"><span>创建者持币占比</span><b id="info-creatorPercent">-</b></div>
+            <div class="kv"><span>账户数</span><b id="info-holders">-</b></div>
+            <div class="kv"><span>总供应量</span><b id="info-totalSupply">-</b></div>
+            <div class="kv"><span>源码开源</span><b id="info-openSource">-</b></div>
+            <div class="kv"><span>代理合约</span><b id="info-proxy">-</b></div>
+            <div class="kv"><span>可增发 (Mint)</span><b id="info-mintable">-</b></div>
+            <div class="kv"><span>有隐藏所有者</span><b id="info-hiddenOwner">-</b></div>
+            <div class="kv"><span>可夺回所有权</span><b id="info-takeBack">-</b></div>
+            <div class="kv"><span>Owner 可改余额</span><b id="info-ownerChangeBal">-</b></div>
+            <div class="kv"><span>自毁函数</span><b id="info-selfdestruct">-</b></div>
+            <div class="kv"><span>外部合约调用</span><b id="info-externalCall">-</b></div>
+            <div class="kv"><span>黑名单</span><b id="info-blacklist">-</b></div>
+            <div class="kv"><span>白名单</span><b id="info-whitelist">-</b></div>
+            <div class="kv"><span>可暂停转账</span><b id="info-pausable">-</b></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>🐋 前 10 持有者分布</h2>
+          <div class="holder-bar" id="holderBar"></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>地址</th><th>占比</th><th>类型</th></tr></thead>
+              <tbody id="holderTable"><tr><td colspan="4" class="muted">检测中…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>💧 LP 流动池与锁定</h2>
+          <div class="kv-list" id="lpSummary"></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>LP 地址</th><th>占比</th><th>锁定</th></tr></thead>
+              <tbody id="lpTable"><tr><td colspan="4" class="muted">检测中…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>🧪 Honeypot.is 二次验证（模拟买卖）</h2>
+          <div id="honeypotResult" class="kv-list"><p class="muted">检测中…</p></div>
+        </section>
+      </div>
+
+      <!-- ========== 通用合约模式 ========== -->
+      <div id="genericSections" class="section-group hidden">
+        <section class="card">
+          <h2>🧾 合约体检</h2>
+          <div class="kv-list">
+            <div class="kv"><span>地址类型</span><b id="g-type">-</b></div>
+            <div class="kv"><span>字节码大小</span><b id="g-codeSize">-</b></div>
+            <div class="kv"><span>源码验证</span><b id="g-verified">-</b></div>
+            <div class="kv"><span>函数数量</span><b id="g-fnCount">-</b></div>
+            <div class="kv"><span>合约 BNB 余额</span><b id="g-balance">-</b></div>
+            <div class="kv"><span>是否可升级代理</span><b id="g-proxy">-</b></div>
+            <div class="kv"><span>实现合约地址</span><code id="g-impl">-</code></div>
+            <div class="kv"><span>代理管理员</span><code id="g-admin">-</code></div>
+            <div class="kv"><span>是否最小代理(EIP-1167)</span><b id="g-minimal">-</b></div>
+            <div class="kv"><span>含 DELEGATECALL</span><b id="g-delegatecall">-</b></div>
+            <div class="kv"><span>含 SELFDESTRUCT</span><b id="g-selfdestruct">-</b></div>
+            <div class="kv"><span>含 CREATE2</span><b id="g-create2">-</b></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>👑 权限与资金风险函数</h2>
+          <div class="kv-list" id="g-risks"><p class="muted">分析中…</p></div>
+        </section>
+
+        <section class="card">
+          <h2>⚙️ 合约功能列表（对外可调用函数）</h2>
+          <p class="muted" id="fnHint">函数名由字节码选择器解析，未开源合约同样适用</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>函数</th><th>选择器</th><th>风险</th></tr></thead>
+              <tbody id="fnTable"><tr><td colspan="3" class="muted">解析中…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>🕵️ 隐藏权限 / 硬编码地址探测</h2>
+          <div class="kv-list" id="g-hidden"><p class="muted">探测中…</p></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>来源</th><th>地址</th><th>账户类型</th><th>ABI 声明</th></tr></thead>
+              <tbody id="hiddenTable"><tr><td colspan="4" class="muted">探测中…</td></tr></tbody>
+            </table>
+          </div>
+          <p class="muted" style="margin-top:10px">对 25 个常见权限接口（owner / admin / governance / serverSigner 等）逐个发起链上调用，即使 ABI 未导出也能读到值；未开源合约同样适用。</p>
+        </section>
+
+        <section class="card">
+          <h2>🚨 地址恶意画像（GoPlus）</h2>
+          <div class="kv-list" id="g-malicious"><p class="muted">查询中…</p></div>
+        </section>
+
+        <!-- 质押 / 收益合约专项 -->
+        <section class="card hidden" id="stakeCard">
+          <h2>💎 质押 / 收益合约专项审查</h2>
+          <div class="kv-list" id="stakeSummary"></div>
+
+          <div class="sub-title">收益率与产品</div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>产品</th><th>周期</th><th>周期总收益</th><th>折合年化</th><th>评级</th></tr></thead>
+              <tbody id="stakeRates"><tr><td colspan="5" class="muted">-</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="sub-title">特权角色与资金去向</div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>角色</th><th>地址</th><th>账户类型</th></tr></thead>
+              <tbody id="stakeRoles"><tr><td colspan="3" class="muted">-</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="sub-title">合约资金与兑付能力</div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>资产</th><th>合约余额</th><th>说明</th></tr></thead>
+              <tbody id="stakeFunds"><tr><td colspan="3" class="muted">-</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="sub-title">专项风险</div>
+          <div class="checklist" id="stakeRisks"></div>
+        </section>
+      </div>
+
+      <!-- 源码静态审计（共用） -->
+      <section class="card hidden" id="srcCard">
+        <h2>🧪 源码静态审计</h2>
+        <div class="kv-list" id="srcSummary"></div>
+        <div class="checklist" id="srcFindings"></div>
+        <p class="muted" style="margin-top:12px">规则扫描为启发式检查，用于快速定位可疑写法，不能替代专业审计（Slither / 人工推演）。</p>
+      </section>
+
+      <section class="card actions">
+        <a id="link-bscscan" target="_blank" rel="noopener">BscScan ↗</a>
+        <a id="link-honeypot" target="_blank" rel="noopener">Honeypot.is ↗</a>
+        <a id="link-dexscreener" target="_blank" rel="noopener">DexScreener ↗</a>
+        <a id="link-goplus" target="_blank" rel="noopener">GoPlus ↗</a>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>数据来源：GoPlus Security API · Honeypot.is · BSC RPC · 4byte.directory</p>
+      <p class="muted">本工具仅供参考，不构成投资建议。请务必 DYOR。</p>
+    </footer>
+  </div>
+
+  <script>
+/* ==========================================================================
+   BSC 合约安全检测
+   模式一：代币合约（GoPlus + Honeypot.is + 链上）
+   模式二：通用合约（字节码解析 + 函数选择器 + EIP-1967 代理 + GoPlus 地址画像）
+   ========================================================================== */
+
+const GOPLUS_TOKEN = "https://api.gopluslabs.io/api/v1/token_security/56";
+const GOPLUS_ADDR = "https://api.gopluslabs.io/api/v1/address_security";
+const HONEYPOT_API = "https://api.honeypot.is/v2/IsHoneypot";
+const RPC_LIST = [
+  "https://bsc-dataseed.bnbchain.org",
+  "https://bsc-dataseed1.binance.org",
+  "https://bsc.publicnode.com",
+];
+const FOURBYTE = "https://www.4byte.directory/api/v1/signatures/?hex_signature=";
+const BSCSCAN_API_KEY = ""; // 可选，填了才能查源码验证状态
+
+const ERC20_ABI = [
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
+];
+
+/* ----------------------------- 工具 ----------------------------- */
+const $ = (id) => document.getElementById(id);
+const isAddress = (v) => /^0x[a-fA-F0-9]{40}$/.test((v || "").trim());
+const shortAddr = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "-");
+const flag = (v) => v === 1 || v === "1" || v === true;
+const tag = (kind, text) => `<span class="tag ${kind}">${text}</span>`;
+const boolTag = (v, okText = "否", badText = "是", badKind = "bad", goodKind = "ok") =>
+  flag(v) ? tag(badKind, badText) : tag(goodKind, okText);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function setStatus(msg, type = "info") {
+  const bar = $("statusBar");
+  bar.className = "status-bar " + type;
+  bar.textContent = msg;
+}
+
+async function getJSON(url) {
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+/* ----------------------------- RPC ----------------------------- */
+let rpcIndex = 0;
+
+async function rpc(method, params) {
+  let lastErr;
+  for (let i = 0; i < RPC_LIST.length; i++) {
+    const url = RPC_LIST[(rpcIndex + i) % RPC_LIST.length];
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      rpcIndex = (rpcIndex + i) % RPC_LIST.length;
+      return json.result;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("RPC 全部失败");
+}
+
+/* ----------------------------- 代币模式数据 ----------------------------- */
+async function fetchGoPlusToken(address) {
+  const json = await getJSON(`${GOPLUS_TOKEN}?contract_addresses=${address}`);
+  if (json.code !== 1) return null;
+  const key = Object.keys(json.result || {})[0];
+  return json.result?.[key] || null;
+}
+
+async function fetchHoneypot(address) {
+  try {
+    const json = await getJSON(`${HONEYPOT_API}?chainId=56&address=${address}`);
+    return json.success ? json.data : null;
+  } catch { return null; }
+}
+
+async function fetchAddressRisk(address) {
+  try {
+    const json = await getJSON(`${GOPLUS_ADDR}/${address}?chain_id=56`);
+    return json.code === 1 ? json.result : null;
+  } catch { return null; }
+}
+
+async function fetchBscScanSource(address) {
+  try {
+    const p = new URLSearchParams({
+      module: "contract", action: "getsourcecode", address,
+      ...(BSCSCAN_API_KEY ? { apikey: BSCSCAN_API_KEY } : {}),
+    });
+    const json = await getJSON("https://api.bscscan.com/api?" + p);
+    if (json.status !== "1" || !json.result?.length) return null;
+    const s = json.result[0];
+    if (!s.ABI || s.ABI === "Contract source code not verified") return null;
+    return { abi: JSON.parse(s.ABI), name: s.ContractName };
+  } catch { return null; }
+}
+
+/* ----------------------------- 字节码解析 ----------------------------- */
+function hexToBytes(hex) {
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+  return out;
+}
+
+function scanOpcodes(bytes) {
+  const found = { selfdestruct: 0, delegatecall: 0, create2: 0, call: 0, caller: 0, push20: [] };
+  const seenAddr = new Set();
+  let i = 0;
+  while (i < bytes.length) {
+    const op = bytes[i];
+    if (op >= 0x60 && op <= 0x7f) {
+      const n = op - 0x5f;
+      if (op === 0x73 && i + 1 + n <= bytes.length) {
+        let h = "";
+        for (let k = 1; k <= n; k++) h += bytes[i + k].toString(16).padStart(2, "0");
+        h = "0x" + h;
+        if (!seenAddr.has(h) && !/^0x0{40}$/.test(h) && h !== "0x000000000000000000000000000000000000dead") {
+          seenAddr.add(h);
+          found.push20.push(h);
+        }
+      }
+      i += n + 1;
+      continue;
+    }
+    if (op === 0xff) found.selfdestruct++;
+    else if (op === 0xf4) found.delegatecall++;
+    else if (op === 0xf5) found.create2++;
+    else if (op === 0xf1) found.call++;
+    else if (op === 0x33) found.caller++;
+    i++;
+  }
+  return found;
+}
+
+/* 提取函数选择器：PUSH4 <sel> EQ 模式 */
+function extractSelectors(bytes) {
+  const set = new Set();
+  for (let i = 0; i + 5 < bytes.length; i++) {
+    if (bytes[i] === 0x63 && bytes[i + 5] === 0x14) {
+      const sel = "0x" + [1, 2, 3, 4].map((k) => bytes[i + k].toString(16).padStart(2, "0")).join("");
+      set.add(sel);
+    }
+  }
+  return [...set];
+}
+
+/* 常见选择器字典（避免全部走 4byte） */
+const KNOWN_SELECTORS = {
+  "0xa9059cbb": "transfer(address,uint256)",
+  "0x23b872dd": "transferFrom(address,address,uint256)",
+  "0x095ea7b3": "approve(address,uint256)",
+  "0x70a08231": "balanceOf(address)",
+  "0x18160ddd": "totalSupply()",
+  "0x313ce567": "decimals()",
+  "0x06fdde03": "name()",
+  "0x95d89b41": "symbol()",
+  "0x8da5cb5b": "owner()",
+  "0xf2fde38b": "transferOwnership(address)",
+  "0x715018a6": "renounceOwnership()",
+  "0x79ba5097": "acceptOwnership()",
+  "0x8456cb59": "pause()",
+  "0x3f4ba83a": "unpause()",
+  "0x5c975abb": "paused()",
+  "0x40c10f19": "mint(address,uint256)",
+  "0xa0712d68": "mint(uint256)",
+  "0x42966c68": "burn(uint256)",
+  "0x9dc29fac": "burn(address,uint256)",
+  "0x2e1a7d4d": "withdraw(uint256)",
+  "0x3ccfd60b": "withdraw()",
+  "0xdb2e21bc": "emergencyWithdraw()",
+  "0x5312ea8e": "emergencyWithdraw(uint256)",
+  "0x51cff8d9": "withdrawToken(address)",
+  "0x9e281a98": "withdrawToken(address,uint256)",
+  "0x3659cfe6": "upgradeTo(address)",
+  "0x4f1ef286": "upgradeToAndCall(address,bytes)",
+  "0xf851a440": "admin()",
+  "0x5c60da1b": "implementation()",
+  "0x8f283970": "changeAdmin(address)",
+  "0x1cff79cd": "execute(address,bytes)",
+  "0x2d2f5b0e": "setRewardRate(uint256)",
+  "0x1e9a6950": "withdrawAndHarvest(uint256,address)",
+  "0xa41b5f3d": "setPool(uint256,uint256,bool)",
+  "0xe2bbb158": "deposit(uint256,uint256)",
+  "0x441a3e70": "withdraw(uint256,uint256)",
+  "0x2e17de78": "withdrawAll()",
+  "0xb6b55f25": "deposit(uint256)",
+  "0xd0e30db0": "deposit()",
+  "0xab7de098": "unstake(uint256)",
+  "0x2f940c70": "depositFor(address,uint256)",
+  "0xb69ef8a8": "balance()",
+  "0x8e539e8c": "getIndex()",
+  "0x4e71e0c8": "setOperator(address)",
+  "0xf9cd4dfa": "setFee(uint256)",
+  "0x69fe0e2d": "setFee(uint256)",
+  "0x6e9960c3": "getAdmin()",
+};
+
+async function resolveSelectors(selectors, limit = 40) {
+  const map = new Map();
+  const unknown = [];
+  for (const s of selectors) {
+    if (KNOWN_SELECTORS[s]) map.set(s, KNOWN_SELECTORS[s]);
+    else unknown.push(s);
+  }
+  const todo = unknown.slice(0, limit);
+  for (let i = 0; i < todo.length; i++) {
+    try {
+      const json = await getJSON(FOURBYTE + todo[i]);
+      const best = json.results?.[json.results.length - 1];
+      map.set(todo[i], best ? best.text_signature : null);
+    } catch {
+      map.set(todo[i], null);
+    }
+    if (i % 8 === 7) await sleep(80);
+  }
+  for (const s of unknown.slice(limit)) map.set(s, null);
+  return map;
+}
+
+/* 函数风险分类 */
+const RISK_WORDS = [
+  { re: /^(emergencyWithdraw|withdrawAll|withdraw|withdrawToken|rescue|recover|sweep|drain)/i, risk: "danger", note: "可取出资金" },
+  { re: /(upgradeTo|upgradeToAndCall|changeAdmin)/i, risk: "danger", note: "可替换逻辑（可升级）" },
+  { re: /^(setOwner|transferOwnership|acceptOwnership|setAdmin|setOperator)/i, risk: "warn", note: "可转移/接管权限" },
+  { re: /^(mint|_mint)/i, risk: "warn", note: "可增发" },
+  { re: /^(pause|unpause|setPaused)/i, risk: "warn", note: "可暂停" },
+  { re: /(blacklist|whitelist|setBot|setLimit)/i, risk: "warn", note: "地址限制" },
+  { re: /(setReward|setRate|setAPR|setPool|setFee|setTax|updateReward)/i, risk: "warn", note: "可改收益/费率" },
+  { re: /^(execute|multicall|call)/i, risk: "warn", note: "可执行任意调用" },
+  { re: /^(selfdestruct|destroy|kill)/i, risk: "danger", note: "自毁" },
+];
+
+function classifyFn(sig) {
+  if (!sig) return { risk: "neutral", note: "未识别" };
+  for (const r of RISK_WORDS) if (r.re.test(sig)) return { risk: r.risk, note: r.note };
+  return { risk: "neutral", note: "普通功能" };
+}
+
+/* ----------------------------- 通用合约分析 ----------------------------- */
+const EIP1967_IMPL = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+const EIP1967_ADMIN = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
+
+async function analyzeGeneric(address) {
+  const code = await rpc("eth_getCode", [address, "latest"]);
+  if (!code || code === "0x") {
+    return { isContract: false };
+  }
+  const bytes = hexToBytes(code);
+  const opcodes = scanOpcodes(bytes);
+  const selectors = extractSelectors(bytes);
+
+  // 代理槽位
+  let impl = null, admin = null;
+  try {
+    const s = await rpc("eth_getStorageAt", [address, EIP1967_IMPL, "latest"]);
+    const v = "0x" + (s || "").slice(-40);
+    if (/^0x0{40}$/.test(v) === false) impl = v;
+  } catch {}
+  try {
+    const s = await rpc("eth_getStorageAt", [address, EIP1967_ADMIN, "latest"]);
+    const v = "0x" + (s || "").slice(-40);
+    if (!/^0x0{40}$/.test(v)) admin = v;
+  } catch {}
+  // EIP-1167 最小代理
+  const head = code.slice(0, 60).toLowerCase();
+  const isMinimal = head.includes("363d3d373d3d3d363d73") && head.includes("5af43d82803e903d91602b57fd5bf3");
+
+  // BNB 余额
+  let balance = null;
+  try {
+    balance = await rpc("eth_getBalance", [address, "latest"]);
+  } catch {}
+
+  // 若代理，读实现合约字节码做函数解析
+  let implSelectors = [];
+  if (impl) {
+    try {
+      const implCode = await rpc("eth_getCode", [impl, "latest"]);
+      if (implCode && implCode !== "0x") implSelectors = extractSelectors(hexToBytes(implCode));
+    } catch {}
+  }
+
+  const allSelectors = [...new Set([...selectors, ...implSelectors])];
+  return {
+    isContract: true,
+    codeSize: bytes.length,
+    opcodes,
+    selectors: allSelectors,
+    impl, admin, isMinimal,
+    balance: balance ? ethers.formatEther(balance) : null,
+    codeLen: bytes.length,
+  };
+}
+
+function evaluateGeneric(g, abiNames, audit) {
+  let score = 100;
+  const items = [];
+  const add = (title, desc, kind, status) => items.push({ title, desc, kind, status });
+
+  if (g.opcodes.selfdestruct > 0) {
+    score -= 20;
+    add("自毁指令", `字节码包含 SELFDESTRUCT ×${g.opcodes.selfdestruct}，合约可被销毁`, "bad", "存在");
+  } else {
+    add("自毁指令", "未发现 SELFDESTRUCT", "ok", "无");
+  }
+
+  if (g.impl || g.isMinimal) {
+    score -= 12;
+    add("可升级代理", "逻辑合约可被替换，管理员可改变合约行为（含卷走资金的可能）", "bad", "是代理");
+  } else {
+    add("可升级代理", "非代理合约，逻辑不可替换", "ok", "否");
+  }
+
+  if (g.opcodes.delegatecall > 0) {
+    score -= 4;
+    add("DELEGATECALL", `存在委托调用 ×${g.opcodes.delegatecall}，常见于代理/库调用`, "warn", "存在");
+  } else {
+    add("DELEGATECALL", "未发现委托调用", "ok", "无");
+  }
+
+  const sigs = [...g.selectors].map((s) => abiNames.get(s) || "").filter(Boolean);
+  const danger = sigs.filter((s) => classifyFn(s).risk === "danger");
+  const warns = sigs.filter((s) => classifyFn(s).risk === "warn");
+
+  if (danger.length) {
+    score -= Math.min(24, danger.length * 8);
+    add("资金提取 / 升级函数", danger.slice(0, 4).join("、"), "bad", `${danger.length} 个`);
+  } else {
+    add("资金提取 / 升级函数", "未发现 withdraw / rescue / upgrade 类函数", "ok", "无");
+  }
+
+  if (warns.length) {
+    score -= Math.min(16, warns.length * 3);
+    add("权限类函数", warns.slice(0, 5).join("、"), "warn", `${warns.length} 个`);
+  } else {
+    add("权限类函数", "未发现改权限 / 改费率 / 暂停类函数", "ok", "无");
+  }
+
+  // function selector 里若有 owner 但无 renounce，提示
+  const hasOwner = sigs.some((s) => /^owner\(\)/.test(s));
+  const hasRenounce = sigs.some((s) => /renounce(Ownership|Funder)?\(/i.test(s));
+  if (g.ownerInfo?.burn) {
+    add("所有权", `owner / funder 已转入黑洞地址，权限视为已放弃`, "ok", "已放弃");
+  } else if (hasOwner && !hasRenounce) {
+    add("所有权", "存在 owner 但无放弃所有权函数，权限长期存在", "warn", "不可放弃");
+  } else if (hasOwner) {
+    add("所有权", "含 owner 与放弃所有权函数，可放弃权限", "ok", "可放弃");
+  }
+
+  if (!g.selectors.length) {
+    score -= 10;
+    add("函数解析", "未从字节码解析出任何函数，可能是极简合约或解析失败", "warn", "无函数");
+  } else {
+    add("函数解析", `共识别 ${g.selectors.length} 个函数选择器`, "ok", "正常");
+  }
+
+  // 隐藏所有者 / 硬编码地址
+  if (g.hidden) {
+    const getters = g.hidden.rows.filter((r) => r.source.startsWith("接口"));
+    const active = getters.filter((r) => !r.renounced);
+    const undeclared = active.filter((r) => r.declared === false);
+
+    const declaredAddrCount = g.hidden.declaredAddrNames ? g.hidden.declaredAddrNames.size : 0;
+
+    if (undeclared.length && declaredAddrCount === 0) {
+      score -= Math.min(12, undeclared.length * 6);
+      add("隐藏所有者", `发现 ${undeclared.length} 个 ABI 未声明的地址接口：${undeclared.slice(0, 3).map((r) => r.source).join("、")}`, "bad", "疑似隐藏 owner");
+    } else if (undeclared.length) {
+      add("隐藏所有者", `地址权限可通过公开接口读取；另有 ${undeclared.length} 个未声明地址接口，多为公开状态变量`, "ok", "可公开读取");
+    } else if (active.length) {
+      const hasAbi = !!g.hidden.declaredAddrNames;
+      add("隐藏所有者",
+        hasAbi
+          ? `探测到 ${active.length} 个有效权限接口，均已在 ABI 中声明`
+          : `探测到 ${active.length} 个有效权限接口（未提供 ABI，无法判断是否隐藏）`,
+        "ok", hasAbi ? "无隐藏" : "待 ABI 确认");
+    } else if (getters.length) {
+      add("隐藏所有者", "owner / admin 等权限地址已转入零地址或黑洞，视为已放弃权限", "ok", "已放弃");
+    } else {
+      add("隐藏所有者", "未探测到非常规权限接口（不排除使用自定义命名）", "ok", "未发现");
+    }
+
+    if (g.hidden.hardcoded.length) {
+      score -= 5;
+      add("硬编码地址", `字节码中存在 ${g.hidden.hardcoded.length} 个未知硬编码地址，需人工确认用途`, "warn", `${g.hidden.hardcoded.length} 个`);
+    }
+  }
+
+  // 质押 / 收益合约专项风险
+  if (audit) {
+    if (audit.adminEoa) {
+      score -= 10;
+      add("特权账户安全性", "管理权限由普通钱包（EOA）持有，非多签，单点风险", "warn", "EOA 单签");
+    } else if (audit.roles.some((r) => r.group === "admin")) {
+      add("特权账户安全性", "管理权限已放弃或由合约持有", "ok", "安全");
+    }
+    if (audit.reserveAllowance === 0) {
+      score -= 12;
+      add("兑付储备授权", "结算储备对合约授权为 0，到期可能无法兑付收益", "bad", "未授权");
+    } else if (audit.reserveAllowance > 0) {
+      add("兑付储备授权", `结算储备已授权额度 ${audit.reserveAllowanceText}`, "ok", "已授权");
+    }
+    if (audit.emptyAssets) {
+      score -= 15;
+      add("合约偿付能力", "合约内质押币与奖励币余额均为 0，兑付完全依赖外部注入", "bad", "空仓位");
+    }
+    if (audit.hasEmergencyWithdraw) {
+      score -= 6;
+      add("紧急提取函数", "存在 emergencyWithdraw，项目方可绕过正常流程处理资金", "warn", "存在");
+    }
+    if (audit.routerDependent) {
+      score -= 5;
+      add("DEX 依赖", "赎回需通过 DEX 兑换，流动性不足时可能无法兑付", "warn", "依赖 DEX");
+    }
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, items };
+}
+
+/* ----------------------------- 代币评分 ----------------------------- */
+function toPct(v) {
+  if (v === "" || v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? +(n * 100).toFixed(2) : null;
+}
+
+function top10Risk(gp) {
+  if (!Array.isArray(gp.holders) || !gp.holders.length) return null;
+  return gp.holders.slice(0, 10).reduce((a, h) => a + Number(h.percent || 0), 0) * 100;
+}
+
+function lpLockedPercent(gp) {
+  if (!Array.isArray(gp.lp_holders) || !gp.lp_holders.length) return null;
+  return gp.lp_holders.filter((h) => flag(h.is_locked))
+    .reduce((a, h) => a + Number(h.percent || 0), 0) * 100;
+}
+
+function evaluateToken(gp, ownerProbe) {
+  let score = 100;
+  const items = [];
+  const add = (title, desc, kind, status) => items.push({ title, desc, kind, status });
+
+  if (flag(gp.is_honeypot)) {
+    score -= 60;
+    add("貔貅骗局检测", "GoPlus 判定为 honeypot，买入后无法卖出", "bad", "是貔貅 ⚠️");
+  } else add("貔貅骗局检测", "未发现买入后无法卖出的风险", "ok", "通过");
+
+  if (flag(gp.cannot_buy)) {
+    score -= 40;
+    add("能否买入", "代码中限制了买入", "bad", "不能买入");
+  } else add("能否买入", "未检测到购买限制", "ok", "可以买入");
+
+  if (flag(gp.is_open_source)) add("合约开源", "源码已公开，逻辑可审计", "ok", "已开源");
+  else { score -= 15; add("合约开源", "源码未公开，可能隐藏恶意逻辑", "bad", "未开源"); }
+
+  if (flag(gp.is_proxy)) { score -= 8; add("代理合约", "逻辑合约可被替换", "warn", "是代理合约"); }
+  else add("代理合约", "非代理合约，逻辑不可更换", "ok", "否");
+
+  if (flag(gp.is_mintable)) { score -= 15; add("增发权限", "团队可无限增发稀释持仓", "bad", "可增发"); }
+  else add("增发权限", "未发现增发功能", "ok", "无增发");
+
+  if (flag(gp.hidden_owner)) {
+    const probe = ownerProbe || [];
+    const readable = probe.filter((p) => !p.renounced);
+    if (readable.length) {
+      add("隐藏所有者",
+        `检测引擎按标准 owner() 判定为隐藏；实际权限地址可公开读取：${readable.slice(0, 3).map((p) => `${p.name}() → ${shortAddr(p.addr)}`).join("、")}（非标准命名，非隐藏）`,
+        "ok", "可公开读取");
+    } else if (probe.length) {
+      add("隐藏所有者", "权限地址已转入零地址或黑洞，视为已放弃权限", "ok", "已放弃");
+    } else {
+      score -= 15;
+      add("隐藏所有者", "存在隐藏的 owner 权限，且无法通过常见接口读取", "bad", "有隐藏 owner");
+    }
+  } else add("隐藏所有者", "未发现隐藏的所有者", "ok", "无");
+
+  if (flag(gp.can_take_back_ownership)) { score -= 12; add("所有权夺回", "放弃后仍能重新夺回", "bad", "可夺回"); }
+  else add("所有权夺回", "不存在夺回所有权的后门", "ok", "否");
+
+  if (flag(gp.owner_change_balance)) { score -= 20; add("修改余额", "Owner 可直接改任意账户余额", "bad", "可改余额"); }
+  else add("修改余额", "Owner 无法修改他人余额", "ok", "否");
+
+  if (flag(gp.selfdestruct)) { score -= 12; add("自毁函数", "合约可被自毁", "bad", "有自毁"); }
+  else add("自毁函数", "未发现自毁函数", "ok", "无");
+
+  if (flag(gp.external_call)) { score -= 5; add("外部合约调用", "存在外部调用，可能带来额外风险", "warn", "有"); }
+  else add("外部合约调用", "未发现可疑外部调用", "ok", "无");
+
+  if (flag(gp.is_blacklisted)) { score -= 12; add("黑名单机制", "项目方可拉黑地址禁止交易", "bad", "有黑名单"); }
+  else add("黑名单机制", "不含黑名单功能", "ok", "无");
+
+  if (flag(gp.is_whitelisted)) { score -= 5; add("白名单机制", "存在白名单", "warn", "有白名单"); }
+  else add("白名单机制", "不含白名单功能", "ok", "无");
+
+  if (flag(gp.transfer_pausable)) { score -= 8; add("暂停转账", "项目方可暂停全部转账", "warn", "可暂停"); }
+  else add("暂停转账", "转账不可被暂停", "ok", "否");
+
+  if (flag(gp.trading_cooldown)) { score -= 4; add("交易冷却", "存在交易冷却", "warn", "有"); }
+  else add("交易冷却", "无交易冷却", "ok", "无");
+
+  if (flag(gp.is_anti_whale)) {
+    if (flag(gp.anti_whale_modifiable)) { score -= 6; add("反鲸鱼机制", "阈值可随时修改", "warn", "可修改"); }
+    else add("反鲸鱼机制", "阈值不可修改", "ok", "不可改");
+  } else add("反鲸鱼机制", "无大额持仓限制", "ok", "无");
+
+  if (flag(gp.slippage_modifiable) || flag(gp.personal_slippage_modifiable)) {
+    score -= 8; add("滑点可修改", "税率/滑点可被随时调高", "warn", "可修改");
+  } else add("滑点可修改", "税率不可被随意调整", "ok", "不可改");
+
+  const buy = toPct(gp.buy_tax), sell = toPct(gp.sell_tax);
+  if (buy != null || sell != null) {
+    const maxTax = Math.max(buy || 0, sell || 0);
+    if (maxTax > 20) { score -= 25; add("交易税率", `买 ${buy ?? "-"}% / 卖 ${sell ?? "-"}%`, "bad", "极高"); }
+    else if (maxTax > 10) { score -= 12; add("交易税率", `买 ${buy ?? "-"}% / 卖 ${sell ?? "-"}%`, "warn", "偏高"); }
+    else add("交易税率", `买 ${buy ?? "-"}% / 卖 ${sell ?? "-"}%`, "ok", "正常");
+  }
+
+  const conc = top10Risk(gp);
+  if (conc != null) {
+    if (conc > 60) { score -= 15; add("持仓集中度", `前十大占比约 ${conc.toFixed(2)}%（含 LP）`, "bad", "极高"); }
+    else if (conc > 30) { score -= 8; add("持仓集中度", `前十大占比约 ${conc.toFixed(2)}%（含 LP）`, "warn", "偏高"); }
+    else add("持仓集中度", `前十大占比约 ${conc.toFixed(2)}%`, "ok", "分散");
+  }
+
+  const cp = Number(gp.creator_percent || 0) * 100;
+  if (cp > 5) { score -= 8; add("创建者持仓", `创建者持有 ${cp.toFixed(2)}%`, "warn", "偏高"); }
+  else add("创建者持仓", `创建者持有 ${cp.toFixed(2)}%`, "ok", "正常");
+
+  const lock = lpLockedPercent(gp);
+  if (lock != null) {
+    if (lock < 50) { score -= 10; add("LP 锁仓", `TOP LP 仅锁定 ${lock.toFixed(2)}%`, "bad", "未锁仓"); }
+    else if (lock < 90) { score -= 4; add("LP 锁仓", `TOP LP 锁定 ${lock.toFixed(2)}%`, "warn", "部分锁定"); }
+    else add("LP 锁仓", `TOP LP 已锁定 ${lock.toFixed(2)}%`, "ok", "已锁仓");
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, items };
+}
+
+/* ----------------------------- 渲染 ----------------------------- */
+function renderHead(gp, chain, address) {
+  const symbol = gp?.token_symbol || chain?.symbol || "-";
+  const name = gp?.token_name || chain?.name || "-";
+  $("tokenAvatar").textContent = (symbol || "?").slice(0, 2).toUpperCase();
+  $("headSymbol").textContent = symbol;
+  $("headName").textContent = name;
+  $("info-address").textContent = address;
+
+  const badges = [];
+  if (flag(gp?.trust_list)) badges.push(tag("ok", "GoPlus 信任列表"));
+  if (flag(gp?.is_open_source)) badges.push(tag("ok", "已开源"));
+  if (flag(gp?.is_honeypot)) badges.push(tag("bad", "貔貅风险"));
+  if (!flag(gp?.is_in_dex)) badges.push(tag("warn", "未上 DEX"));
+  if (flag(gp?.is_proxy)) badges.push(tag("warn", "代理合约"));
+  $("headBadges").innerHTML = badges.join(" ");
+}
+
+function renderSafety({ score, items }) {
+  const el = $("safetyScore");
+  el.textContent = score;
+  el.classList.remove("safe", "warn", "danger");
+  if (score >= 80) { el.classList.add("safe"); $("safetyLabel").textContent = "相对安全"; }
+  else if (score >= 55) { el.classList.add("warn"); $("safetyLabel").textContent = "存在风险"; }
+  else { el.classList.add("danger"); $("safetyLabel").textContent = "高危"; }
+
+  $("cntBad").textContent = items.filter((i) => i.kind === "bad").length;
+  $("cntWarn").textContent = items.filter((i) => i.kind === "warn").length;
+  $("cntOk").textContent = items.filter((i) => i.kind === "ok").length;
+
+  const order = { bad: 0, warn: 1, ok: 2, neutral: 3 };
+  $("safetyChecklist").innerHTML = items.slice()
+    .sort((a, b) => order[a.kind] - order[b.kind])
+    .map((i) => `
+      <div class="check-item ${i.kind}">
+        <div class="check-main">
+          <div class="check-title">${i.title}</div>
+          <div class="desc">${i.desc}</div>
+        </div>
+        ${tag(i.kind, i.status)}
+      </div>`).join("");
+}
+
+function renderTokenDetail(gp, ownerProbe) {
+  $("info-buyTax").textContent = toPct(gp.buy_tax) != null ? toPct(gp.buy_tax) + "%" : "-";
+  $("info-sellTax").textContent = toPct(gp.sell_tax) != null ? toPct(gp.sell_tax) + "%" : "-";
+  $("info-transferTax").textContent = toPct(gp.transfer_tax) != null ? toPct(gp.transfer_tax) + "%" : "无";
+  $("info-cannotBuy").innerHTML = boolTag(gp.cannot_buy, "可以买入", "禁止买入");
+  $("info-cooldown").innerHTML = boolTag(gp.trading_cooldown, "无", "有", "warn");
+  $("info-antiWhale").innerHTML = boolTag(gp.is_anti_whale, "无", "有", "warn");
+  $("info-slippage").innerHTML = boolTag(flag(gp.slippage_modifiable) || flag(gp.personal_slippage_modifiable), "不可改", "可修改", "warn");
+  $("info-inDex").innerHTML = flag(gp.is_in_dex) ? tag("ok", "是") : tag("warn", "否");
+
+  $("info-creator").textContent = gp.creator_address || "-";
+  $("info-creatorPercent").textContent = (Number(gp.creator_percent || 0) * 100).toFixed(4) + "%";
+  $("info-holders").textContent = gp.holder_count ? Number(gp.holder_count).toLocaleString() : "-";
+  $("info-totalSupply").textContent = gp.total_supply
+    ? Number(gp.total_supply).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "-";
+  $("info-openSource").innerHTML = boolTag(gp.is_open_source, "未开源", "已开源", "bad", "ok");
+  $("info-proxy").innerHTML = boolTag(gp.is_proxy, "否", "是", "warn");
+  $("info-mintable").innerHTML = boolTag(gp.is_mintable, "不可", "可增发");
+  const readableOwner = (ownerProbe || []).filter((p) => !p.renounced);
+  $("info-hiddenOwner").innerHTML = flag(gp.hidden_owner) && readableOwner.length
+    ? tag("ok", `非标准命名（${readableOwner[0].name}() 可读）`)
+    : boolTag(gp.hidden_owner, "无", "有隐藏 owner");
+  $("info-takeBack").innerHTML = boolTag(gp.can_take_back_ownership, "否", "可夺回");
+  $("info-ownerChangeBal").innerHTML = boolTag(gp.owner_change_balance, "否", "可改余额");
+  $("info-selfdestruct").innerHTML = boolTag(gp.selfdestruct, "无", "有自毁", "bad");
+  $("info-externalCall").innerHTML = boolTag(gp.external_call, "无", "有", "warn");
+  $("info-blacklist").innerHTML = boolTag(gp.is_blacklisted, "无", "支持黑名单");
+  $("info-whitelist").innerHTML = boolTag(gp.is_whitelisted, "无", "有白名单", "warn");
+  $("info-pausable").innerHTML = boolTag(gp.transfer_pausable, "不可", "可暂停", "warn");
+}
+
+function renderHolders(gp) {
+  const holders = Array.isArray(gp.holders) ? gp.holders : [];
+  const bar = $("holderBar"), table = $("holderTable");
+  if (!holders.length) {
+    bar.innerHTML = "";
+    table.innerHTML = '<tr><td colspan="4" class="muted">无数据</td></tr>';
+    return;
+  }
+  const colors = ["#ef4444", "#f59e0b", "#eab308", "#22c55e", "#14b8a6",
+    "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#ec4899"];
+  bar.innerHTML = holders.slice(0, 10).map((h, i) =>
+    `<div class="bar-seg" style="width:${(Number(h.percent) * 100).toFixed(2)}%;background:${colors[i % 10]}"
+      title="${shortAddr(h.address)} ${(Number(h.percent) * 100).toFixed(2)}%"></div>`).join("");
+  table.innerHTML = holders.slice(0, 10).map((h, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><code>${shortAddr(h.address)}</code>${h.tag ? ` <span class="tag neutral">${h.tag}</span>` : ""}</td>
+      <td>${(Number(h.percent) * 100).toFixed(2)}%</td>
+      <td>${flag(h.is_contract) ? "合约" : "钱包"}</td>
+    </tr>`).join("");
+}
+
+function renderLP(gp) {
+  const lps = Array.isArray(gp.lp_holders) ? gp.lp_holders : [];
+  const lockPct = lpLockedPercent(gp);
+  $("lpSummary").innerHTML = [
+    ["LP 持有者数", gp.lp_holder_count ? Number(gp.lp_holder_count).toLocaleString() : "-"],
+    ["LP 总量", gp.lp_total_supply ? Number(gp.lp_total_supply).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "-"],
+    ["TOP LP 锁定比例", lockPct != null
+      ? (lockPct >= 90 ? tag("ok", lockPct.toFixed(2) + "%")
+        : lockPct >= 50 ? tag("warn", lockPct.toFixed(2) + "%") : tag("bad", lockPct.toFixed(2) + "%"))
+      : "无 LP 数据"],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  $("lpTable").innerHTML = !lps.length
+    ? '<tr><td colspan="4" class="muted">无 LP 持有者数据（可能未上 DEX）</td></tr>'
+    : lps.slice(0, 10).map((h, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><code>${shortAddr(h.address)}</code>${h.tag ? ` <span class="tag neutral">${h.tag}</span>` : ""}</td>
+        <td>${(Number(h.percent) * 100).toFixed(2)}%</td>
+        <td>${flag(h.is_locked) ? tag("ok", "已锁定") : tag("bad", "未锁定")}</td>
+      </tr>`).join("");
+}
+
+function renderHoneypot(hp) {
+  const box = $("honeypotResult");
+  if (!hp) {
+    box.innerHTML = '<p class="muted">Honeypot.is 未返回数据（模拟仅支持代币），可直接点外链查看</p>';
+    return;
+  }
+  const rows = [
+    ["是否 Honeypot", hp.isHoneypot === true ? tag("bad", "是 ⚠️")
+      : hp.isHoneypot === false ? tag("ok", "否") : tag("neutral", "未知")],
+    ["原因", hp.honeypotReason || "-"],
+    ["模拟买入税", hp.taxes ? (hp.taxes.buyTax ?? "-") + "%" : "-"],
+    ["模拟卖出税", hp.taxes ? (hp.taxes.sellTax ?? "-") + "%" : "-"],
+  ];
+  if (hp.simulationResult) {
+    const r = hp.simulationResult;
+    if (r.buyGas != null) rows.push(["买入模拟", r.buyGas > 0 ? tag("ok", "成功") : tag("bad", "失败")]);
+    if (r.sellGas != null) rows.push(["卖出模拟", r.sellGas > 0 ? tag("ok", "成功") : tag("bad", "失败/无法卖出")]);
+  }
+  box.innerHTML = rows.map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+}
+
+function renderGeneric(g, sigMap, abiName) {
+  const typeText = g.isMinimal ? "最小代理 (EIP-1167)" : g.impl ? "可升级代理" : "普通合约";
+  $("contractTitle").textContent = abiName || "自定义合约";
+  $("contractType").textContent = typeText;
+  $("contractAvatar").textContent = "⛓";
+  $("generic-address").textContent = $("addressInput").value.trim();
+
+  const badges = [];
+  if (g.impl) badges.push(tag("bad", "可升级"));
+  if (g.opcodes.selfdestruct) badges.push(tag("bad", "含自毁"));
+  if (!g.selectors.length) badges.push(tag("warn", "无法解析"));
+  badges.push(tag("neutral", `${g.selectors.length} 个函数`));
+  $("contractBadges").innerHTML = badges.join(" ");
+
+  $("g-type").innerHTML = tag("neutral", "合约账户");
+  $("g-codeSize").textContent = `${g.codeSize.toLocaleString()} 字节`;
+  $("g-verified").innerHTML = abiName ? tag("ok", "已验证") : tag("neutral", "未知（未配置 API Key）");
+  $("g-fnCount").textContent = `${g.selectors.length} 个`;
+
+  // 余额
+  $("g-balance").textContent = g.balance != null ? `${Number(g.balance).toFixed(4)} BNB` : "-";
+  $("g-proxy").innerHTML = (g.impl || g.isMinimal) ? tag("bad", "是") : tag("ok", "否");
+  $("g-impl").textContent = g.impl || "-";
+  $("g-admin").textContent = g.admin || "-";
+  $("g-minimal").innerHTML = g.isMinimal ? tag("warn", "是") : tag("ok", "否");
+  $("g-delegatecall").innerHTML = g.opcodes.delegatecall
+    ? tag("warn", `存在 ×${g.opcodes.delegatecall}`) : tag("ok", "无");
+  $("g-selfdestruct").innerHTML = g.opcodes.selfdestruct
+    ? tag("bad", `存在 ×${g.opcodes.selfdestruct}`) : tag("ok", "无");
+  $("g-create2").innerHTML = g.opcodes.create2
+    ? tag("warn", `存在 ×${g.opcodes.create2}`) : tag("ok", "无");
+
+  // 风险函数汇总
+  const entries = g.selectors.map((s) => ({ sel: s, sig: sigMap.get(s) || null }))
+    .map((e) => ({ ...e, cls: classifyFn(e.sig) }))
+    .sort((a, b) => {
+      const w = { danger: 0, warn: 1, neutral: 2 };
+      return w[a.cls.risk] - w[b.cls.risk];
+    });
+
+  const risky = entries.filter((e) => e.cls.risk !== "neutral");
+  $("g-risks").innerHTML = risky.length
+    ? risky.map((e) => `<div class="kv"><span><code>${e.sig || e.sel}</code><br><small class="muted">${e.cls.note}</small></span>
+        <b>${tag(e.cls.risk, e.cls.risk === "danger" ? "高风险" : "注意")}</b></div>`).join("")
+    : '<p class="muted">未发现资金提取、升级、改权限等高风险函数</p>';
+
+  // 功能列表
+  $("fnTable").innerHTML = entries.length
+    ? entries.map((e) => `
+      <tr>
+        <td><code>${e.sig || "未识别"}</code></td>
+        <td><code class="muted">${e.sel}</code></td>
+        <td>${e.cls.risk === "danger" ? tag("bad", "高") : e.cls.risk === "warn" ? tag("warn", "注意") : tag("neutral", "普通")}</td>
+      </tr>`).join("")
+    : '<tr><td colspan="3" class="muted">未解析出函数</td></tr>';
+
+  if (!abiName) {
+    $("fnHint").textContent = "函数名由字节码选择器 + 4byte 数据库解析，未开源合约同样适用；未识别表示数据库无该签名";
+  }
+}
+
+function renderMalicious(risk) {
+  const box = $("g-malicious");
+  if (!risk) {
+    box.innerHTML = '<p class="muted">GoPlus 地址画像未返回数据</p>';
+    return;
+  }
+  const LABELS = {
+    cybercrime: "网络犯罪", money_laundering: "洗钱", financial_crime: "金融犯罪",
+    darkweb_transactions: "暗网交易", phishing_activities: "钓鱼活动", fake_kyc: "虚假 KYC",
+    blacklist_doubt: "疑似黑名单", fake_standard_interface: "伪造标准接口",
+    stealing_attack: "盗窃攻击", blackmail_activities: "敲诈勒索", sanctioned: "制裁名单",
+    malicious_mining_activities: "恶意挖矿", mixer: "混币器", fake_token: "伪造代币",
+    honeypot_related_address: "与貔貅相关", gas_abuse: "Gas 滥用", reinit: "重入初始化攻击",
+  };
+  const hits = Object.keys(LABELS).filter((k) => flag(risk[k]));
+  const created = Number(risk.number_of_malicious_contracts_created || 0);
+
+  let html = hits.length
+    ? hits.map((k) => `<div class="kv"><span>${LABELS[k]}</span><b>${tag("bad", "命中")}</b></div>`).join("")
+    : `<div class="kv"><span>恶意行为</span><b>${tag("ok", "未命中任何风险标签")}</b></div>`;
+  html += `<div class="kv"><span>该地址创建的恶意合约数</span><b>${created > 0 ? tag("bad", created + " 个") : tag("ok", "0")}</b></div>`;
+  box.innerHTML = html;
+}
+
+/* ----------------------------- 主流程 ----------------------------- */
+async function runCheck() {
+  const raw = $("addressInput").value.trim();
+  if (!isAddress(raw)) {
+    setStatus("请输入有效的 BSC 合约地址（0x 开头 42 位）", "error");
+    return;
+  }
+  const address = ethers.getAddress(raw.toLowerCase());
+  const btn = $("checkBtn");
+  btn.disabled = true; btn.textContent = "检测中…";
+  $("resultArea").classList.add("hidden");
+  setStatus("正在识别合约类型…", "info");
+
+  try {
+    // 先判断是否是代币
+    const gpToken = await fetchGoPlusToken(address).catch(() => null);
+
+    if (gpToken) {
+      await runTokenMode(address, gpToken);
+    } else {
+      await runGenericMode(address);
+    }
+
+    // 源码静态审计（可选）
+    const srcCode = ($("sourceInput")?.value || "").trim();
+    if (srcCode.length > 40) {
+      setStatus("正在执行源码静态审计…", "info");
+      renderSource(scanSource(srcCode));
+    } else {
+      $("srcCard").classList.add("hidden");
+    }
+
+    $("resultArea").classList.remove("hidden");
+  } catch (err) {
+    console.error(err);
+    setStatus("检测失败：" + (err.message || "未知错误"), "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "检测";
+  }
+}
+
+async function runTokenMode(address, gp) {
+  $("tokenHeadCard").classList.remove("hidden");
+  $("contractHeadCard").classList.add("hidden");
+  $("tokenSections").classList.remove("hidden");
+  $("genericSections").classList.add("hidden");
+
+  setStatus("已识别为代币合约，正在聚合 GoPlus / Honeypot 数据…", "info");
+  const [hp, chain] = await Promise.all([
+    fetchHoneypot(address),
+    (async () => {
+      try {
+        const p = new ethers.JsonRpcProvider(RPC_LIST[0], 56, { staticNetwork: true });
+        const c = new ethers.Contract(address, ERC20_ABI, p);
+        return { name: await c.name().catch(() => null), symbol: await c.symbol().catch(() => null) };
+      } catch { return null; }
+    })(),
+  ]);
+
+  renderHead(gp, chain, address);
+
+  // 交叉验证 GoPlus 的 hidden_owner：能读到真实权限地址就不是隐藏
+  let ownerProbe = [];
+  if (flag(gp.hidden_owner)) {
+    setStatus("正在核验隐藏所有者（读取常见权限接口）…", "info");
+    try { ownerProbe = await probeHiddenGetters(address, null); } catch {}
+  }
+
+  const result = evaluateToken(gp, ownerProbe);
+  renderSafety(result);
+  renderTokenDetail(gp, ownerProbe);
+  renderHolders(gp);
+  renderLP(gp);
+  renderHoneypot(hp);
+
+  $("link-bscscan").href = `https://bscscan.com/token/${address}`;
+  $("link-honeypot").href = `https://honeypot.is/?address=${address}&chain=BSC`;
+  $("link-dexscreener").href = `https://dexscreener.com/bsc/${address}`;
+  $("link-goplus").href = `https://gopluslabs.io/token-security/56/${address}`;
+  setStatus(`检测完成 · 代币模式 · 综合评分 ${result.score} 分`, result.score >= 80 ? "info" : "error");
+}
+
+async function runGenericMode(address) {
+  $("tokenHeadCard").classList.add("hidden");
+  $("contractHeadCard").classList.remove("hidden");
+  $("tokenSections").classList.add("hidden");
+  $("genericSections").classList.remove("hidden");
+
+  setStatus("非代币合约，切换到通用合约体检：正在拉取字节码…", "info");
+  const g = await analyzeGeneric(address);
+
+  if (!g.isContract) {
+    setStatus("该地址不是合约地址（是普通钱包地址或尚未部署）", "error");
+    $("resultArea").classList.remove("hidden");
+    return;
+  }
+
+  $("g-codeSize").textContent = `${g.codeSize.toLocaleString()} 字节`;
+  $("g-fnCount").textContent = `${g.selectors.length} 个`;
+
+  setStatus(`解析出 ${g.selectors.length} 个函数，正在匹配函数名…`, "info");
+  $("stakeCard").classList.add("hidden");
+
+  const pasted = readPastedABI();
+  const src = pasted ? { abi: pasted, name: null } : await fetchBscScanSource(address);
+  let sigMap;
+  if (src?.abi) {
+    sigMap = new Map();
+    for (const s of g.selectors) sigMap.set(s, null);
+    for (const item of src.abi) {
+      if (item.type !== "function") continue;
+      const sig = `${item.name}(${(item.inputs || []).map((i) => i.type).join(",")})`;
+      try {
+        const sel = ethers.id(sig).slice(0, 10);
+        if (sigMap.has(sel)) sigMap.set(sel, sig);
+      } catch {}
+    }
+  } else {
+    sigMap = await resolveSelectors(g.selectors, 40);
+  }
+
+  // 读取 owner / funder 等权限地址，判断是否已转入黑洞
+  g.ownerInfo = null;
+  if (src?.abi) {
+    try {
+      const prov = new ethers.JsonRpcProvider(RPC_LIST[0], 56, { staticNetwork: true });
+      const cc = new ethers.Contract(address, src.abi, prov);
+      for (const n of ["owner", "funder", "admin", "governance"]) {
+        const f = src.abi.find((i) => i.type === "function" && i.name === n && (i.inputs || []).length === 0);
+        if (!f) continue;
+        const v = await cc[n]();
+        g.ownerInfo = { name: n, addr: v, burn: isBurnAddress(v) };
+        break;
+      }
+    } catch {}
+  }
+
+  // 质押 / 收益合约专项审查
+  let audit = null;
+  if (src?.abi && isStakingABI(src.abi)) {
+    setStatus("识别为质押 / 收益合约，正在读取链上真实参数…", "info");
+    try {
+      audit = await auditStaking(address, src.abi);
+      renderStaking(audit, address);
+    } catch (e) {
+      console.warn("staking audit failed", e);
+      audit = null;
+    }
+  }
+
+  const risk = await fetchAddressRisk(address);
+
+  // 隐藏权限 / 硬编码地址探测
+  let hidden = null;
+  try {
+    setStatus("正在探测隐藏权限地址…", "info");
+    const declaredNames = src?.abi
+      ? new Set(src.abi.filter((i) => i.type === "function").map((i) => i.name)) : null;
+    const declaredAddrNames = src?.abi
+      ? new Set(src.abi
+        .filter((i) => i.type === "function" && (i.inputs || []).length === 0
+          && (i.outputs || []).length === 1 && i.outputs[0].type === "address")
+        .map((i) => i.name))
+      : null;
+    hidden = await buildHiddenReport(address, g, declaredNames, audit?.roles || [], declaredAddrNames);
+    g.hidden = hidden;
+    renderHidden(hidden, !!declaredNames, g.opcodes.caller);
+  } catch (e) {
+    console.warn("hidden probe failed", e);
+  }
+
+  renderGeneric(g, sigMap, src?.name || null);
+  const result = evaluateGeneric(g, sigMap, audit);
+  renderSafety(result);
+  renderMalicious(risk);
+
+  $("link-bscscan").href = `https://bscscan.com/address/${address}#code`;
+  $("link-honeypot").href = `https://honeypot.is/?address=${address}&chain=BSC`;
+  $("link-dexscreener").href = `https://dexscreener.com/bsc/${address}`;
+  $("link-goplus").href = `https://gopluslabs.io/`;
+  setStatus(`检测完成 · 通用合约模式 · 评分 ${result.score} 分`, result.score >= 80 ? "info" : "error");
+}
+
+/* ---------------- 隐藏所有者 / 硬编码权限地址探测 ---------------- */
+const HIDDEN_GETTERS = [
+  "owner", "_owner", "getOwner", "ownerAddress", "admin", "_admin", "getAdmin",
+  "adminAddress", "proxyAdmin", "funder", "getFunder", "governance", "governor",
+  "controller", "operator", "keeper", "manager", "dev", "developer",
+  "serverSigner", "backendSigner", "signer", "signerAddress", "authority",
+  "settlementReserve", "collectionWallet", "foundation", "feeWallet",
+  "treasury", "treasuryAddress", "feeReceiver", "marketing", "multisig",
+  "wallet", "root", "master", "superOwner", "pendingOwner",
+];
+
+async function probeHiddenGetters(address, declaredNames) {
+  const results = await Promise.all(HIDDEN_GETTERS.map(async (name) => {
+    try {
+      const sel = ethers.id(name + "()").slice(0, 10);
+      const res = await rpc("eth_call", [{ to: address, data: sel }, "latest"]);
+      if (!res || res.length < 66) return null;
+      const body = res.slice(2, 66);
+      if (!/^0{24}/.test(body)) return null;
+      const hexAddr = "0x" + body.slice(24);
+      // 排除返回值是小整数的情况（非零但数值极小），避免把 uint 当地址
+      if (!/^0x0{40}$/.test(hexAddr) && /^0x0{35}/.test(hexAddr)) return null;
+      const addr = ethers.getAddress(hexAddr);
+      if (addr.toLowerCase() === address.toLowerCase()) return null;
+      // 零地址 / 黑洞地址 = 已放弃权限，保留展示但不计入风险
+      return {
+        name,
+        addr,
+        renounced: isBurnAddress(addr),
+        declared: declaredNames ? declaredNames.has(name) : null,
+      };
+    } catch { return null; }
+  }));
+  return results.filter(Boolean);
+}
+
+async function classifyAddressType(addr) {
+  if (isBurnAddress(addr)) return { text: "黑洞地址", kind: "ok" };
+  try {
+    const code = await rpc("eth_getCode", [addr, "latest"]);
+    return (!code || code === "0x") ? { text: "普通钱包", kind: "warn" } : { text: "合约", kind: "ok" };
+  } catch {
+    return { text: "未知", kind: "neutral" };
+  }
+}
+
+async function buildHiddenReport(address, g, declaredNames, roles, declaredAddrNames) {
+  const getters = await probeHiddenGetters(address, declaredNames);
+
+  // 硬编码地址：过滤掉已知资产 / 路由 / 合约自身 / 已在 getter 中出现的
+  const KNOWN = new Set([
+    "0x55d398326f99059ff775485246999027b3197955", // USDT
+    "0xe9e7cea3dedca5984780bafc599bd69add087d56", // BUSD
+    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", // WBNB
+    "0x10ed43c718714eb63d5aa57b78b54704e256024e", // Router v2
+    "0xca143ce32fe78f1f7019d7d551a6402fc5350c73", // Factory v2
+    "0x13f4ea83d0bd40e75c8222255bc855a974568dd4", // Router v3
+    "0xc590175e458b83680867afd93ac1998998a3ec62", // 常见中转
+    "0xffffffffffffffffffffffffffffffffffffffff", // 哨兵地址
+    "0x0000000000000000000000000000000000000001", // 预编译
+  ]);
+  const getterAddrs = new Set(getters.map((x) => x.addr.toLowerCase()));
+  const roleAddrs = new Set((roles || []).map((r) => r.addr.toLowerCase()));
+  const tokenAddrs = new Set((g.tokenAddrs || []).map((a) => a.toLowerCase()));
+
+  const hardcoded = g.opcodes.push20
+    .filter((a) => !KNOWN.has(a.toLowerCase())
+      && a.toLowerCase() !== address.toLowerCase()
+      && !getterAddrs.has(a.toLowerCase())
+      && !roleAddrs.has(a.toLowerCase())
+      && !tokenAddrs.has(a.toLowerCase()))
+    .slice(0, 8);
+
+  const rows = [];
+  for (const gt of getters) {
+    const ty = await classifyAddressType(gt.addr);
+    rows.push({ source: `接口 ${gt.name}()`, addr: gt.addr, type: ty, declared: gt.declared });
+  }
+  for (const a of hardcoded) {
+    const ty = await classifyAddressType(a);
+    rows.push({ source: "字节码硬编码", addr: ethers.getAddress(a), type: ty, declared: false });
+  }
+  return {
+    rows,
+    getters,
+    hardcoded,
+    declaredAddrNames: declaredAddrNames || null,
+  };
+}
+
+function renderHidden(rep, hasAbi, callerCount) {
+  const getters = rep.rows.filter((r) => r.source.startsWith("接口"));
+  const active = getters.filter((r) => !r.renounced);
+  const undeclared = active.filter((r) => r.declared === false);
+  const declaredAddrCount = rep.declaredAddrNames ? rep.declaredAddrNames.size : 0;
+
+  $("g-hidden").innerHTML = [
+    ["探测到的地址接口", `${getters.length} 个`],
+    ["已放弃（零地址/黑洞）", getters.length - active.length
+      ? tag("ok", (getters.length - active.length) + " 个") : "0 个"],
+    ["ABI 已公开的地址接口", hasAbi ? `${declaredAddrCount} 个` : tag("neutral", "未提供 ABI")],
+    ["ABI 未声明的有效接口", undeclared.length
+      ? (declaredAddrCount > 0 ? tag("warn", undeclared.length + " 个") : tag("bad", undeclared.length + " 个（疑似隐藏 owner）"))
+      : tag("ok", "无")],
+    ["字节码硬编码地址", rep.hardcoded.length ? tag("warn", rep.hardcoded.length + " 个") : tag("ok", "无")],
+    ["权限校验次数 (CALLER)", callerCount ? `${callerCount} 次` : "0 次"],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  $("hiddenTable").innerHTML = rep.rows.length
+    ? rep.rows.map((r) => {
+      let decl;
+      if (r.renounced) decl = tag("ok", "已放弃");
+      else if (r.declared === true) decl = tag("ok", "已声明");
+      else if (r.declared === false) decl = tag(declaredAddrCount > 0 ? "warn" : "bad", "未声明");
+      else decl = tag("neutral", hasAbi ? "未声明" : "未提供 ABI");
+      return `
+      <tr>
+        <td><code>${r.source}</code></td>
+        <td><code>${shortAddr(r.addr)}</code></td>
+        <td>${tag(r.type.kind, r.type.text)}</td>
+        <td>${decl}</td>
+      </tr>`;
+    }).join("")
+    : '<tr><td colspan="4" class="muted">未探测到隐藏权限地址（也可能用了非常规命名）</td></tr>';
+}
+
+/* ----------------------------- 质押 / 收益合约专项审查 ----------------------------- */
+const STAKE_FN = /^(deposit|stake|stakeFor|redeem|unstake|withdraw|claim|harvest|settleProfit|reinvest|compound)/i;
+
+function readPastedABI() {
+  const el = $("abiInput");
+  if (!el || !el.value.trim()) return null;
+  try {
+    const parsed = JSON.parse(el.value.trim());
+    if (Array.isArray(parsed) && parsed.some((i) => i.type === "function")) return parsed;
+    return null;
+  } catch {
+    setStatus("ABI 解析失败：不是合法的 JSON 数组", "error");
+    return null;
+  }
+}
+
+function isStakingABI(abi) {
+  if (!Array.isArray(abi)) return false;
+  const names = abi.filter((i) => i.type === "function").map((i) => i.name || "");
+  const hasStake = names.some((n) => STAKE_FN.test(n));
+  const hasYield = names.some((n) => /(RATE|APR|REWARD|DURATION|PERIOD|PROFIT|YIELD)/i.test(n));
+  return hasStake && hasYield;
+}
+
+const BURN_ADDRS = new Set([
+  "0x0000000000000000000000000000000000000000",
+  "0x000000000000000000000000000000000000dead",
+]);
+const isBurnAddress = (addr) => BURN_ADDRS.has((addr || "").toLowerCase());
+
+const ROLE_LABEL = {
+  admin: "管理 / 治理",
+  signer: "签名 / 运维",
+  reserve: "兑付储备",
+  revenue: "收款 / 手续费",
+  asset: "底层资产",
+  other: "其他地址",
+};
+
+function roleGroupOf(name) {
+  if (/(reserve|settle)/i.test(name)) return "reserve";
+  if (/(signer|oracle|operator|server)/i.test(name)) return "signer";
+  if (/(collection|treasury|foundation|fee|wallet|recipient|receiver)/i.test(name)) return "revenue";
+  if (/(funder|admin|owner|governance|controller|manager|governor)/i.test(name)) return "admin";
+  if (/(uusd|dev|token|lp|reward|stakeToken|asset|underlying|principal)/i.test(name)) return "asset";
+  return "other";
+}
+
+async function auditStaking(address, abi) {
+  const provider = new ethers.JsonRpcProvider(RPC_LIST[0], 56, { staticNetwork: true });
+  const c = new ethers.Contract(address, abi, provider);
+
+  const viewFns = abi.filter((i) =>
+    i.type === "function" && i.stateMutability === "view"
+    && (i.inputs || []).length === 0 && (i.outputs || []).length === 1);
+
+  const vals = {};
+  for (const f of viewFns) {
+    try {
+      let v = await c[f.name]();
+      if (typeof v === "bigint") v = v.toString();
+      vals[f.name] = v;
+    } catch {}
+  }
+
+  const fnNames = abi.filter((i) => i.type === "function").map((i) => i.name || "");
+  const addrEntries = Object.entries(vals)
+    .filter(([, v]) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v));
+
+  /* ---- 角色 ---- */
+  const roles = [];
+  for (const [name, addr] of addrEntries) {
+    const group = roleGroupOf(name);
+    if (group === "asset") continue;
+    const renounced = isBurnAddress(addr);
+    let isEoa = false;
+    if (!renounced) {
+      try {
+        const code = await rpc("eth_getCode", [addr, "latest"]);
+        isEoa = !code || code === "0x";
+      } catch {}
+    }
+    roles.push({ name, addr, group, isEoa, renounced });
+  }
+
+  /* ---- 资产与余额 ---- */
+  const ERC20_MIN = [
+    "function symbol() view returns (string)",
+    "function decimals() view returns (uint8)",
+    "function balanceOf(address) view returns (uint256)",
+    "function allowance(address,address) view returns (uint256)",
+  ];
+  const funds = [];
+  let primaryAsset = null;
+  for (const [name, addr] of addrEntries) {
+    try {
+      const t = new ethers.Contract(addr, ERC20_MIN, provider);
+      const [sym, dec, bal] = await Promise.all([
+        t.symbol().catch(() => null),
+        t.decimals().catch(() => 18),
+        t.balanceOf(address).catch(() => null),
+      ]);
+      if (sym == null || bal == null) continue;
+      const balText = Number(ethers.formatUnits(bal, dec)).toLocaleString("en-US", { maximumFractionDigits: 4 });
+      funds.push({ name, addr, symbol: sym, decimals: Number(dec), balance: bal, balanceText: balText });
+      if (!primaryAsset && roleGroupOf(name) === "asset") primaryAsset = { ...funds[funds.length - 1], dec: Number(dec) };
+    } catch {}
+  }
+  let nativeBal = 0n;
+  try { nativeBal = BigInt(await rpc("eth_getBalance", [address, "latest"])); } catch {}
+
+  const hasAnyToken = funds.some((f) => f.balance > 0n);
+  const emptyAssets = !hasAnyToken && nativeBal === 0n;
+
+  /* ---- 收益率 ---- */
+  const rates = [];
+  for (const [name, v] of Object.entries(vals)) {
+    const m = name.match(/^RATE_(.+)_BP$/);
+    if (!m) continue;
+    const key = m[1];
+    const dur = vals["DURATION_" + key] ?? vals["PERIOD_" + key] ?? vals[key + "_DURATION"] ?? vals[key + "_PERIOD"];
+    if (dur == null) continue;
+    const totalPct = Number(v) / 100;
+    const days = Number(dur) / 86400;
+    if (!(days > 0)) continue;
+    const apr = (totalPct * 365) / days;
+    rates.push({ name, key, days, totalPct, apr });
+  }
+  // 去重（保留展示名更短的）
+  const dedup = new Map();
+  for (const r of rates) {
+    const k = `${r.days}-${r.totalPct.toFixed(4)}`;
+    if (!dedup.has(k)) dedup.set(k, r);
+  }
+  const rateList = [...dedup.values()].sort((a, b) => a.days - b.days);
+  const maxApr = rateList.length ? Math.max(...rateList.map((r) => r.apr)) : null;
+
+  /* ---- 储备授权 ---- */
+  let reserveAllowance = null;
+  let reserveAllowanceText = null;
+  const reserve = roles.find((r) => r.group === "reserve");
+  if (reserve && !reserve.renounced && primaryAsset) {
+    try {
+      const t = new ethers.Contract(primaryAsset.addr, ERC20_MIN, provider);
+      const al = await t.allowance(reserve.addr, address);
+      reserveAllowance = al;
+      reserveAllowanceText = Number(ethers.formatUnits(al, primaryAsset.decimals))
+        .toLocaleString("en-US", { maximumFractionDigits: 2 }) + " " + primaryAsset.symbol;
+    } catch {}
+  }
+
+  const hasEmergencyWithdraw = fnNames.some((n) => /emergencyWithdraw/i.test(n));
+  const routerDependent = fnNames.some((n) => /(swap|redeem|router|harvest|compound)/i.test(n))
+    || addrEntries.some(([n]) => /router/i.test(n));
+  const adminEoa = roles.some((r) => r.group === "admin" && r.isEoa);
+
+  return {
+    rates: rateList,
+    maxApr,
+    roles,
+    funds,
+    nativeBal,
+    primaryAsset,
+    emptyAssets,
+    reserveAllowance,
+    reserveAllowanceText,
+    hasEmergencyWithdraw,
+    routerDependent,
+    adminEoa,
+  };
+}
+
+function renderStaking(a, address) {
+  $("stakeCard").classList.remove("hidden");
+
+  $("stakeSummary").innerHTML = [
+    ["识别类型", tag("ok", "质押 / 收益合约")],
+    ["产品数量", a.rates.length ? `${a.rates.length} 个` : "未识别"],
+    ["最高年化", a.maxApr == null ? "-" : tag("neutral", a.maxApr.toFixed(0) + "%")],
+    ["管理权限", (() => {
+      const admins = a.roles.filter((r) => r.group === "admin");
+      if (!admins.length) return "无 owner 类角色";
+      if (admins.every((r) => r.renounced)) return tag("ok", "已放弃（黑洞）");
+      if (a.adminEoa) return tag("warn", "EOA 单签");
+      return tag("ok", "合约/多签");
+    })()],
+    ["紧急提取", a.hasEmergencyWithdraw ? tag("warn", "存在") : tag("ok", "无")],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  $("stakeRates").innerHTML = a.rates.length
+    ? a.rates.map((r) => `
+      <tr>
+        <td>${r.key}</td>
+        <td>${r.days.toFixed(0)} 天</td>
+        <td>${r.totalPct.toFixed(2)}%</td>
+        <td>${r.apr.toFixed(0)}%</td>
+        <td>${tag("neutral", "不参与评分")}</td>
+      </tr>`).join("")
+    : '<tr><td colspan="5" class="muted">未能从 ABI 推导收益率（需 RATE_*_BP 与 DURATION_* 命名）</td></tr>';
+
+  $("stakeRoles").innerHTML = a.roles.length
+    ? a.roles.map((r) => `
+      <tr>
+        <td>${ROLE_LABEL[r.group]}<br><small class="muted">${r.name}</small></td>
+        <td><code>${shortAddr(r.addr)}</code></td>
+        <td>${r.renounced ? tag("ok", "已放弃（黑洞）") : r.isEoa ? tag("warn", "普通钱包") : tag("ok", "合约")}</td>
+      </tr>`).join("")
+    : '<tr><td colspan="3" class="muted">未读取到角色地址</td></tr>';
+
+  const fundRows = a.funds.map((f) => `
+    <tr>
+      <td>${f.symbol}<br><small class="muted">${f.name}</small></td>
+      <td>${f.balanceText}</td>
+      <td>${f.balance > 0n ? tag("ok", "有余额") : tag("warn", "空")}</td>
+    </tr>`).join("");
+  $("stakeFunds").innerHTML = (fundRows || "")
+    + `<tr><td>BNB</td><td>${Number(ethers.formatEther(a.nativeBal)).toFixed(4)}</td>
+       <td>${a.nativeBal > 0n ? tag("ok", "有余额") : tag("neutral", "空")}</td></tr>`;
+
+  const risks = [];
+  if (a.emptyAssets) {
+    risks.push({ kind: "bad", title: "合约空仓位", desc: "链上没有任何质押币 / 奖励币余额，兑付靠后续用户充值", status: "高危" });
+  }
+  if (a.reserveAllowance === 0) {
+    risks.push({ kind: "bad", title: "储备未授权", desc: "结算储备 allowance 为 0，到期无法补足兑付", status: "高危" });
+  }
+  if (a.adminEoa) {
+    risks.push({ kind: "warn", title: "管理权限单签", desc: "特权账户是普通钱包，私钥泄露即可改服务签名/储备地址", status: "注意" });
+  }
+  if (a.hasEmergencyWithdraw) {
+    risks.push({ kind: "warn", title: "存在紧急提取", desc: "项目方可绕过正常流程处置资金", status: "注意" });
+  }
+  if (a.routerDependent) {
+    risks.push({ kind: "warn", title: "依赖 DEX 流动性", desc: "赎回需换币，池子深度不足时可能兑付失败或被夹", status: "注意" });
+  }
+  if (a.rates.length && a.roles.some((r) => r.group === "signer")) {
+    risks.push({ kind: "warn", title: "收益依赖服务端签名", desc: "结算由 serverSigner 参与，存在中心化控制与停机风险", status: "注意" });
+  }
+  const okCount = risks.length === 0;
+  $("stakeRisks").innerHTML = okCount
+    ? `<div class="check-item ok"><div class="check-main"><div class="check-title">未发现专项风险</div>
+        <div class="desc">收益率、权限、余额、授权均在常规区间</div></div>${tag("ok", "通过")}</div>`
+    : risks.map((r) => `
+      <div class="check-item ${r.kind}">
+        <div class="check-main"><div class="check-title">${r.title}</div><div class="desc">${r.desc}</div></div>
+        ${tag(r.kind, r.status)}
+      </div>`).join("");
+}
+
+/* ----------------------------- 源码静态审计 ----------------------------- */
+const SRC_RULES = [
+  {
+    id: "tx-origin", level: "high", name: "tx.origin 鉴权",
+    desc: "用 tx.origin 判断调用者，可被钓鱼合约间接调用绕过",
+    re: /tx\.origin/,
+  },
+  {
+    id: "selfdestruct", level: "high", name: "自毁指令",
+    desc: "合约可被销毁，资金与逻辑永久失效",
+    re: /selfdestruct\s*\(|suicide\s*\(/,
+  },
+  {
+    id: "delegatecall", level: "mid", name: "delegatecall",
+    desc: "委托调用执行外部代码，目标可控时可完全接管合约",
+    re: /\.delegatecall\s*\(|delegatecall\s*\{/,
+  },
+  {
+    id: "unchecked-call", level: "high", name: "未检查低层调用返回值",
+    desc: "address.call 返回 bool，未检查会导致失败被静默忽略",
+    re: /\.call\s*[\{\(][^;]*;\s*$/,
+    skipIf: /require|if\s*\(|bool\s+\w+\s*=|return/,
+  },
+  {
+    id: "assembly", level: "mid", name: "内联汇编",
+    desc: "assembly 跳过 Solidity 安全检查，需逐行人工确认",
+    re: /\bassembly\s*\{/,
+  },
+  {
+    id: "predictable-rand", level: "mid", name: "可预测随机数",
+    desc: "用区块变量生成随机数，可被矿工/预言机操纵",
+    re: /keccak256\s*\([^)]*block\.(timestamp|number|difficulty|prevrandao|coinbase)/,
+  },
+  {
+    id: "unlimited-approve", level: "mid", name: "无限授权",
+    desc: "approve 使用 type(uint256).max，一旦目标合约被攻破损失无上限",
+    re: /approve\s*\([^;]*type\s*\(\s*uint256\s*\)\s*\.max/,
+  },
+  {
+    id: "hardcoded-key", level: "high", name: "疑似硬编码私钥",
+    desc: "源码中包含疑似私钥/助记词的常量",
+    re: /(private[_ ]?key|mnemonic|secret)\s*=\s*["']0x[0-9a-fA-F]{64}/i,
+  },
+  {
+    id: "get-reserves", level: "mid", name: "依赖 DEX 储备量作价格",
+    desc: "直接用 getReserves 计算价格，可被闪电贷瞬间操纵",
+    re: /getReserves\s*\(/,
+  },
+  {
+    id: "initialize", level: "mid", name: "可初始化函数缺少保护",
+    desc: "initialize 未加 initializer 修饰，可能被重复初始化夺取权限",
+    re: /function\s+initialize\s*\(/,
+    skipIf: /initializer|onlyOwner|reinitializer/,
+    window: 3,
+  },
+  {
+    id: "transfer-own", level: "low", name: "单步转移所有权",
+    desc: "transferOwnership 直接生效，缺少两步确认，误转无法撤销",
+    re: /function\s+transferOwnership\s*\(/,
+    skipIf: /pendingOwner|acceptOwnership|onlyOwner/,
+    window: 3,
+  },
+  {
+    id: "unchecked-token", level: "mid", name: "未检查 ERC20 返回值",
+    desc: "直接调用 transfer/transferFrom 而不检查返回值，部分代币会静默失败",
+    re: /\bIERC20\s*\([^)]*\)\s*\.\s*(transfer|transferFrom)\s*\([^;]*;\s*$/,
+  },
+  {
+    id: "loop-external", level: "mid", name: "循环内外部调用",
+    desc: "for/while 中调用外部合约，任一失败可导致整体 DoS",
+    re: /for\s*\(|while\s*\(/,
+    lookahead: /\.call\s*[\{\(]|safeTransfer\s*\(|\.transfer\s*\(/,
+    lookaheadLines: 8,
+  },
+  {
+    id: "reentrancy-order", level: "high", name: "外部调用后才更新状态",
+    desc: "先转账/换币再写状态，重入时可用旧状态重复提款",
+    re: /safeTransfer\s*\(|\.transfer\s*\(|\.call\s*[\{\(]|_swap\w*\(/,
+    lookahead: /^\s*\w+(\.\w+|\[[^\]]*\])*\s*(-=|\+=|=)[^=]/,
+    lookaheadLines: 8,
+  },
+  {
+    id: "no-supply-cap", level: "mid", name: "增发无上限",
+    desc: "存在 mint 但未发现供应量上限，可无限稀释",
+    re: /function\s+mint\b/,
+    fileSkip: /MAX_SUPPLY|maxSupply|\bcap\b|CAP\s*=/,
+  },
+];
+
+const SENSITIVE_FNS = [
+  "withdraw", "withdrawToken", "emergencyWithdraw", "setOwner", "setAdmin",
+  "transferOwnership", "setServerSigner", "setSettlementReserve", "upgradeTo",
+  "changeAdmin", "mint", "setFee", "setRewardRate", "setTax", "setRate",
+  "pause", "unpause", "sweep", "rescue", "recover", "settleProfit",
+];
+const AUTH_RE = /only\w+|onlyRole|requiresAuth|requireAuth|internal|private|modifier\s|msg\.sender\s*==|require\s*\(\s*msg\.sender|_checkRole|hasRole|_requireMultisig/i;
+
+/* 取当前行所在的函数签名（含修饰符） */
+function enclosingFnSig(lines, i) {
+  for (let j = i; j >= 0 && j > i - 60; j--) {
+    if (/function\s+\w+/.test(lines[j])) {
+      return lines.slice(j, j + 4).join("\n");
+    }
+  }
+  return "";
+}
+
+function scanSource(code) {
+  const lines = code.split(/\r?\n/);
+  const out = [];
+  const seen = new Set();
+  const push = (rule, i, name, desc, level) => {
+    const key = rule.id + ":" + i;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      id: rule.id, name: name || rule.name, desc: desc || rule.desc,
+      level: level || rule.level, line: i + 1, snippet: lines[i].trim().slice(0, 180),
+    });
+  };
+  const countById = {};
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim() || line.trim().startsWith("//")) continue;
+
+    for (const rule of SRC_RULES) {
+      if (countById[rule.id] >= 3) continue;
+      if (!rule.re.test(line)) continue;
+      if (rule.skipIf && rule.skipIf.test(line)) continue;
+      if (rule.fileSkip && rule.fileSkip.test(code)) continue;
+
+      // 窗口检查（修饰符 / 后续语句）
+      if (rule.window) {
+        const win = lines.slice(i, i + rule.window + 1).join("\n");
+        if (rule.skipIf && rule.skipIf.test(win)) continue;
+      }
+      if (rule.lookahead) {
+        const win = lines.slice(i + 1, i + 1 + (rule.lookaheadLines || 6)).join("\n");
+        if (!rule.lookahead.test(win)) continue;
+      }
+      // 已加 nonReentrant 的函数不算重入顺序问题
+      if (rule.id === "reentrancy-order" && /nonReentrant/.test(enclosingFnSig(lines, i))) continue;
+      // 排除函数定义内部的 require 行
+      push(rule, i);
+      countById[rule.id] = (countById[rule.id] || 0) + 1;
+    }
+
+    // 敏感函数缺少权限修饰
+    const m = line.match(/function\s+(\w+)\s*\(/);
+    if (m && SENSITIVE_FNS.includes(m[1]) && !/^\s*_/.test(m[1])) {
+      // 只在本函数体内查找权限控制，遇到下一个 function 或函数结束即停止
+      let win = line + "\n";
+      for (let j = i + 1; j < Math.min(lines.length, i + 12); j++) {
+        if (/^\s*function\s+/.test(lines[j]) || /^\s*\}/.test(lines[j])) break;
+        win += lines[j] + "\n";
+      }
+      if (!AUTH_RE.test(win)) {
+        if ((countById["missing-auth"] || 0) < 3) {
+          push({ id: "missing-auth", level: "high" }, i,
+            "敏感函数缺少权限修饰",
+            `${m[1]}() 未见 onlyOwner / onlyRole 等权限控制，任何人可调用`);
+          countById["missing-auth"] = (countById["missing-auth"] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  const high = out.filter((f) => f.level === "high").length;
+  const mid = out.filter((f) => f.level === "mid").length;
+  const low = out.filter((f) => f.level === "low").length;
+  return { findings: out, high, mid, low, total: out.length, lines: lines.length };
+}
+
+function renderSource(res) {
+  $("srcCard").classList.remove("hidden");
+  const verdict = res.high > 0
+    ? tag("bad", "发现高危写法")
+    : res.mid > 0 ? tag("warn", "存在需确认项") : tag("ok", "未命中规则");
+
+  $("srcSummary").innerHTML = [
+    ["扫描行数", res.lines.toLocaleString() + " 行"],
+    ["命中总数", res.total + " 项"],
+    ["高危 / 注意 / 低危", `${res.high} / ${res.mid} / ${res.low}`],
+    ["结论", verdict],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  if (!res.total) {
+    $("srcFindings").innerHTML = `
+      <div class="check-item ok">
+        <div class="check-main"><div class="check-title">未命中任何已知漏洞模式</div>
+        <div class="desc">规则集覆盖 tx.origin、低层调用、重入顺序、权限缺失、无限增发等常见问题；不代表完全没有漏洞</div></div>
+        ${tag("ok", "通过")}
+      </div>`;
+    return;
+  }
+  const order = { high: 0, mid: 1, low: 2 };
+  $("srcFindings").innerHTML = res.findings
+    .slice().sort((a, b) => order[a.level] - order[b.level] || a.line - b.line)
+    .map((f) => `
+      <div class="check-item ${f.level === "high" ? "bad" : f.level === "mid" ? "warn" : "ok"}">
+        <div class="check-main">
+          <div class="check-title">${f.name} <span class="muted">· 第 ${f.line} 行</span></div>
+          <div class="desc">${f.desc}</div>
+          <div class="snippet">${f.snippet.replace(/</g, "&lt;")}</div>
+        </div>
+        ${tag(f.level === "high" ? "bad" : f.level === "mid" ? "warn" : "ok",
+          f.level === "high" ? "高危" : f.level === "mid" ? "注意" : "低危")}
+      </div>`).join("");
+}
+
+/* ----------------------------- 事件 ----------------------------- */
+async function copyAddr(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch { return false; }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("checkBtn").addEventListener("click", runCheck);
+  $("addressInput").addEventListener("keydown", (e) => { if (e.key === "Enter") runCheck(); });
+
+  $("copyBtn").addEventListener("click", async () => {
+    if (await copyAddr($("info-address").textContent)) {
+      $("copyBtn").textContent = "已复制";
+      setTimeout(() => ($("copyBtn").textContent = "复制"), 1500);
+    }
+  });
+  $("copyBtn2").addEventListener("click", async () => {
+    if (await copyAddr($("generic-address").textContent)) {
+      $("copyBtn2").textContent = "已复制";
+      setTimeout(() => ($("copyBtn2").textContent = "复制"), 1500);
+    }
+  });
+});
+
+</script>
+</body>
+</html>
