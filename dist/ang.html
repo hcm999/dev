@@ -1624,17 +1624,24 @@ function updateTrendChart() {
         .sort().slice(-trendRange);
     if (!dates.length) return;
 
+    // 【每日趋势折线/柱子调整】
     trendChart = new Chart(ctx, {
-        type: 'line',
+    // 【折线版】    type: 'line',
+        type: 'bar',     // 【柱子版】
         data: {
             labels: dates,
             datasets: [
-                { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
-                { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
-                { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
-                { label: '实际出金', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+    // 【折线版】            { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.2, fill: true },
+                { label: '新增质押', data: dates.map(d => dailyNewMap.get(d) || 0), backgroundColor: '#3b82f6', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+    // 【折线版】            { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.2, fill: true },
+                { label: '仍在质押', data: dates.map(d => dailyActiveMap.get(d) || 0), backgroundColor: '#22c55e', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+     // 【折线版】           { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.2, fill: true },
+                { label: '复投', data: dates.map(d => dailyReinvestMap.get(d) || 0), backgroundColor: '#8b5cf6', borderRadius: 3, maxBarThickness: 18 },    // 【柱子版】
+     // 【折线版】           { label: '赎回本息', data: dates.map(d => dailyRedeemMap.get(d) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.2, fill: true }
+                { label: '实际出金', data: dates.map(d => dailyRedeemMap.get(d) || 0), backgroundColor: '#f59e0b', borderRadius: 3, maxBarThickness: 18 }    // 【柱子版】
             ]
         },
+
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
@@ -1938,8 +1945,9 @@ function applyFilters() {
 
     let dateStart = null, dateEnd = null;
     if (date) {
-        const d = new Date(date + 'T00:00:00');
-        dateStart = d.getTime() / 1000;
+        // 业务日 D = [D dailyStartHour:00, D+1 dailyStartHour:00) 北京时间
+        const [fy, fm, fd] = date.split('-').map(Number);
+        dateStart = Math.floor(Date.UTC(fy, fm - 1, fd) / 1000) - 8 * 3600 + dailyStartHour * 3600;
         dateEnd = dateStart + 86400;
     }
 
@@ -2229,7 +2237,7 @@ function renderReinvest() {
 
     const reinvestSet = getReinvestSet();
     const reinvestMatch = getReinvestMatch();
-    let list = activeRecords.filter(r => reinvestSet.has(r.orderId));
+    let list = allStakeRecords.filter(r => reinvestSet.has(r.orderId));
     if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
     if (search) list = list.filter(r => r.address.includes(search));
     list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
@@ -2316,6 +2324,7 @@ function refreshAllBySettleHour() {
     updateDailyStats();
     updateAllCharts();
     updateLeaderboard();
+    applyFilters();
     renderCashflow();
     renderRedeem();
     renderReinvest();
