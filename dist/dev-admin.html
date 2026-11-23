@@ -621,9 +621,9 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             <div class="table-responsive" style="max-height:600px;">
                 <table class="table">
                     <thead>
-                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>复投时间</th></tr>
+                        <tr><th>#</th><th>地址</th><th>本金</th><th>收益</th><th>合计</th><th>产品</th><th>原订单ID</th><th>状态</th><th>复投时间</th></tr>
                     </thead>
-                    <tbody id="reinvestTableBody"><tr><td colspan="8" class="empty-state">暂无数据</td></tr></tbody>
+                    <tbody id="reinvestTableBody"><tr><td colspan="9" class="empty-state">暂无数据</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -3304,8 +3304,8 @@ function renderReinvest() {
     const dateVal = document.getElementById('reinvestDate')?.value || '';
     const search = (document.getElementById('reinvestSearch')?.value || '').toLowerCase().trim();
 
-    // 【修改】改为活跃复投新订单，与统计卡片"复投质押"口径一致
-    let list = queryResults.filter(r => r.previousOrderId > 0);
+    // 【修改】显示全部复投新单（含已赎回/已复投），与总复投率分子、每日统计口径一致
+    let list = allStakeRecords.filter(r => r.previousOrderId > 0);
     if (dateVal) list = list.filter(r => getDateStr(r.stakeTime) === dateVal);
     if (search) list = list.filter(r => r.address.toLowerCase().includes(search));
     list.sort((a, b) => (b.stakeTime || 0) - (a.stakeTime || 0));
@@ -3322,17 +3322,18 @@ function renderReinvest() {
         <td class="amount-cell" style="color:#fbbf24;font-weight:700;">${totalOf(r).toFixed(2)}</td>
         <td><span class="badge-duration ${r.product===0?'p15':'p30'}">${r.productText}</span></td>
         <td>${r.previousOrderId || '--'}</td>
+        <td>${r.statusText}</td>
         <td>${formatTime(r.stakeTime)}</td>
     </tr>`).join('');
 }
 
 function exportReinvest() {
-    const list = queryResults.filter(r => r.previousOrderId > 0);
+    const list = allStakeRecords.filter(r => r.previousOrderId > 0);
     if (!list.length) { alert('没有数据可导出'); return; }
-    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '复投时间'];
+    const headers = ['序号', '地址', '本金', '收益', '合计', '产品', '原订单ID', '状态', '复投时间'];
     const rows = list.map((r, i) => [
         i+1, r.address, principalOf(r).toFixed(2), profitOf(r).toFixed(2), totalOf(r).toFixed(2),
-        r.productText, r.previousOrderId || '', formatTime(r.stakeTime)
+        r.productText, r.previousOrderId || '', r.statusText, formatTime(r.stakeTime)
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
