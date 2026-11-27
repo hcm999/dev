@@ -153,6 +153,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 
 /* DEV 日历墙 */
 .calendar-wall-card { background:linear-gradient(145deg,#111827,#0a0e1a); border-color:#2a3a5a; padding:16px; }
+.calendar-wall-card .card-body-wrapper { max-height:6000px; }
 .calendar-wall-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:14px; }
 .calendar-wall-title { color:#e8edf5; font-size:1rem; font-weight:700; }
 .calendar-wall-subtitle { color:#8899bb; font-size:0.7rem; margin-top:5px; }
@@ -202,7 +203,7 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .calendar-detail-row.total strong { color:#fbbf24; }
 @media (max-width:900px) {
     .calendar-wall-layout { grid-template-columns:1fr; }
-    .calendar-detail-content { max-height:none; overflow:visible; }
+    .calendar-detail-content { max-height:320px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding-right:6px; }
     .calendar-day { min-height:80px; }
 }
 @media (max-width:520px) {
@@ -477,18 +478,22 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
         </div>
 
         <!-- DEV 日历墙：全部历史数据 + 未来90天预计赎回 -->
-        <div class="chart-card calendar-wall-card">
-            <div class="calendar-wall-header">
+        <div class="chart-card calendar-wall-card collapsible-card">
+            <div class="calendar-wall-header" onclick="toggleCard(this)">
                 <div>
                     <div class="calendar-wall-title">📅 DEV 日历墙</div>
                     <div class="calendar-wall-subtitle">全部历史质押/赎回 · 未来 90 天预计赎回（虚线格）</div>
                 </div>
-                <div class="calendar-month-switcher">
-                    <button type="button" class="calendar-month-btn" id="calendarPrevMonth" onclick="changeCalendarMonth(-1)" aria-label="上个月">‹</button>
-                    <div class="calendar-month-label" id="calendarMonthLabel">---- 年 -- 月</div>
-                    <button type="button" class="calendar-month-btn" id="calendarNextMonth" onclick="changeCalendarMonth(1)" aria-label="下个月">›</button>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div class="calendar-month-switcher" onclick="event.stopPropagation()">
+                        <button type="button" class="calendar-month-btn" id="calendarPrevMonth" onclick="changeCalendarMonth(-1)" aria-label="上个月">‹</button>
+                        <div class="calendar-month-label" id="calendarMonthLabel">---- 年 -- 月</div>
+                        <button type="button" class="calendar-month-btn" id="calendarNextMonth" onclick="changeCalendarMonth(1)" aria-label="下个月">›</button>
+                    </div>
+                    <span class="collapse-icon">▼</span>
                 </div>
             </div>
+            <div class="card-body-wrapper">
             <div class="calendar-wall-layout">
                 <div>
                     <div class="calendar-weekdays">
