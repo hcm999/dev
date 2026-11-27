@@ -3084,8 +3084,16 @@ function renderCashflow(skipChart = false) {
                     { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
                     { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 },
                     {
-                        label: '资金净额', data: netData, borderRadius: 4, borderWidth: 2,
-                        backgroundColor: netData.map(v => v >= 0 ? '#3b82f6' : '#ef4444')
+                        label: '资金净额(正)',
+                        data: netData.map(v => v >= 0 ? v : 0),
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4
+                    },
+                    {
+                        label: '资金净额(负)',
+                        data: netData.map(v => v < 0 ? v : 0),
+                        backgroundColor: '#ef4444',
+                        borderRadius: 4
                     }
                 ]
             },
@@ -3132,6 +3140,11 @@ function renderCashflow(skipChart = false) {
                             footer: items => {
                                 if (!items.length) return '';
                                 const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
+                                const netPos = get('资金净额(正)');
+                                const netNeg = get('资金净额(负)');
+                                if (netPos !== 0 || netNeg !== 0) {
+                                    return '资金净额: ' + (netPos + netNeg).toFixed(2);
+                                }
                                 const net = get('入金') - get('出金');
                                 return '净流入: ' + net.toFixed(2) + ' USDT';
                             }
