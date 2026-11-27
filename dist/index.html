@@ -5866,15 +5866,6 @@ function renderCashflow(skipChart = false) {
             netData.push(d.in - d.out);
         });
 
-        // ← 在 new Chart 之前加这个工具函数
-        function lightenColor(hex, pct) {
-            const c = hex.replace('#','');
-            const r = Math.min(255, parseInt(c.substr(0,2),16) + pct);
-            const g = Math.min(255, parseInt(c.substr(2,2),16) + pct);
-            const b = Math.min(255, parseInt(c.substr(4,2),16) + pct);
-            return `rgb(${r},${g},${b})`;
-        }
-
         cashflowChart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -5884,15 +5875,9 @@ function renderCashflow(skipChart = false) {
                     { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
                     { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 },
                     {
-                        label: '资金净额(正)',
-                        data: netData.map(v => v >= 0 ? v : 0),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4
-                    },
-                    {
-                        label: '资金净额(负)',
-                        data: netData.map(v => v < 0 ? v : 0),
-                        backgroundColor: '#ef4444',
+                        label: '资金净额',
+                        data: netData,
+                        backgroundColor: (ctx) => (ctx.raw >= 0 ? '#3b82f6' : '#ef4444'),
                         borderRadius: 4
                     }
                 ]
@@ -5900,17 +5885,6 @@ function renderCashflow(skipChart = false) {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
-                // ← 新增：hover 时柱体颜色变亮，替代白色边框选中效果
-                elements: {
-                    bar: {
-                        hoverBackgroundColor: (ctx) => {
-                            const bg = ctx.dataset.backgroundColor;
-                            // 如果是数组（净额柱正负分色），取当前 index 的颜色
-                            const color = Array.isArray(bg) ? bg[ctx.dataIndex] : bg;
-                            return lightenColor(color, 40);   // 把原色调亮 40%
-                        }
-                    }
-                },
                 onHover: (e) => { if (e.native) e.native.target.style.cursor = 'pointer'; },
                 onClick: (e, activeElements) => {
                     if (activeElements && activeElements.length > 0) {
@@ -5940,11 +5914,6 @@ function renderCashflow(skipChart = false) {
                             footer: items => {
                                 if (!items.length) return '';
                                 const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
-                                const netPos = get('资金净额(正)');
-                                const netNeg = get('资金净额(负)');
-                                if (netPos !== 0 || netNeg !== 0) {
-                                    return '资金净额: ' + (netPos + netNeg).toFixed(2);
-                                }
                                 const net = get('入金') - get('出金');
                                 return '净流入: ' + net.toFixed(2) + ' UUSD';
                             }
