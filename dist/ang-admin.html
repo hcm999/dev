@@ -2936,27 +2936,20 @@ function updateAllCharts() {
 // ================================================================
 // 每天进出多少钱
 // ================================================================
-function renderCashflow() {
-    const dateInput = document.getElementById('cashflowDate');
-    const rangeSel = document.getElementById('cashflowRange');
-    const range = rangeSel ? parseInt(rangeSel.value) : 30;
 
+function computeDailyMap() {
     const reinvestSet = getReinvestSet();
-
     const dailyMap = new Map();
     function ensureDay(ds) {
         if (!dailyMap.has(ds)) dailyMap.set(ds, {
-            in: 0, inCount: 0,
-            out: 0,
+            in: 0, inCount: 0, out: 0,
             redeemPrincipal: 0, redeemCount: 0,
             reward: 0, rewardCount: 0,
             reinvest: 0, reinvestCount: 0
         });
         return dailyMap.get(ds);
     }
-
     allStakeRecords.forEach(r => {
-        // ✅ 入金：所有新单，按 stakeTime
         if (r.stakeTime > 0) {
             const ds = getDateStr(r.stakeTime);
             const d = ensureDay(ds);
@@ -2967,8 +2960,6 @@ function renderCashflow() {
                 d.reinvestCount += 1;
             }
         }
-
-        // ✅ 本金赎回：按赎回日
         if (['redeemed','settled','expired','restaked'].includes(r.status)) {
             const ts = r.unstakeTime || r.unlockTime;
             if (ts > 0) {
@@ -2978,8 +2969,6 @@ function renderCashflow() {
                 d.redeemCount += 1;
             }
         }
-
-        // ✅ 收益领取：仅 restaked，按复投新单 stakeTime
         const claimTs = getProfitClaimTs(r);
         if (claimTs) {
             const d = ensureDay(getDateStr(claimTs));
@@ -2988,9 +2977,31 @@ function renderCashflow() {
             d.rewardCount += 1;
         }
     });
+    return dailyMap;
+}
+
+function updateCashflowCardsForDate(targetDate) {
+    const dailyMap = computeDailyMap();
+    const d = dailyMap.get(targetDate) || { in:0, inCount:0, out:0, redeemCount:0, reward:0, rewardCount:0, reinvest:0, reinvestCount:0 };
+    document.getElementById('cfIn').innerText = d.in.toFixed(2);
+    document.getElementById('cfInSub').innerText = `质押 ${d.inCount} 笔`;
+    document.getElementById('cfOut').innerText = d.out.toFixed(2);
+    document.getElementById('cfOutSub').innerText = `赎回 ${d.redeemCount} 笔 · 领取 ${d.reward.toFixed(2)}（${d.rewardCount} 笔）`;
+    document.getElementById('cfNet').innerText = (d.in - d.out).toFixed(2);
+    document.getElementById('cfReinvest').innerText = d.reinvest.toFixed(2);
+    document.getElementById('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
+}
+
+function renderCashflow(skipChart = false) {
+    const dateInput = document.getElementById('cashflowDate');
+    const rangeSel = document.getElementById('cashflowRange');
+    const range = rangeSel ? parseInt(rangeSel.value) : 30;
+
+    const dailyMap = computeDailyMap();
 
     let dates = Array.from(dailyMap.keys()).sort();
     if (range > 0) dates = dates.slice(-range);
+    const tableDates = [...dates].reverse();
 
     if (dateInput && dateInput.value) {
         const d = dailyMap.get(dateInput.value) || { in:0, inCount:0, out:0, redeemCount:0, reward:0, rewardCount:0, reinvest:0, reinvestCount:0 };
@@ -3002,7 +3013,6 @@ function renderCashflow() {
         document.getElementById('cfReinvest').innerText = d.reinvest.toFixed(2);
         document.getElementById('cfReinvestSub').innerText = `复投 ${d.reinvestCount} 笔`;
     } else {
-
         let totalIn = 0, totalOut = 0, totalReward = 0, totalReinvest = 0;
         let totalInCount = 0, totalRedeemCount = 0, totalRewardCount = 0, totalReinvestCount = 0;
         dates.forEach(ds => {
@@ -3025,8 +3035,7 @@ function renderCashflow() {
 
     const tbody = document.getElementById('cashflowTableBody');
     let html = '';
-    const tableDates = [...dates].reverse();     // ✅ 新增：表格倒序（最新在上）
-    tableDates.forEach(ds => {                    // ✅ 改为遍历 tableDates
+    tableDates.forEach(ds => {
         const d = dailyMap.get(ds) || { in:0, out:0, redeemPrincipal:0, reward:0, reinvest:0 };
         const net = d.in - d.out;
         html += `<tr>
@@ -3041,62 +3050,97 @@ function renderCashflow() {
     });
     tbody.innerHTML = html || '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
 
-    const canvas = document.getElementById('cashflowChart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (cashflowChart) cashflowChart.destroy();
+    if (!skipChart) {
+        const canvas = document.getElementById('cashflowChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (cashflowChart) cashflowChart.destroy();
 
-    const labels = [], inData = [], outData = [], reinvestData = [];
-    dates.forEach(ds => {
-        const d = dailyMap.get(ds) || { in:0, out:0, reinvest:0 };
-        labels.push(ds.slice(5));
-        inData.push(d.in);
-        outData.push(d.out);
-        reinvestData.push(d.reinvest);
-    });
+        const labels = [], inData = [], outData = [], reinvestData = [], netData = [];
+        dates.forEach(ds => {
+            const d = dailyMap.get(ds) || { in:0, out:0, reinvest:0 };
+            labels.push(ds.slice(5));
+            inData.push(d.in);
+            outData.push(d.out);
+            reinvestData.push(d.reinvest);
+            netData.push(d.in - d.out);
+        });
 
-    cashflowChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [
-                { label: '入金', data: inData, backgroundColor: '#10b981', borderRadius: 4 },
-                { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
-                { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            onClick: (e, activeElements) => {
-                if (activeElements && activeElements.length > 0) {
-                    const clickedDate = dates[activeElements[0].index];
-                    if (clickedDate) {
-                        document.getElementById('cashflowDate').value = clickedDate;
-                        renderCashflow();
+        // ← 在 new Chart 之前加这个工具函数
+        function lightenColor(hex, pct) {
+            const c = hex.replace('#','');
+            const r = Math.min(255, parseInt(c.substr(0,2),16) + pct);
+            const g = Math.min(255, parseInt(c.substr(2,2),16) + pct);
+            const b = Math.min(255, parseInt(c.substr(4,2),16) + pct);
+            return `rgb(${r},${g},${b})`;
+        }
+
+        cashflowChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '入金', data: inData, backgroundColor: '#10b981', borderRadius: 4 },
+                    { label: '出金', data: outData, backgroundColor: '#f97316', borderRadius: 4 },
+                    { label: '本金复投', data: reinvestData, backgroundColor: '#8b5cf6', borderRadius: 4 },
+                    {
+                        label: '资金净额', data: netData, borderRadius: 4, borderWidth: 2,
+                        backgroundColor: netData.map(v => v >= 0 ? '#3b82f6' : '#ef4444')
                     }
-                }
+                ]
             },
-            scales: {
-                y: { beginAtZero: true, grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
-                x: { ticks: { color: '#8899bb', maxRotation: 30 } }
-            },
-            plugins: {
-                legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
-                        footer: items => {
-                            if (!items.length) return '';
-                            const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
-                            const net = get('入金') - get('出金');
-                            return '净流入: ' + net.toFixed(2) + ' USDT';
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                // ← 新增：hover 时柱体颜色变亮，替代白色边框选中效果
+                elements: {
+                    bar: {
+                        hoverBackgroundColor: (ctx) => {
+                            const bg = ctx.dataset.backgroundColor;
+                            // 如果是数组（净额柱正负分色），取当前 index 的颜色
+                            const color = Array.isArray(bg) ? bg[ctx.dataIndex] : bg;
+                            return lightenColor(color, 40);   // 把原色调亮 40%
+                        }
+                    }
+                },
+                onHover: (e) => { if (e.native) e.native.target.style.cursor = 'pointer'; },
+                onClick: (e, activeElements) => {
+                    if (activeElements && activeElements.length > 0) {
+                        const clickedDate = dates[activeElements[0].index];
+                        if (clickedDate) {
+                            cashflowChart.setActiveElements(activeElements);
+                            cashflowChart.update('none');
+                            document.getElementById('cashflowDate').value = clickedDate;
+                            updateCashflowCardsForDate(clickedDate);
+                        }
+                    } else {
+                        cashflowChart.setActiveElements([]);
+                        cashflowChart.update('none');
+                        document.getElementById('cashflowDate').value = '';
+                        renderCashflow(true);
+                    }
+                },
+                scales: {
+                    y: { grid: { color: '#2a3a5a' }, ticks: { color: '#8899bb' } },
+                    x: { ticks: { color: '#8899bb', maxRotation: 30 } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#e8edf5', font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: c => `${c.dataset.label}: ${c.raw.toFixed(2)}`,
+                            footer: items => {
+                                if (!items.length) return '';
+                                const get = name => items.find(i => i.dataset.label === name)?.raw || 0;
+                                const net = get('入金') - get('出金');
+                                return '净流入: ' + net.toFixed(2) + ' USDT';
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 }
 
 function exportCashflow() {
