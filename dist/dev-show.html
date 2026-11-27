@@ -98,6 +98,72 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
 .cashflow-net { color:#3b82f6; }
 .cashflow-reinvest { color:#8b5cf6; }
 
+/* DEV 日历墙 */
+.calendar-wall-card { background:linear-gradient(145deg,#111827,#0a0e1a); border-color:#2a3a5a; padding:16px; }
+.calendar-wall-card .card-body-wrapper { max-height:6000px; }
+.calendar-wall-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:14px; }
+.calendar-wall-title { color:#e8edf5; font-size:1rem; font-weight:700; }
+.calendar-wall-subtitle { color:#8899bb; font-size:0.7rem; margin-top:5px; }
+.calendar-month-switcher { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-shrink:0; }
+.calendar-month-label { min-width:126px; color:#e8edf5; font-size:0.85rem; font-weight:600; text-align:center; }
+.calendar-month-btn { width:30px; height:30px; border:0; background:transparent; color:#8899bb; border-radius:8px; cursor:pointer; font-size:1.25rem; line-height:1; }
+.calendar-month-btn:hover:not(:disabled) { background:#1a2332; color:#fff; }
+.calendar-month-btn:disabled { opacity:0.25; cursor:not-allowed; }
+.calendar-wall-layout { display:grid; grid-template-columns:minmax(0,2.05fr) minmax(270px,0.95fr); gap:14px; align-items:start; }
+.calendar-weekdays, .calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+.calendar-weekdays { margin-bottom:6px; }
+.calendar-weekday { color:#8899bb; font-size:0.68rem; text-align:center; padding:3px 0; }
+.calendar-day { position:relative; min-width:0; min-height:92px; padding:9px 6px 6px; border:1px solid #2a3a5a; border-radius:9px; background:#111827; color:#e8edf5; font:inherit; text-align:center; cursor:pointer; transition:border-color 0.18s,background 0.18s,transform 0.18s; }
+.calendar-day:not(.is-empty):not(:disabled):hover { background:#1a2332; border-color:#60a5fa; transform:translateY(-1px); }
+.calendar-day.is-expected { border-style:dashed; background:rgba(17,24,39,0.55); }
+.calendar-day.is-today { border-color:#3b82f6; box-shadow:0 0 10px rgba(59,130,246,0.55),inset 0 0 10px rgba(59,130,246,0.12); }
+.calendar-day.is-selected { border-color:#60a5fa; box-shadow:0 0 0 1px rgba(96,165,250,0.25); }
+.calendar-day.is-today.is-selected { border-color:#60a5fa; box-shadow:0 0 11px rgba(59,130,246,0.7),inset 0 0 10px rgba(59,130,246,0.14); }
+.calendar-day.is-outside-range { opacity:0.3; cursor:not-allowed; }
+.calendar-day.is-empty { visibility:hidden; pointer-events:none; }
+.calendar-day-number { display:block; color:#e8edf5; font-size:0.72rem; font-weight:600; line-height:1.2; margin-bottom:8px; }
+.calendar-day-amount { display:block; overflow:hidden; font-size:0.64rem; font-weight:600; line-height:1.45; white-space:nowrap; text-overflow:clip; }
+.calendar-stake-text { color:#10b981 !important; }
+.calendar-redeem-text { color:#f87171 !important; }
+.calendar-expected-text { color:#60a5fa !important; }
+.calendar-wall-legend { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-top:12px; color:#8899bb; font-size:0.66rem; }
+.calendar-legend-item { display:inline-flex; align-items:center; gap:5px; }
+.calendar-legend-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.calendar-legend-box { width:12px; height:12px; border:1px solid #4a5a7a; border-radius:3px; }
+.calendar-legend-box.expected { border-style:dashed; }
+.calendar-legend-box.today { border-color:#3b82f6; }
+.calendar-detail { min-width:0; padding:14px; border:1px solid #2a3a5a; border-radius:10px; background:rgba(17,24,39,0.72); }
+.calendar-detail-label { color:#8899bb; font-size:0.7rem; }
+.calendar-detail-date { color:#e8edf5; font-size:1rem; font-weight:700; margin:7px 0 12px; }
+.calendar-detail-content { display:grid; gap:10px; max-height:530px; overflow-y:auto; padding-right:3px; }
+.calendar-detail-empty { color:#4a5a7a; font-size:0.72rem; padding:24px 4px; text-align:center; }
+.calendar-detail-section { border:1px solid #2a3a5a; border-radius:8px; background:#111827; padding:10px; }
+.calendar-detail-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:5px; margin-bottom:8px; font-size:0.72rem; }
+.calendar-detail-heading strong { margin-left:auto; font-size:0.75rem; }
+.calendar-detail-heading small { color:#8899bb; }
+.calendar-product-block { padding:8px 0; border-top:1px solid #2a3a5a; }
+.calendar-product-title { display:flex; justify-content:space-between; color:#e8edf5; font-size:0.7rem; font-weight:600; margin-bottom:4px; }
+.calendar-product-title span:last-child { color:#8899bb; font-weight:400; }
+.calendar-detail-row { display:flex; justify-content:space-between; gap:8px; padding:3px 0; color:#8899bb; font-size:0.68rem; }
+.calendar-detail-row strong { color:#e8edf5; font-weight:600; text-align:right; white-space:nowrap; }
+.calendar-detail-row.total { margin-top:3px; padding-top:6px; border-top:1px dashed #2a3a5a; color:#a0aabb; }
+.calendar-detail-row.total strong { color:#fbbf24; }
+@media (max-width:900px) {
+    .calendar-wall-layout { grid-template-columns:1fr; }
+    .calendar-detail-content { max-height:320px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding-right:6px; }
+    .calendar-day { min-height:80px; }
+}
+@media (max-width:520px) {
+    .calendar-wall-card { padding:10px; }
+    .calendar-wall-header { align-items:center; gap:8px; flex-wrap:wrap; }
+    .calendar-month-switcher { width:100%; justify-content:space-between; }
+    .calendar-weekdays, .calendar-grid { gap:3px; }
+    .calendar-day { min-height:62px; padding:6px 2px 4px; border-radius:6px; }
+    .calendar-day-number { font-size:0.62rem; margin-bottom:5px; }
+    .calendar-day-amount { font-size:0.5rem; }
+    .calendar-wall-legend { gap:10px; }
+}
+
 /* ===== 登录遮罩 ===== */
 .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.95); backdrop-filter:blur(10px); z-index:20000; display:flex; align-items:center; justify-content:center; padding:16px; }
 .login-dialog { background:linear-gradient(145deg,#1e293b,#0f172a); border:2px solid #3b82f6; border-radius:24px; padding:32px 24px; max-width:440px; width:100%; box-shadow:0 30px 60px rgba(0,0,0,0.8); }
@@ -349,6 +415,47 @@ body { background:#0a0e1a; color:#e8edf5; font-family: -apple-system, BlinkMacSy
             </div>
             <div class="card-body-wrapper">
                 <div class="chart-container" style="height:220px;"><canvas id="expiryChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- DEV 日历墙：全部历史数据 + 未来90天预计赎回 -->
+        <div class="chart-card calendar-wall-card collapsible-card">
+            <div class="calendar-wall-header" onclick="toggleCard(this)">
+                <div>
+                    <div class="calendar-wall-title">📅 DEV 日历墙</div>
+                    <div class="calendar-wall-subtitle">全部历史质押/赎回 · 未来 90 天预计赎回（虚线格）</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div class="calendar-month-switcher" onclick="event.stopPropagation()">
+                        <button type="button" class="calendar-month-btn" id="calendarPrevMonth" onclick="changeCalendarMonth(-1)" aria-label="上个月">‹</button>
+                        <div class="calendar-month-label" id="calendarMonthLabel">---- 年 -- 月</div>
+                        <button type="button" class="calendar-month-btn" id="calendarNextMonth" onclick="changeCalendarMonth(1)" aria-label="下个月">›</button>
+                    </div>
+                    <span class="collapse-icon">▼</span>
+                </div>
+            </div>
+            <div class="card-body-wrapper">
+            <div class="calendar-wall-layout">
+                <div>
+                    <div class="calendar-weekdays">
+                        <span class="calendar-weekday">日</span><span class="calendar-weekday">一</span><span class="calendar-weekday">二</span><span class="calendar-weekday">三</span><span class="calendar-weekday">四</span><span class="calendar-weekday">五</span><span class="calendar-weekday">六</span>
+                    </div>
+                    <div class="calendar-grid" id="calendarGrid"></div>
+                </div>
+                <aside class="calendar-detail">
+                    <div class="calendar-detail-label">日格明细</div>
+                    <div class="calendar-detail-date" id="calendarDetailDate">--</div>
+                    <div class="calendar-detail-content" id="calendarDetailContent">
+                        <div class="calendar-detail-empty">点击日期查看质押、赎回及预计赎回明细</div>
+                    </div>
+                </aside>
+            </div>
+            <div class="calendar-wall-legend">
+                <span class="calendar-legend-item calendar-stake-text"><i class="calendar-legend-dot"></i>质押</span>
+                <span class="calendar-legend-item calendar-redeem-text"><i class="calendar-legend-dot"></i>赎回</span>
+                <span class="calendar-legend-item"><i class="calendar-legend-box expected"></i>预计赎回</span>
+                <span class="calendar-legend-item"><i class="calendar-legend-box today"></i>今天</span>
+                <span class="calendar-legend-item"><i class="calendar-legend-box"></i>选中日</span>
             </div>
         </div>
 
@@ -652,6 +759,9 @@ let stats = {
     lpBalance: 0
 };
 let trendChart, unlockChart, expiryChart, addressTrendChart, cashflowChart;
+let calendarCursor = null, calendarSelectedDate = '', calendarToday = '';
+let calendarRangeStart = '', calendarRangeEnd = '';
+let calendarWallData = new Map();
 
 // ================================================================
 // 工具
@@ -1736,11 +1846,249 @@ function setDailyStatsRange(days, btn) {
     updateDailyStats();
 }
 
+// ================================================================
+// DEV 日历墙
+// ================================================================
+function calendarDateOffset(ds, days) {
+    const [y, m, d] = ds.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d + days));
+    return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+function calendarMonthFirst(ds) { return `${ds.slice(0, 7)}-01`; }
+
+function calendarMonthEnd(monthFirst) {
+    const [y, m] = monthFirst.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m, 0));
+    return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+function calendarShiftMonth(monthFirst, offset) {
+    const [y, m] = monthFirst.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m - 1 + offset, 1));
+    return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-01`;
+}
+
+function calendarEmptyMetric() { return { principal:0, profit:0, count:0 }; }
+function calendarEmptyDay() {
+    return {
+        stake:[calendarEmptyMetric(), calendarEmptyMetric()],
+        redeem:[calendarEmptyMetric(), calendarEmptyMetric()],
+        expected:[calendarEmptyMetric(), calendarEmptyMetric()]
+    };
+}
+
+function calendarAddMetric(metric, record, includeProfit = true) {
+    metric.principal += Number(principalOf(record)) || 0;
+    if (includeProfit) metric.profit += Number(profitOf(record)) || 0;
+    metric.count += 1;
+}
+
+function calendarSummarize(buckets) {
+    return buckets.reduce((sum, metric) => {
+        sum.principal += metric.principal;
+        sum.profit += metric.profit;
+        sum.count += metric.count;
+        return sum;
+    }, { principal:0, profit:0, total:0, count:0 });
+}
+
+function calendarWithTotal(summary) {
+    summary.total = summary.principal + summary.profit;
+    return summary;
+}
+
+function calendarFormatAmount(value) {
+    return (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+
+function calendarCompactAmount(value) {
+    const abs = Math.abs(value);
+    if (abs < 0.005) return '';
+    const sign = value > 0 ? '+' : '-';
+    let text;
+    if (abs >= 100000000) text = (abs / 100000000).toFixed(2).replace(/\.?0+$/, '') + '亿';
+    else if (abs >= 10000) text = (abs / 10000).toFixed(abs >= 100000 ? 1 : 2).replace(/\.?0+$/, '') + '万';
+    else if (abs >= 1000) text = (abs / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    else text = abs >= 100 ? abs.toFixed(0) : abs.toFixed(2).replace(/\.?0+$/, '');
+    return sign + text;
+}
+
+function refreshCalendarWall() {
+    calendarToday = getDateStr(Math.floor(Date.now() / 1000));
+    calendarRangeEnd = calendarDateOffset(calendarToday, 90);
+    if (!calendarSelectedDate) calendarSelectedDate = calendarToday;
+    if (!calendarCursor) calendarCursor = calendarMonthFirst(calendarToday);
+
+    calendarWallData = new Map();
+    const records = allStakeRecords.length ? allStakeRecords : queryResults;
+    let earliestDs = calendarToday;
+    records.forEach(record => {
+        if (record.stakeTime > 0) {
+            const ds = getDateStr(record.stakeTime);
+            if (ds <= calendarToday && ds < earliestDs) earliestDs = ds;
+        }
+        if ((record.status === 2 || record.status === 3) && (record.redeemedAt || record.unlockTime) > 0) {
+            const ds = getDateStr(record.redeemedAt || record.unlockTime);
+            if (ds <= calendarToday && ds < earliestDs) earliestDs = ds;
+        }
+    });
+    calendarRangeStart = earliestDs;
+
+    const getDay = ds => {
+        if (!calendarWallData.has(ds)) calendarWallData.set(ds, calendarEmptyDay());
+        return calendarWallData.get(ds);
+    };
+
+    records.forEach(record => {
+        const product = record.product === 0 ? 0 : 1;
+        if (record.stakeTime > 0) {
+            const ds = getDateStr(record.stakeTime);
+            if (ds >= calendarRangeStart && ds <= calendarToday) {
+                calendarAddMetric(getDay(ds).stake[product], record, false);
+            }
+        }
+        if ((record.status === 2 || record.status === 3) && (record.redeemedAt || record.unlockTime) > 0) {
+            const ds = getDateStr(record.redeemedAt || record.unlockTime);
+            if (ds >= calendarRangeStart && ds <= calendarToday) {
+                calendarAddMetric(getDay(ds).redeem[product], record);
+            }
+        }
+        if (record.status === 1 && record.unlockTime > 0) {
+            const ds = getDateStr(record.unlockTime);
+            if (ds >= calendarToday && ds <= calendarRangeEnd) {
+                calendarAddMetric(getDay(ds).expected[product], record);
+            }
+        }
+    });
+    renderCalendarWall();
+}
+
+function renderCalendarWall() {
+    const grid = document.getElementById('calendarGrid');
+    if (!grid) return;
+    if (!calendarToday) calendarToday = getDateStr(Math.floor(Date.now() / 1000));
+    if (!calendarCursor) calendarCursor = calendarMonthFirst(calendarToday);
+    if (!calendarSelectedDate) calendarSelectedDate = calendarToday;
+
+    const [year, month] = calendarCursor.split('-').map(Number);
+    document.getElementById('calendarMonthLabel').textContent = `${year} 年 ${pad2(month)} 月`;
+    const firstDate = new Date(Date.UTC(year, month - 1, 1));
+    const leadingDays = firstDate.getUTCDay();
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const emptyDay = calendarEmptyDay();
+    let html = '';
+
+    for (let i = 0; i < leadingDays; i++) html += '<div class="calendar-day is-empty"></div>';
+    for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber++) {
+        const ds = `${year}-${pad2(month)}-${pad2(dayNumber)}`;
+        const day = calendarWallData.get(ds) || emptyDay;
+        const stake = calendarWithTotal(calendarSummarize(day.stake));
+        const redeem = calendarWithTotal(calendarSummarize(day.redeem));
+        const expected = calendarWithTotal(calendarSummarize(day.expected));
+        const outTotal = redeem.total + expected.total;
+        const inRange = ds >= calendarRangeStart && ds <= calendarRangeEnd;
+        const classes = ['calendar-day'];
+        if (ds > calendarToday) classes.push('is-expected');
+        if (ds === calendarToday) classes.push('is-today');
+        if (ds === calendarSelectedDate) classes.push('is-selected');
+        if (!inRange) classes.push('is-outside-range');
+        const title = `质押 ${calendarFormatAmount(stake.total)} UUSD\n赎回 ${calendarFormatAmount(redeem.total)} UUSD\n预计赎回 ${calendarFormatAmount(expected.total)} UUSD`;
+        html += `<button type="button" class="${classes.join(' ')}" title="${title}" onclick="selectCalendarDate('${ds}')" ${inRange ? '' : 'disabled'}>
+            <span class="calendar-day-number">${dayNumber}</span>
+            <span class="calendar-day-amount calendar-stake-text">${calendarCompactAmount(stake.total)}</span>
+            <span class="calendar-day-amount calendar-redeem-text">${calendarCompactAmount(-outTotal)}</span>
+        </button>`;
+    }
+    const trailingDays = (7 - (leadingDays + daysInMonth) % 7) % 7;
+    for (let i = 0; i < trailingDays; i++) html += '<div class="calendar-day is-empty"></div>';
+    grid.innerHTML = html;
+
+    const previousMonth = calendarShiftMonth(calendarCursor, -1);
+    const nextMonth = calendarShiftMonth(calendarCursor, 1);
+    document.getElementById('calendarPrevMonth').disabled = calendarMonthEnd(previousMonth) < calendarRangeStart;
+    document.getElementById('calendarNextMonth').disabled = nextMonth > calendarRangeEnd;
+    renderCalendarDetail();
+}
+
+function calendarProductDetail(label, metric, includeProfit) {
+    const total = metric.principal + metric.profit;
+    return `<div class="calendar-product-block">
+        <div class="calendar-product-title"><span>${label}</span><span>${metric.count} 笔</span></div>
+        <div class="calendar-detail-row"><span>本金</span><strong>${calendarFormatAmount(metric.principal)} UUSD</strong></div>
+        ${includeProfit ? `<div class="calendar-detail-row"><span>收益</span><strong>${calendarFormatAmount(metric.profit)} UUSD</strong></div>
+        <div class="calendar-detail-row total"><span>合计</span><strong>${calendarFormatAmount(total)} UUSD</strong></div>` : ''}
+    </div>`;
+}
+
+function calendarStakeDetail(buckets) {
+    const summary = calendarWithTotal(calendarSummarize(buckets));
+    return `<section class="calendar-detail-section">
+        <div class="calendar-detail-heading calendar-stake-text"><span>质押</span><strong>+${calendarFormatAmount(summary.total)} UUSD</strong><small>${summary.count} 笔</small></div>
+        ${calendarProductDetail('15天产品', buckets[0], false)}
+        ${calendarProductDetail('30天产品', buckets[1], false)}
+        <div class="calendar-detail-row total"><span>质押本金合计</span><strong>${calendarFormatAmount(summary.principal)} UUSD</strong></div>
+    </section>`;
+}
+
+function calendarRedeemDetail(title, buckets, expected = false) {
+    const summary = calendarWithTotal(calendarSummarize(buckets));
+    return `<section class="calendar-detail-section">
+        <div class="calendar-detail-heading ${expected ? 'calendar-expected-text' : 'calendar-redeem-text'}"><span>${title}</span><strong>-${calendarFormatAmount(summary.total)} UUSD</strong><small>${summary.count} 笔</small></div>
+        ${calendarProductDetail('15天产品', buckets[0], true)}
+        ${calendarProductDetail('30天产品', buckets[1], true)}
+        <div class="calendar-detail-row"><span>全部本金</span><strong>${calendarFormatAmount(summary.principal)} UUSD</strong></div>
+        <div class="calendar-detail-row"><span>全部收益</span><strong>${calendarFormatAmount(summary.profit)} UUSD</strong></div>
+        <div class="calendar-detail-row total"><span>赎回本息合计</span><strong>${calendarFormatAmount(summary.total)} UUSD</strong></div>
+    </section>`;
+}
+
+function renderCalendarDetail() {
+    const dateEl = document.getElementById('calendarDetailDate');
+    const contentEl = document.getElementById('calendarDetailContent');
+    if (!dateEl || !contentEl) return;
+    dateEl.textContent = calendarSelectedDate || calendarToday;
+    const day = calendarWallData.get(calendarSelectedDate);
+    if (!day) {
+        contentEl.innerHTML = '<div class="calendar-detail-empty">当天暂无质押、赎回或预计赎回记录</div>';
+        return;
+    }
+    const stake = calendarSummarize(day.stake);
+    const redeem = calendarSummarize(day.redeem);
+    const expected = calendarSummarize(day.expected);
+    let html = '';
+    if (stake.count) html += calendarStakeDetail(day.stake);
+    if (redeem.count) html += calendarRedeemDetail('赎回', day.redeem);
+    if (expected.count) html += calendarRedeemDetail('预计赎回', day.expected, true);
+    contentEl.innerHTML = html || '<div class="calendar-detail-empty">当天暂无质押、赎回或预计赎回记录</div>';
+}
+
+function selectCalendarDate(ds) {
+    if (ds < calendarRangeStart || ds > calendarRangeEnd) return;
+    calendarSelectedDate = ds;
+    calendarCursor = calendarMonthFirst(ds);
+    renderCalendarWall();
+}
+
+function changeCalendarMonth(offset) {
+    const target = calendarShiftMonth(calendarCursor, offset);
+    if (target > calendarRangeEnd || calendarMonthEnd(target) < calendarRangeStart) return;
+    calendarCursor = target;
+    const selectedDay = calendarSelectedDate ? Number(calendarSelectedDate.slice(8, 10)) : 1;
+    const daysInTarget = Number(calendarMonthEnd(target).slice(8, 10));
+    let nextSelected = `${target.slice(0, 7)}-${pad2(Math.min(selectedDay, daysInTarget))}`;
+    if (nextSelected < calendarRangeStart) nextSelected = calendarRangeStart;
+    if (nextSelected > calendarRangeEnd) nextSelected = calendarRangeEnd;
+    calendarSelectedDate = nextSelected;
+    renderCalendarWall();
+}
+
 function updateAllCharts() {
     updateTrendChart();
     updateUnlockChart();
     updateExpiryChart();
     updateAddressTrendChart();
+    refreshCalendarWall();
 }
 
 // ================================================================
@@ -2312,6 +2660,9 @@ window.setTrendRange = setTrendRange;
 window.setExpiryRange = setExpiryRange;
 window.setDailyStatsRange = setDailyStatsRange;
 window.setAddressTrendRange = setAddressTrendRange;
+window.changeCalendarMonth = changeCalendarMonth;
+window.selectCalendarDate = selectCalendarDate;
+window.refreshCalendarWall = refreshCalendarWall;
 window.applyFilters = applyFilters;
 window.toggleCard = toggleCard;
 window.refreshLPPool = refreshLPPool;
@@ -2354,6 +2705,7 @@ window.addEventListener('load', async () => {
     if (savedHour !== null) dailyStartHour = Number(savedHour);
     const sel = document.getElementById('settleHourSelect');
     if (sel) sel.value = String(dailyStartHour);
+    refreshCalendarWall();
     const ok = await checkSession();
     if (!ok) {
         $('loginOverlay').style.display = 'flex';
