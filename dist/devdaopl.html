@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DevDao 批量工具 v5 (EIP-1559版)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e1a; --card: #111827; --input: #1a2332; --border: #2a3a5a;
+    --text: #e8edf5; --sub: #8899bb; --blue: #3b82f6; --green: #22c55e; --red: #ef4444; --gold: #f59e0b; --purple: #8b5cf6;
+  }
+  body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; max-width: 900px; margin: 0 auto; }
+  h1 { text-align: center; color: var(--blue); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  textarea, input, select { width: 100%; padding: 10px; background: var(--input); border: 1px solid var(--border); border-radius: 8px; color: var(--text); margin-bottom: 10px; font-family: monospace; }
+  textarea { height: 120px; resize: vertical; }
+  button { padding: 10px 20px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: #fff; background: var(--blue); transition: 0.3s; }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-green { background: var(--green); }
+  .btn-red { background: var(--red); }
+  .btn-gold { background: var(--gold); }
+  .btn-purple { background: var(--purple); }
+  .log-box { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.6; }
+  .log-info { color: var(--blue); }
+  .log-success { color: var(--green); }
+  .log-error { color: var(--red); }
+  .log-warn { color: var(--gold); }
+  .flex-row { display: flex; gap: 10px; }
+  .flex-row > * { flex: 1; }
+  .warning { color: var(--red); font-size: 13px; margin-bottom: 10px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>🚀 DevDao 批量操作工具 v5</h1>
+
+<div class="card">
+  <h3>1. 环境配置 & EIP-1559 Gas 设置</h3>
+  <label>RPC 节点</label>
+  <input type="text" id="rpcUrl" value="https://bsc-dataseed.binance.org/" />
+  
+  <div class="flex-row">
+    <div>
+      <label>Max Fee (Gwei)</label>
+      <input type="number" id="maxFeeGwei" value="0.08" step="0.01" />
+    </div>
+    <div>
+      <label>Max Priority Fee (Gwei)</label>
+      <input type="number" id="maxPriorityGwei" value="0.05" step="0.01" />
+    </div>
+  </div>
+  <p style="font-size:12px; color:var(--sub); margin-bottom:10px;">提示：脚本已自动按操作类型分配 Gas Limit（授权 80k，质押/赎回/复投 600k）。</p>
+  
+  <div class="flex-row" style="margin-top:10px;">
+    <button onclick="initProvider()">连接网络</button>
+    <span id="networkStatus" style="line-height:40px; color:var(--sub);">未连接</span>
+  </div>
+</div>
+
+<div class="card">
+  <h3>2. 导入钱包</h3>
+  <div class="warning">⚠️ 警告：私钥明文输入存在极大风险！请务必在断网或安全的本地环境中使用！</div>
+  <textarea id="privateKeys" placeholder="请输入私钥，每行一个..."></textarea>
+  <button onclick="loadWallets()">解析并校验钱包</button>
+  <div id="walletStatus" style="margin-top:10px; color:var(--sub);">尚未导入钱包</div>
+</div>
+
+<div class="card" style="display: flex; gap: 20px; flex-wrap: wrap;">
+  <!-- 质押 -->
+  <div style="flex: 1; min-width: 250px; border-right: 1px solid var(--border); padding-right: 20px;">
+    <h3>3. 批量首次质押</h3>
+    <label>每个地址总质押数量 (UUSD)</label>
+    <input type="number" id="stakeAmount" value="1000" step="1" min="1" />
+    <label>选择产品</label>
+    <select id="stakeProduct">
+      <option value="0">15天 (日息 1.5%)</option>
+      <option value="1">30天 (日息 2%)</option>
+    </select>
+    <p style="font-size:12px; color:var(--sub);">逻辑：查余额 -> 查授权 -> (自动授权) -> 质押。超过单笔上限会自动拆分。</p>
+    <button class="btn-green" id="btnStake" onclick="startBatchStake()" disabled style="width:100%;">开始批量质押</button>
+  </div>
+
+  <!-- 赎回 -->
+  <div style="flex: 1; min-width: 250px;">
+    <h3>4. 批量赎回</h3>
+    <p style="font-size:13px; color:var(--sub); margin-bottom: 20px;">逻辑：自动扫描每个钱包已到期(状态1)的订单并执行赎回。</p>
+    <button class="btn-gold" id="btnRedeem" onclick="startBatchRedeem()" disabled style="width:100%;">开始批量赎回</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>5. 批量复投</h3>
+  <label>复投选择的产品</label>
+  <select id="reinvestProduct">
+    <option value="0">15天 (日息 1.5%)</option>
+    <option value="1">30天 (日息 2%)</option>
+  </select>
+  <p style="font-size:12px; color:var(--sub);">逻辑：扫描“已赎回(状态2)”且“未复投”的订单 -> 检查余额 -> (自动授权) -> 执行复投。</p>
+  <button class="btn-purple" id="btnReinvest" onclick="startBatchReinvest()" disabled style="width:100%;">开始批量复投</button>
+</div>
+
+<div class="card">
+  <h3>执行日志</h3>
+  <div class="log-box" id="logBox"></div>
+</div>
+
+<script>
+// ================= 配置区域 =================
+const CONFIG = {
+  stakingContract: '0x8aEDd13e3D4b3B03a6291C8E3Cbb2333fc54232c',
+  chainId: 56,
+};
+
+const STAKING_ABI = [
+  "function uusd() view returns (address)",
+  "function uusdDecimals() view returns (uint8)",
+  "function minStakeAmount() view returns (uint256)",
+  "function maxStakeAmount() view returns (uint256)",
+  "function deposit(uint256 amount, uint8 product, uint256 minDevOut, uint256 minLpOut, uint256 deadline)",
+  "function redeem(uint256 orderId, uint256 maxDevIn, uint256 deadline)",
+  "function reinvest(uint256 orderId, uint8 product, uint256 minDevOut, uint256 minLpOut, uint256 deadline)",
+  "function userOrderIds(address, uint256) view returns (uint256)",
+  "function getOrder(uint256) view returns (tuple(uint256 id, address user, uint256 principal, uint8 product, uint256 startTime, uint256 endTime, uint256 computility, uint256 profitBasis, uint256 collectionAmount, uint256 previousOrderId, uint256 nextOrderId, uint256 redeemedAt, bool settled, uint8 status))"
+];
+
+const UUSD_ABI = [
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)"
+];
+
+// ================= 全局变量 =================
+let provider = null;
+let wallets = []; 
+let uusdAddress = null;
+let uusdDecimals = 18;
+let isProcessing = false;
+
+const $ = id => document.getElementById(id);
+
+function log(msg, type = 'info') {
+  const box = $('logBox');
+  const div = document.createElement('div');
+  div.className = `log-${type}`;
+  div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function toggleButtons(disabled) {
+  $('btnStake').disabled = disabled;
+  $('btnRedeem').disabled = disabled;
+  $('btnReinvest').disabled = disabled;
+}
+
+// 核心：获取 EIP-1559 交易参数
+async function getTxOverrides(actionType) {
+  const maxFeeInput = $('maxFeeGwei').value;
+  const priorityInput = $('maxPriorityGwei').value;
+  let overrides = {};
+
+  // 1. 设置 EIP-1559 费用
+  if (maxFeeInput && Number(maxFeeInput) > 0) {
+    overrides.maxFeePerGas = ethers.parseUnits(maxFeeInput, 'gwei');
+  }
+  if (priorityInput && Number(priorityInput) > 0) {
+    overrides.maxPriorityFeePerGas = ethers.parseUnits(priorityInput, 'gwei');
+  }
+
+  // 2. 按操作类型分配 Gas Limit
+  if (actionType === 'approve') {
+    overrides.gasLimit = 80000n;
+  } else if (actionType === 'stake') {
+    overrides.gasLimit = 650000n;
+  } else if (actionType === 'unstake') {
+    overrides.gasLimit = 600000n;
+  } else {
+    overrides.gasLimit = 600000n; // 默认兜底
+  }
+
+  return overrides;
+}
+
+// ================= 核心逻辑 =================
+window.initProvider = async () => {
+  try {
+    provider = new ethers.JsonRpcProvider($('rpcUrl').value.trim());
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) !== CONFIG.chainId) {
+      log(`当前网络 ChainID: ${network.chainId}，不是 BSC 主网！`, 'error'); return;
+    }
+    $('networkStatus').innerText = `✅ 已连接 (ChainID: ${network.chainId})`;
+    $('networkStatus').style.color = 'var(--green)';
+    log("网络连接成功", 'success');
+  } catch (e) {
+    log("网络连接失败: " + e.message, 'error');
+  }
+};
+
+window.loadWallets = () => {
+  if (!provider) { log("请先连接网络", 'error'); return; }
+  const pks = $('privateKeys').value.split('\n').map(k => k.trim()).filter(k => k);
+  if (pks.length === 0) { log("请输入私钥", 'error'); return; }
+  
+  wallets = [];
+  for (let i = 0; i < pks.length; i++) {
+    try {
+      const wallet = new ethers.Wallet(pks[i], provider);
+      wallets.push({ address: wallet.address, signer: wallet });
+    } catch (e) {
+      log(`第 ${i+1} 个私钥格式错误`, 'error');
+    }
+  }
+  
+  if (wallets.length > 0) {
+    $('walletStatus').innerHTML = `✅ 已加载 <b>${wallets.length}</b> 个有效钱包`;
+    toggleButtons(false);
+    log(`成功加载 ${wallets.length} 个钱包`, 'success');
+  }
+};
+
+// ================= 1. 批量质押 =================
+window.startBatchStake = async () => {
+  if (isProcessing) return;
+  isProcessing = true; toggleButtons(true);
+
+  const totalAmountStr = $('stakeAmount').value;
+  const product = Number($('stakeProduct').value);
+  
+  try {
+    const stakingRead = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, provider);
+    uusdAddress = await stakingRead.uusd();
+    uusdDecimals = Number(await stakingRead.uusdDecimals());
+    
+    const minStake = await stakingRead.minStakeAmount();
+    const maxStake = await stakingRead.maxStakeAmount();
+    const maxStakeNum = Number(ethers.formatUnits(maxStake, uusdDecimals));
+    const totalAmountNum = Number(totalAmountStr);
+
+    log(`========== 开始批量质押 (单笔上限 ${maxStakeNum} UUSD) ==========`, 'warn');
+
+    for (let i = 0; i < wallets.length; i++) {
+      const w = wallets[i];
+      log(`[${i+1}/${wallets.length}] 处理钱包: ${w.address}`);
+      
+      try {
+        const uusdContract = new ethers.Contract(uusdAddress, UUSD_ABI, w.signer);
+        const stakingContract = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, w.signer);
+
+        const bnbBal = await provider.getBalance(w.address);
+        if (bnbBal < ethers.parseEther("0.001")) {
+          log(`  ❌ 跳过：BNB 手续费不足`, 'error'); continue;
+        }
+
+        const uusdBal = await uusdContract.balanceOf(w.address);
+        const totalAmountWei = ethers.parseUnits(totalAmountStr, uusdDecimals);
+        
+        if (uusdBal < totalAmountWei) {
+          log(`  ❌ 跳过：UUSD 余额不足 (需要 ${totalAmountStr})`, 'error'); continue;
+        }
+
+        // 检查并授权 (使用授权专用的 Gas 配置)
+        const allowance = await uusdContract.allowance(w.address, CONFIG.stakingContract);
+        if (allowance < totalAmountWei) {
+          log(`  ⏳ 授权总金额 UUSD 中...`, 'warn');
+          const overrides = await getTxOverrides('approve');
+          const txApprove = await uusdContract.approve(CONFIG.stakingContract, ethers.MaxUint256, overrides);
+          await txApprove.wait();
+          log(`  ✅ 授权成功`, 'success');
+        }
+
+        // 拆分逻辑
+        let remainingAmount = totalAmountNum;
+        let batchCount = 1;
+        
+        while (remainingAmount > 0) {
+          const currentStakeNum = Math.min(remainingAmount, maxStakeNum);
+          const currentStakeStr = currentStakeNum.toString();
+          const currentStakeWei = ethers.parseUnits(currentStakeStr, uusdDecimals);
+          
+          if (currentStakeWei < minStake) {
+             log(`  ⚠️ 剩余金额 ${currentStakeStr} 低于最小限制，停止拆分`, 'warn');
+             break;
+          }
+
+          log(`  ⏳ 发送质押交易 [第 ${batchCount} 笔]: ${currentStakeStr} UUSD...`, 'info');
+          const deadline = Math.floor(Date.now() / 1000) + 1200;
+          const overrides = await getTxOverrides('stake'); // 使用质押专用 Gas
+          
+          try {
+            const txStake = await stakingContract.deposit(currentStakeWei, product, 0n, 0n, deadline, overrides);
+            await txStake.wait();
+            log(`  ✅ [第 ${batchCount} 笔] 质押成功！`, 'success');
+          } catch (err) {
+             log(`  ❌ [第 ${batchCount} 笔] 失败: ${err.reason || err.message}`, 'error');
+             break; 
+          }
+
+          remainingAmount -= currentStakeNum;
+          batchCount++;
+          await sleep(1500); 
+        }
+      } catch (err) {
+        log(`  ❌ 处理失败: ${err.message}`, 'error');
+      }
+      await sleep(1000);
+    }
+  } catch (e) {
+    log(`任务中断: ${e.message}`, 'error');
+  } finally {
+    log(`========== 批量质押结束 ==========`, 'warn');
+    isProcessing = false; toggleButtons(false);
+  }
+};
+
+// ================= 2. 批量赎回 =================
+window.startBatchRedeem = async () => {
+  if (isProcessing) return;
+  isProcessing = true; toggleButtons(true);
+
+  try {
+    log(`========== 开始批量赎回扫描 ==========`, 'warn');
+    const block = await provider.getBlock('latest');
+    const now = block.timestamp;
+
+    for (let i = 0; i < wallets.length; i++) {
+      const w = wallets[i];
+      log(`[${i+1}/${wallets.length}] 扫描钱包: ${w.address}`);
+      
+      try {
+        const stakingContract = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, w.signer);
+        
+        const ids = [];
+        let idx = 0;
+        while (idx < 100) {
+          try {
+            const id = await stakingContract.userOrderIds(w.address, idx);
+            if (id === 0n) break;
+            ids.push(Number(id));
+            idx++;
+          } catch { break; }
+        }
+
+        let maturedOrders = [];
+        for (const id of ids) {
+          const order = await stakingContract.getOrder(id);
+          if (Number(order.status) === 1 && Number(order.endTime) <= now) {
+            maturedOrders.push(id);
+          }
+        }
+
+        if (maturedOrders.length === 0) {
+          log(`  - 无已到期的订单`); continue;
+        }
+
+        const bnbBal = await provider.getBalance(w.address);
+        if (bnbBal < ethers.parseEther("0.0005")) {
+          log(`  ❌ 跳过：BNB 手续费不足`, 'error'); continue;
+        }
+
+        for (const orderId of maturedOrders) {
+          log(`  ⏳ 发现到期订单 #${orderId}，赎回中...`, 'warn');
+          const deadline = Math.floor(Date.now() / 1000) + 1200;
+          const overrides = await getTxOverrides('unstake'); // 使用赎回专用 Gas
+          try {
+            const tx = await stakingContract.redeem(orderId, ethers.MaxUint256, deadline, overrides);
+            await tx.wait();
+            log(`  ✅ 订单 #${orderId} 赎回成功`, 'success');
+          } catch (err) {
+            log(`  ❌ 订单 #${orderId} 失败: ${err.reason || err.message}`, 'error');
+          }
+          await sleep(1000);
+        }
+      } catch (err) {
+        log(`  ❌ 处理失败: ${err.message}`, 'error');
+      }
+      await sleep(1000);
+    }
+  } catch (e) {
+    log(`任务中断: ${e.message}`, 'error');
+  } finally {
+    log(`========== 批量赎回结束 ==========`, 'warn');
+    isProcessing = false; toggleButtons(false);
+  }
+};
+
+// ================= 3. 批量复投 =================
+window.startBatchReinvest = async () => {
+  if (isProcessing) return;
+  isProcessing = true; toggleButtons(true);
+
+  const product = Number($('reinvestProduct').value);
+
+  try {
+    const stakingRead = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, provider);
+    uusdAddress = await stakingRead.uusd();
+    uusdDecimals = Number(await stakingRead.uusdDecimals());
+
+    log(`========== 开始批量复投扫描 ==========`, 'warn');
+
+    for (let i = 0; i < wallets.length; i++) {
+      const w = wallets[i];
+      log(`[${i+1}/${wallets.length}] 扫描钱包: ${w.address}`);
+      
+      try {
+        const stakingContract = new ethers.Contract(CONFIG.stakingContract, STAKING_ABI, w.signer);
+        const uusdContract = new ethers.Contract(uusdAddress, UUSD_ABI, w.signer);
+        
+        const ids = [];
+        let idx = 0;
+        while (idx < 100) {
+          try {
+            const id = await stakingContract.userOrderIds(w.address, idx);
+            if (id === 0n) break;
+            ids.push(Number(id));
+            idx++;
+          } catch { break; }
+        }
+
+        let eligibleOrders = [];
+        for (const id of ids) {
+          const order = await stakingContract.getOrder(id);
+          if (Number(order.status) === 2 && Number(order.nextOrderId) === 0) {
+            eligibleOrders.push({ id, principal: order.principal });
+          }
+        }
+
+        if (eligibleOrders.length === 0) {
+          log(`  - 无符合复投条件的订单`); continue;
+        }
+
+        const bnbBal = await provider.getBalance(w.address);
+        if (bnbBal < ethers.parseEther("0.0005")) {
+          log(`  ❌ 跳过：BNB 手续费不足`, 'error'); continue;
+        }
+
+        for (const order of eligibleOrders) {
+          const principalWei = order.principal;
+          const principalStr = ethers.formatUnits(principalWei, uusdDecimals);
+          
+          const uusdBal = await uusdContract.balanceOf(w.address);
+          if (uusdBal < principalWei) {
+            log(`  ⚠️ 跳过订单 #${order.id}：UUSD余额不足`, 'warn');
+            continue;
+          }
+
+          const allowance = await uusdContract.allowance(w.address, CONFIG.stakingContract);
+          if (allowance < principalWei) {
+            log(`  ⏳ 订单 #${order.id} 自动授权中...`, 'warn');
+            const overrides = await getTxOverrides('approve'); // 授权专用
+            const txApprove = await uusdContract.approve(CONFIG.stakingContract, ethers.MaxUint256, overrides);
+            await txApprove.wait();
+          }
+
+          log(`  ⏳ 正在复投订单 #${order.id} (${principalStr} UUSD)...`, 'warn');
+          const deadline = Math.floor(Date.now() / 1000) + 1200;
+          const overrides = await getTxOverrides('stake'); // 复投本质是质押，用质押Gas
+          
+          try {
+            const tx = await stakingContract.reinvest(order.id, product, 0n, 0n, deadline, overrides);
+            await tx.wait();
+            log(`  ✅ 订单 #${order.id} 复投成功！`, 'success');
+          } catch (err) {
+            log(`  ❌ 订单 #${order.id} 复投失败: ${err.reason || err.message}`, 'error');
+          }
+          await sleep(1500);
+        }
+      } catch (err) {
+        log(`  ❌ 处理失败: ${err.message}`, 'error');
+      }
+      await sleep(1000);
+    }
+  } catch (e) {
+    log(`任务中断: ${e.message}`, 'error');
+  } finally {
+    log(`========== 批量复投结束 ==========`, 'warn');
+    isProcessing = false; toggleButtons(false);
+  }
+};
+
+log("工具 v5 加载完成。EIP-1559 参数已就绪。", "info");
+</script>
+</body>
+</html>
