@@ -3216,7 +3216,7 @@ function calendarCompactAmount(value) {
 
 function refreshCalendarWall() {
     calendarToday = getDateStr(Math.floor(Date.now() / 1000));
-    calendarRangeEnd = calendarDateOffset(calendarToday, 90);
+    calendarRangeEnd = calendarDateOffset(calendarToday, 30);
     if (!calendarSelectedDate) calendarSelectedDate = calendarToday;
     if (!calendarCursor) calendarCursor = calendarMonthFirst(calendarToday);
 
